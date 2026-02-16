@@ -59,8 +59,7 @@ const probeDb = async () => {
     ]);
     return { available: true };
   } catch (error) {
-    const reason =
-      error instanceof Error ? (error.message || error.name) : "unknown database error";
+    const reason = error instanceof Error ? error.message || error.name : "unknown database error";
     return { available: false, reason };
   } finally {
     if (db) {
@@ -91,9 +90,7 @@ export const runServiceTests = async (input) => {
   for (const file of files) {
     const relative = path.relative(srcRoot, file);
     if (process.env.RUN_TESTNET_INTEGRATION !== "1" && requiresIntegration(file)) {
-      console.log(
-        `skipped - ${relative} (set RUN_TESTNET_INTEGRATION=1 to run integration tests)`
-      );
+      console.log(`skipped - ${relative} (set RUN_TESTNET_INTEGRATION=1 to run integration tests)`);
       continue;
     }
     if (requiresDb(file) && !dbProbe.available) {

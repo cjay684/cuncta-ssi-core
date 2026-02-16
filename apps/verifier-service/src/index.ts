@@ -51,13 +51,6 @@ const requireEnv = (names: string[]) => {
   }
 };
 
-const requireOneOf = (names: string[], label: string) => {
-  const hasAny = names.some((name) => process.env[name] && String(process.env[name]).trim() !== "");
-  if (!hasAny) {
-    throw new Error(`missing_required_envs:${label}`);
-  }
-};
-
 if (config.NODE_ENV === "production") {
   requireEnv([
     "DATABASE_URL",

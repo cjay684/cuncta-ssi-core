@@ -2,6 +2,13 @@ import { getDb } from "./db.js";
 import { config } from "./config.js";
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
+const getPgErrorCode = (error: unknown): string | undefined => {
+  if (typeof error !== "object" || error === null || !("code" in error)) {
+    return undefined;
+  }
+  const maybeCode = (error as { code?: unknown }).code;
+  return typeof maybeCode === "string" ? maybeCode : undefined;
+};
 
 const tableExists = async (tableName: string) => {
   const db = await getDb();
@@ -17,8 +24,8 @@ const probeReadAccess = async (tableName: string) => {
   try {
     await db.raw(`select 1 from ${qualified} limit 1`);
     return true;
-  } catch (error: any) {
-    if (error?.code === "42501") {
+  } catch (error: unknown) {
+    if (getPgErrorCode(error) === "42501") {
       return false;
     }
     throw error;
@@ -35,11 +42,11 @@ const hasWritePrivilege = async (tableName: string) => {
       await trx.raw(`delete from ${qualified} where false`);
       throw rollbackSentinel;
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error === rollbackSentinel) {
       return true;
     }
-    if (error?.code === "42501") {
+    if (getPgErrorCode(error) === "42501") {
       return false;
     }
     throw error;
