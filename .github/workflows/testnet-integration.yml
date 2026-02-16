@@ -1,0 +1,55 @@
+name: Testnet Integration
+# Runner hardening baseline:
+# docs/runbooks/self-hosted-runner-hardening.md
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testnet:
+    runs-on: [self-hosted]
+    env:
+      HEDERA_NETWORK: testnet
+      HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
+      HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
+      HEDERA_PAYER_ACCOUNT_ID: ${{ secrets.HEDERA_PAYER_ACCOUNT_ID }}
+      HEDERA_PAYER_PRIVATE_KEY: ${{ secrets.HEDERA_PAYER_PRIVATE_KEY }}
+      SERVICE_JWT_SECRET: ${{ secrets.SERVICE_JWT_SECRET }}
+      PSEUDONYMIZER_PEPPER: ${{ secrets.PSEUDONYMIZER_PEPPER }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
+      ISSUER_SERVICE_BASE_URL: ${{ secrets.ISSUER_SERVICE_BASE_URL }}
+      VERIFIER_SERVICE_BASE_URL: ${{ secrets.VERIFIER_SERVICE_BASE_URL }}
+      POLICY_SERVICE_BASE_URL: ${{ secrets.POLICY_SERVICE_BASE_URL }}
+      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
+      ISSUER_BASE_URL: ${{ secrets.ISSUER_BASE_URL }}
+      RUN_TESTNET_INTEGRATION: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10.28.2
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify (direct)
+        run: pnpm verify:testnet
+
+      - name: Verify (gateway mode)
+        run: GATEWAY_MODE=1 pnpm verify:testnet
+
+      - name: Verify (user pays)
+        run: USER_PAYS_MODE=1 pnpm verify:testnet

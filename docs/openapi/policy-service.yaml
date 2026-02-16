@@ -1,0 +1,43 @@
+openapi: 3.0.3
+info:
+  title: CUNCTA Policy Service
+  version: 1.0.0-testnet
+servers:
+  - url: http://localhost:3004
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Metrics text
+  /v1/requirements:
+    get:
+      summary: Policy requirements for action
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Requirements
+  /v1/policy/evaluate:
+    post:
+      summary: Evaluate policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Evaluation

@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  format_lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10.28.2
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+  build_typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10.28.2
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+  unit_tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cuncta
+          POSTGRES_PASSWORD: cuncta
+          POSTGRES_DB: cuncta_ssi
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U cuncta -d cuncta_ssi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL || 'postgres://cuncta:cuncta@localhost:5432/cuncta_ssi' }}
+      COVERAGE_LINES: "50"
+      COVERAGE_BRANCHES: "40"
+      COVERAGE_FUNCTIONS: "40"
+      COVERAGE_STATEMENTS: "50"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10.28.2
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit tests (coverage)
+        run: pnpm test:unit:coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage
+          path: coverage
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          version: 10.28.2
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        with:
+          config-path: .gitleaks.toml
+
+      - name: Dependency audit (blocking high/critical)
+        run: pnpm audit --audit-level high
+
+      - name: Generate SBOM (CycloneDX)
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json --spec-version 1.5
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+
+      - name: Setup Trivy
+        uses: aquasecurity/setup-trivy@ff1b8b060f23b650436d419b5e13f67f5d4c3087 # v0.2.2
+
+      - name: Build production images for scanning
+        run: |
+          docker build -f apps/did-service/Dockerfile -t cuncta/did-service:ci .
+          docker build -f apps/issuer-service/Dockerfile -t cuncta/issuer-service:ci .
+          docker build -f apps/verifier-service/Dockerfile -t cuncta/verifier-service:ci .
+          docker build -f apps/policy-service/Dockerfile -t cuncta/policy-service:ci .
+          docker build -f apps/app-gateway/Dockerfile -t cuncta/app-gateway:ci .
+
+      - name: Trivy image scan (non-blocking visibility)
+        run: |
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 cuncta/did-service:ci
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 cuncta/issuer-service:ci
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 cuncta/verifier-service:ci
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 cuncta/policy-service:ci
+          trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 0 cuncta/app-gateway:ci
+
+      - name: Trivy image scan (blocking critical)
+        run: |
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 cuncta/did-service:ci
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 cuncta/issuer-service:ci
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 cuncta/verifier-service:ci
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 cuncta/policy-service:ci
+          trivy image --severity CRITICAL --ignore-unfixed --exit-code 1 cuncta/app-gateway:ci

@@ -1,0 +1,21 @@
+{
+  "name": "@cuncta/contract-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test:contract": "tsx src/run.ts",
+    "test:guards": "tsx src/rotation-guards.ts"
+  },
+  "dependencies": {
+    "@cuncta/sdjwt": "workspace:*",
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "dotenv": "^17.2.3",
+    "jose": "^6.1.3",
+    "multiformats": "^13.4.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

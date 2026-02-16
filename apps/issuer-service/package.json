@@ -1,0 +1,34 @@
+{
+  "name": "@cuncta/issuer-service",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "test": "node --loader ts-node/esm src/run-tests.js",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cuncta/db": "workspace:*",
+    "@cuncta/hedera": "workspace:*",
+    "@cuncta/sdjwt": "workspace:*",
+    "@cuncta/shared": "workspace:*",
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "@openid4vc/openid4vci": "^0.4.4",
+    "@openid4vc/openid4vp": "^0.4.4",
+    "dcql": "^3.0.0",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.7.2",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "@fastify/rate-limit": "^10.0.0",
+    "jose": "^6.1.3",
+    "multiformats": "^13.4.2",
+    "zod": "^4.3.6"
+  }
+}

@@ -1,0 +1,99 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - cuncta_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cuncta -d cuncta_ssi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  did-service:
+    build:
+      context: .
+      dockerfile: apps/did-service/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_BIND_ADDRESS: ${SERVICE_BIND_ADDRESS:-127.0.0.1}
+      PORT: 3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  issuer-service:
+    build:
+      context: .
+      dockerfile: apps/issuer-service/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_BIND_ADDRESS: ${SERVICE_BIND_ADDRESS:-127.0.0.1}
+      PORT: 3002
+      DID_SERVICE_BASE_URL: http://did-service:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      did-service:
+        condition: service_started
+
+  verifier-service:
+    build:
+      context: .
+      dockerfile: apps/verifier-service/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_BIND_ADDRESS: ${SERVICE_BIND_ADDRESS:-127.0.0.1}
+      PORT: 3003
+      ISSUER_SERVICE_BASE_URL: http://issuer-service:3002
+      POLICY_SERVICE_BASE_URL: http://policy-service:3004
+    depends_on:
+      postgres:
+        condition: service_healthy
+      issuer-service:
+        condition: service_started
+      policy-service:
+        condition: service_started
+
+  policy-service:
+    build:
+      context: .
+      dockerfile: apps/policy-service/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_BIND_ADDRESS: ${SERVICE_BIND_ADDRESS:-127.0.0.1}
+      PORT: 3004
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-gateway:
+    build:
+      context: .
+      dockerfile: apps/app-gateway/Dockerfile
+    env_file: .env
+    environment:
+      SERVICE_BIND_ADDRESS: ${SERVICE_BIND_ADDRESS:-127.0.0.1}
+      PORT: 3010
+      DID_SERVICE_BASE_URL: http://did-service:3001
+      ISSUER_SERVICE_BASE_URL: http://issuer-service:3002
+      VERIFIER_SERVICE_BASE_URL: http://verifier-service:3003
+      POLICY_SERVICE_BASE_URL: http://policy-service:3004
+      APP_GATEWAY_BASE_URL: http://app-gateway:3010
+    ports:
+      - "3010:3010"
+    depends_on:
+      did-service:
+        condition: service_started
+      issuer-service:
+        condition: service_started
+      verifier-service:
+        condition: service_started
+      policy-service:
+        condition: service_started
+
+volumes:
+  cuncta_pg_data:

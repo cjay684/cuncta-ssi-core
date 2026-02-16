@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*
+!.env.example
+.DS_Store
+npm-debug.log
+pnpm-debug.log
+*.log
+.pnpm-store/
+**/wallet-state.json
+apps/**/data/*.json
+coverage/

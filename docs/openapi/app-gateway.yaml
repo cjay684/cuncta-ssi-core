@@ -1,0 +1,67 @@
+openapi: 3.0.3
+info:
+  title: CUNCTA App Gateway
+  version: 1.0.0-testnet
+servers:
+  - url: http://localhost:3010
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Metrics text
+  /v1/onboard/did/create/request:
+    post:
+      summary: Sponsored DID create request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Create request
+  /v1/onboard/did/create/submit:
+    post:
+      summary: Sponsored DID create submit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Submit response
+  /v1/onboard/issue:
+    post:
+      summary: Sponsored issue credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Issued credential
+  /v1/verify:
+    post:
+      summary: Verify presentation (gateway proxy)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Verification decision

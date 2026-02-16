@@ -1,0 +1,162 @@
+openapi: 3.0.3
+info:
+  title: CUNCTA Issuer Service
+  version: 1.0.0-testnet
+servers:
+  - url: http://localhost:3002
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Metrics text
+  /jwks.json:
+    get:
+      summary: Issuer JWKS
+      responses:
+        "200":
+          description: JWKS
+  /token:
+    post:
+      summary: Token (pre-authorized code)
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Access token
+  /credential:
+    post:
+      summary: Issue credential (OID4VCI-style)
+      security:
+        - accessToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Issued credential
+  /v1/issue:
+    post:
+      summary: Issue credential
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Issued credential
+  /v1/internal/issue:
+    post:
+      summary: Issue credential (service JWT required)
+      security:
+        - serviceJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Issued credential
+  /v1/aura/claim:
+    post:
+      summary: Claim aura credential (service JWT required)
+      security:
+        - serviceJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Aura claim response
+  /v1/privacy/request:
+    post:
+      summary: Start DSR request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Privacy request
+  /v1/privacy/confirm:
+    post:
+      summary: Confirm DSR request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: DSR token
+  /v1/privacy/export:
+    get:
+      summary: Export DSR data
+      security:
+        - dsrToken: []
+      responses:
+        "200":
+          description: Export payload
+  /v1/privacy/restrict:
+    post:
+      summary: Restrict processing
+      security:
+        - dsrToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Restrict response
+  /v1/privacy/erase:
+    post:
+      summary: Erase/unlink (off-chain)
+      security:
+        - dsrToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Erase response
+components:
+  securitySchemes:
+    serviceJwt:
+      type: http
+      scheme: bearer
+    accessToken:
+      type: http
+      scheme: bearer
+    dsrToken:
+      type: http
+      scheme: bearer
