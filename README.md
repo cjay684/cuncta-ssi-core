@@ -55,6 +55,13 @@ See `apps/web-demo` for a minimal frontend that demonstrates how applications in
 It is a demo/reference implementation, not a production wallet. In production posture, the demo uses
 `app-gateway` for sponsor-paid onboarding so clients never hold service secrets.
 
+## Social MVP Contract
+
+Social MVP user-visible behavior and deterministic integration termination conditions are defined in
+`docs/social-mvp-contract.md`.
+
+Core rule: user-visible outcomes are the correctness contract; internal DB status flags are implementation details.
+
 ## OpenAPI docs (baseline)
 
 Minimal OpenAPI stubs live in `docs/openapi/`:

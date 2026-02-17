@@ -44,12 +44,14 @@ const envSchema = z.object({
   HEDERA_DID_TOPIC_ID: z.string().optional(),
   DID_SERVICE_BASE_URL: z.string().url(),
   ISSUER_SERVICE_BASE_URL: z.string().url(),
+  SOCIAL_SERVICE_BASE_URL: z.string().url().optional(),
   VERIFIER_SERVICE_BASE_URL: z.string().url().optional(),
   POLICY_SERVICE_BASE_URL: z.string().url().optional(),
   SERVICE_JWT_SECRET: z.string().min(32),
   SERVICE_JWT_SECRET_DID: z.string().min(32).optional(),
   SERVICE_JWT_SECRET_ISSUER: z.string().min(32).optional(),
   SERVICE_JWT_SECRET_VERIFIER: z.string().min(32).optional(),
+  SERVICE_JWT_SECRET_SOCIAL: z.string().min(32).optional(),
   ALLOW_LEGACY_SERVICE_JWT_SECRET: z
     .preprocess((value) => value === "true", z.boolean())
     .default(false),
@@ -61,6 +63,7 @@ const envSchema = z.object({
   SERVICE_JWT_AUDIENCE_DID: z.string().default("cuncta.service.did"),
   SERVICE_JWT_AUDIENCE_ISSUER: z.string().default("cuncta.service.issuer"),
   SERVICE_JWT_AUDIENCE_VERIFIER: z.string().default("cuncta.service.verifier"),
+  SERVICE_JWT_AUDIENCE_SOCIAL: z.string().default("cuncta.service.social"),
   SERVICE_JWT_TTL_SECONDS: z.preprocess(toNumber(120), z.number().int().min(30).max(3600)),
   GATEWAY_VERIFY_DEBUG_REASONS: z
     .preprocess((value) => value === "true", z.boolean())
@@ -161,6 +164,9 @@ if (parsed.NODE_ENV === "production" && parsed.ENFORCE_HTTPS_INTERNAL) {
   if (parsed.POLICY_SERVICE_BASE_URL) {
     requiredInternalUrls.push(["POLICY_SERVICE_BASE_URL", parsed.POLICY_SERVICE_BASE_URL]);
   }
+  if (parsed.SOCIAL_SERVICE_BASE_URL) {
+    requiredInternalUrls.push(["SOCIAL_SERVICE_BASE_URL", parsed.SOCIAL_SERVICE_BASE_URL]);
+  }
   for (const [name, value] of requiredInternalUrls) {
     if (new URL(value).protocol !== "https:") {
       throw new Error(`internal_url_https_required:${name}`);
@@ -172,7 +178,8 @@ const serviceSecrets = [
   { name: "SERVICE_JWT_SECRET", value: parsed.SERVICE_JWT_SECRET },
   { name: "SERVICE_JWT_SECRET_DID", value: parsed.SERVICE_JWT_SECRET_DID },
   { name: "SERVICE_JWT_SECRET_ISSUER", value: parsed.SERVICE_JWT_SECRET_ISSUER },
-  { name: "SERVICE_JWT_SECRET_VERIFIER", value: parsed.SERVICE_JWT_SECRET_VERIFIER }
+  { name: "SERVICE_JWT_SECRET_VERIFIER", value: parsed.SERVICE_JWT_SECRET_VERIFIER },
+  { name: "SERVICE_JWT_SECRET_SOCIAL", value: parsed.SERVICE_JWT_SECRET_SOCIAL }
 ];
 if (strictSecrets) {
   for (const secret of serviceSecrets) {

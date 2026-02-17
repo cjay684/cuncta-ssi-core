@@ -24,12 +24,77 @@ type RequirementsResponse = {
   action: string;
   requirements: Array<{
     vct: string;
+    label?: string;
     disclosures: string[];
     predicates?: Array<{ path: string; op: string; value?: unknown }>;
   }>;
   obligations?: Array<{ type: string }>;
   binding?: { mode: string; require: boolean };
   challenge: { nonce: string; audience: string; expires_at: string };
+};
+
+type SpaceDirectoryEntry = {
+  space_id: string;
+  slug: string;
+  name: string;
+  description: string;
+  member_count: number;
+  posting_requirement_summary: string;
+};
+
+type SpaceDetailResponse = {
+  space: {
+    space_id: string;
+    slug: string;
+    name: string;
+    description: string;
+    member_count: number;
+  };
+  policy_pack: {
+    policy_pack_id: string;
+    display_name: string;
+    visibility: string;
+  };
+  requirements_summary: {
+    join: Array<{ vct: string; label: string }>;
+    post: Array<{ vct: string; label: string }>;
+    moderate: Array<{ vct: string; label: string }>;
+  };
+};
+
+type SpaceRulesPreview = {
+  join_requirements: Array<{ vct: string; label: string }>;
+  post_requirements: Array<{ vct: string; label: string }>;
+  moderation_requirements: Array<{ vct: string; label: string }>;
+  aura_thresholds?: { join?: string[]; post?: string[]; moderate?: string[] };
+  governance?: {
+    pack?: { policy_pack_id?: string; display_name?: string; visibility?: string };
+    policy_versions?: {
+      join?: { policy_id?: string | null; version?: number | null };
+      post?: { policy_id?: string | null; version?: number | null };
+      moderate?: { policy_id?: string | null; version?: number | null };
+    };
+    trust_floor?: { join?: string; post?: string; moderate?: string };
+    pinning?: { join?: boolean; post?: boolean; moderate?: boolean };
+  };
+};
+
+type SpaceGovernanceResponse = {
+  policy_pack?: { policy_pack_id?: string; display_name?: string; visibility?: string };
+  policy_versions?: {
+    join?: { policy_id?: string | null; version?: number | null };
+    post?: { policy_id?: string | null; version?: number | null };
+    moderate?: { policy_id?: string | null; version?: number | null };
+  };
+  trust_floor?: { join?: string; post?: string; moderate?: string };
+  pinning?: { join?: boolean; post?: boolean; moderate?: boolean };
+};
+
+type FeedMode = "signal" | "flow";
+type FlowTrustLens = "verified_only" | "trusted_creator" | "space_members";
+type PostExplainResponse = {
+  reasons: string[];
+  trustStampSummary?: { tier?: string; capability?: string; domain?: string };
 };
 
 type CatalogEntry = {
@@ -188,7 +253,7 @@ const parseOnboardingStrategyList = (value?: string) => {
   return value
     .split(",")
     .map((entry) => entry.trim())
-    .filter((entry): entry is OnboardingStrategy => entry === "sponsored" || entry === "user_pays");
+    .filter((entry): entry is OnboardingStrategy => entry === "user_pays");
 };
 
 const allowedOnboardingStrategies = parseOnboardingStrategyList(
@@ -196,8 +261,7 @@ const allowedOnboardingStrategies = parseOnboardingStrategyList(
 );
 const hederaNetwork = import.meta.env.VITE_HEDERA_NETWORK ?? "testnet";
 const isTestnet = hederaNetwork === "testnet";
-const defaultOnboardingStrategy: OnboardingStrategy =
-  import.meta.env.VITE_ONBOARDING_STRATEGY_DEFAULT === "user_pays" ? "user_pays" : "sponsored";
+const defaultOnboardingStrategy: OnboardingStrategy = "user_pays";
 const initialOnboardingStrategy =
   allowedOnboardingStrategies.length > 0 &&
   !allowedOnboardingStrategies.includes(defaultOnboardingStrategy)
@@ -205,6 +269,27 @@ const initialOnboardingStrategy =
     : defaultOnboardingStrategy;
 
 const DEVICE_ID_STORAGE_KEY = "cuncta_device_id";
+const socialCapabilityDescriptions: Record<string, string> = {
+  "cuncta.social.account_active": "Base capability proving an active social account.",
+  "cuncta.social.can_post": "Write capability used to create social posts.",
+  "cuncta.social.can_comment": "Write capability used to create social replies.",
+  "cuncta.social.trusted_creator": "Higher-trust creator capability from Aura progression.",
+  "cuncta.social.space.member": "Space membership capability for joining space conversations.",
+  "cuncta.social.space.poster": "Space posting capability for creating posts in a space.",
+  "cuncta.social.space.moderator": "Moderation capability for handling reports and cases.",
+  "cuncta.social.space.steward": "Steward capability with elevated social trust in a space.",
+  "cuncta.sync.scroll_host": "Capability for hosting synchronized scroll groups in a space.",
+  "cuncta.sync.listen_host": "Capability for hosting synchronized listen groups in a space.",
+  "cuncta.sync.session_participant":
+    "Optional capability for participating in synchronized sessions."
+};
+
+const auraTierDescriptions: Record<string, string> = {
+  none: "No social Aura capability claimed yet.",
+  account_active: "Base social account capability is present.",
+  can_post: "Posting capability is available.",
+  trusted_creator: "Trusted creator tier is available."
+};
 
 const getDeviceId = () => {
   const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
@@ -259,6 +344,8 @@ export default function App() {
   const [onboardingStrategy, setOnboardingStrategy] = useState<OnboardingStrategy>(
     () => initialOnboardingStrategy
   );
+  const [onboardingMethodUsed, setOnboardingMethodUsed] = useState<string>("sdk_key_entry");
+  const [testnetDemoOnlyConfirmed, setTestnetDemoOnlyConfirmed] = useState(false);
   const [payerAccountId, setPayerAccountId] = useState("");
   const [payerPrivateKey, setPayerPrivateKey] = useState("");
   const [useOperatorFallback, setUseOperatorFallback] = useState(false);
@@ -266,6 +353,41 @@ export default function App() {
   const [auraExplain, setAuraExplain] = useState<string>("");
   const [dsrToken, setDsrToken] = useState<string>("");
   const [dsrExport, setDsrExport] = useState<string>("");
+  const [socialRequirements, setSocialRequirements] = useState<RequirementsResponse | null>(null);
+  const [socialAction, setSocialAction] = useState<string>("social.post.create");
+  const [socialDecision, setSocialDecision] = useState<string>("");
+  const [socialReason, setSocialReason] = useState<string>("");
+  const [socialHandle, setSocialHandle] = useState<string>("cuncta-demo");
+  const [socialPostText, setSocialPostText] = useState<string>("Hello from CUNCTA Social.");
+  const [socialReplyText, setSocialReplyText] = useState<string>("Thanks for sharing.");
+  const [socialFollowDid, setSocialFollowDid] = useState<string>("");
+  const [socialReportReason, setSocialReportReason] = useState<string>("abuse");
+  const [socialFeed, setSocialFeed] = useState<Array<Record<string, unknown>>>([]);
+  const [feedMode, setFeedMode] = useState<FeedMode>("signal");
+  const [flowTrustLens, setFlowTrustLens] = useState<FlowTrustLens>("trusted_creator");
+  const [flowSafetyStrict, setFlowSafetyStrict] = useState(false);
+  const [postExplain, setPostExplain] = useState<PostExplainResponse | null>(null);
+  const [postExplainId, setPostExplainId] = useState<string>("");
+  const [spaceFeed, setSpaceFeed] = useState<Array<Record<string, unknown>>>([]);
+  const [spaceFeedMode, setSpaceFeedMode] = useState<"signal" | "flow">("signal");
+  const [spaceTrustLens, setSpaceTrustLens] = useState<FlowTrustLens>("trusted_creator");
+  const [spaceSafetyStrict, setSpaceSafetyStrict] = useState(false);
+  const [spaceGovernance, setSpaceGovernance] = useState<SpaceGovernanceResponse | null>(null);
+  const [spaceModerationAudit, setSpaceModerationAudit] = useState<Array<Record<string, unknown>>>(
+    []
+  );
+  const [spaceAnalytics, setSpaceAnalytics] = useState<string>("");
+  const [socialFunnel, setSocialFunnel] = useState<string>("");
+  const [spaces, setSpaces] = useState<SpaceDirectoryEntry[]>([]);
+  const [spaceSearch, setSpaceSearch] = useState<string>("");
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string>("");
+  const [spaceDetail, setSpaceDetail] = useState<SpaceDetailResponse | null>(null);
+  const [spaceRules, setSpaceRules] = useState<SpaceRulesPreview | null>(null);
+  const [spaceComposeText, setSpaceComposeText] = useState<string>("A new trust-aware post.");
+  const [moderationCases, setModerationCases] = useState<
+    Array<{ case_id: string; report_id: string; status: "OPEN" | "ACK" | "RESOLVED" }>
+  >([]);
+  const [spaceTrustHint, setSpaceTrustHint] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -273,16 +395,66 @@ export default function App() {
   const [importVct, setImportVct] = useState("");
   const [showChecklist, setShowChecklist] = useState(true);
   const [checklist, setChecklist] = useState<boolean[]>(() => loadChecklist());
+  const [theme, setTheme] = useState<"day" | "night">("day");
+  const [showCommandOrb, setShowCommandOrb] = useState(false);
+  const [showCapabilityExplain, setShowCapabilityExplain] = useState<string>("");
+  const [entSpaceId, setEntSpaceId] = useState<string>("");
+  const [entEmojiPackId, setEntEmojiPackId] = useState<string>("");
+  const [entSoundpackId, setEntSoundpackId] = useState<string>("");
+  const [entScrollSessionId, setEntScrollSessionId] = useState<string>("");
+  const [entListenSessionId, setEntListenSessionId] = useState<string>("");
+  const [entScrollPermissionToken, setEntScrollPermissionToken] = useState<string>("");
+  const [entListenPermissionToken, setEntListenPermissionToken] = useState<string>("");
+  const [followHostScroll, setFollowHostScroll] = useState(true);
+  const [syncHint, setSyncHint] = useState("");
+  const [listenState, setListenState] = useState<string>("");
+  const [presenceState, setPresenceState] = useState<string>("");
 
   const holderJwk = useMemo(() => {
     if (!identity) return null;
     return buildHolderJwk(identity.privateKey, identity.publicKey);
   }, [identity]);
 
-  const allowSponsored =
-    allowedOnboardingStrategies.length === 0 || allowedOnboardingStrategies.includes("sponsored");
+  const allowSponsored = false;
   const allowUserPays =
     allowedOnboardingStrategies.length === 0 || allowedOnboardingStrategies.includes("user_pays");
+  const currentSocialRequirement = socialRequirements?.requirements[0];
+  const currentAuraTier = useMemo(() => {
+    if (credentials.some((cred) => cred.vct === "cuncta.social.trusted_creator"))
+      return "trusted_creator";
+    if (credentials.some((cred) => cred.vct === "cuncta.social.can_post")) return "can_post";
+    if (credentials.some((cred) => cred.vct === "cuncta.social.account_active"))
+      return "account_active";
+    return "none";
+  }, [credentials]);
+  const hasCapability = (vct: string) => credentials.some((cred) => cred.vct === vct);
+  const spaceRoleBadges = useMemo(() => {
+    const roles: string[] = [];
+    if (hasCapability("cuncta.social.space.member")) roles.push("Member");
+    if (hasCapability("cuncta.social.space.poster")) roles.push("Poster");
+    if (hasCapability("cuncta.social.space.moderator")) roles.push("Moderator");
+    if (hasCapability("cuncta.social.trusted_creator")) roles.push("Trusted Creator");
+    if (hasCapability("cuncta.social.space.steward")) roles.push("Steward");
+    return roles;
+  }, [credentials]);
+  const canModerateInSpace =
+    hasCapability("cuncta.social.space.moderator") || hasCapability("cuncta.social.space.steward");
+  const auraSignalSummary = useMemo(() => {
+    if (!auraExplain) return "Load aura explain to see contributing signals.";
+    try {
+      const parsed = JSON.parse(auraExplain) as {
+        contributingSignals?: Array<{ signal?: string; weight?: number }>;
+      };
+      const signals = parsed.contributingSignals ?? [];
+      if (signals.length === 0) return "No contributing signals reported yet.";
+      return signals
+        .slice(0, 3)
+        .map((entry) => `${entry.signal ?? "signal"} (${String(entry.weight ?? 0)})`)
+        .join(", ");
+    } catch {
+      return "Contributing signals summary unavailable.";
+    }
+  }, [auraExplain]);
 
   const createIdentity = async () => {
     setError("");
@@ -345,6 +517,34 @@ export default function App() {
         const submitPayload = await submitResponse.json();
         did = submitPayload.did;
       } else {
+        setOnboardingMethodUsed("sdk_key_entry");
+        const hashPackApi = (window as unknown as Record<string, unknown>).hashpack as
+          | {
+              connect?: (args?: { network?: string }) => Promise<unknown>;
+              sign?: (...args: unknown[]) => Promise<unknown>;
+            }
+          | undefined;
+        if (hashPackApi?.connect) {
+          setStatus("Attempting HashPack (Testnet)...");
+          try {
+            await hashPackApi.connect({ network: "testnet" });
+            if (typeof hashPackApi.sign === "function") {
+              setOnboardingMethodUsed("hashpack_direct");
+              throw new Error(
+                "HashPack detected, but direct DID signing flow is not enabled in this build. Falling back."
+              );
+            }
+          } catch {
+            setOnboardingMethodUsed("walletconnect_hashpack");
+          }
+        }
+
+        if (!isTestnet || !testnetDemoOnlyConfirmed) {
+          throw new Error(
+            "SDK local key entry is demo-only. Confirm TESTNET DEMO ONLY to continue on testnet."
+          );
+        }
+
         const payerId = payerAccountId.trim();
         const payerKey = payerPrivateKey.trim();
         let effectivePayerId = payerId;
@@ -367,6 +567,7 @@ export default function App() {
         if (!effectivePayerId || !effectivePayerKey) {
           throw new Error("Payer account id + private key required for self-funded onboarding.");
         }
+        setOnboardingMethodUsed("sdk_key_entry");
         setStatus("Submitting DID to Hedera (self-funded)...");
         const providers = {
           clientOptions: {
@@ -449,6 +650,40 @@ export default function App() {
     }
   };
 
+  const requestSocialCredential = async () => {
+    if (!identity) return;
+    setError("");
+    setStatus("Requesting social account credential...");
+    try {
+      const response = await fetch(`${services.appGateway}/v1/onboard/issue`, {
+        method: "POST",
+        headers: withDeviceHeaders({ "content-type": "application/json" }),
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          vct: "cuncta.social.account_active",
+          claims: {
+            account_active: true,
+            domain: "social",
+            as_of: new Date().toISOString()
+          }
+        })
+      });
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = await response.json();
+      setCredentials((prev) => [
+        ...prev.filter((cred) => cred.vct !== "cuncta.social.account_active"),
+        { vct: "cuncta.social.account_active", sdJwt: payload.credential }
+      ]);
+      setStatus("Social account proof stored in browser session.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Social proof request failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
   const fetchRequirements = async (action: string) => {
     setError("");
     setStatus("Fetching requirements...");
@@ -526,6 +761,724 @@ export default function App() {
       setVerificationReasons(payload.reasons ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const fetchSocialRequirements = async (action: string, spaceId?: string) => {
+    setError("");
+    setStatus("Loading social policy requirements...");
+    try {
+      const url = new URL("/v1/social/requirements", services.appGateway);
+      url.searchParams.set("action", action);
+      if (spaceId) {
+        url.searchParams.set("space_id", spaceId);
+      }
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = (await response.json()) as RequirementsResponse;
+      setSocialRequirements(payload);
+      setSocialAction(action);
+      return payload;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch social requirements");
+      return null;
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const buildSocialPresentationPayload = async (
+    payload: RequirementsResponse
+  ): Promise<{ presentation: string; nonce: string; audience: string } | null> => {
+    if (!holderJwk) return null;
+    const requirement = payload.requirements[0];
+    if (!requirement) {
+      setError("No social requirement found.");
+      return null;
+    }
+    const credential = credentials.find((cred) => cred.vct === requirement.vct);
+    if (!credential) {
+      setError(`Missing required proof: ${requirement.vct}`);
+      return null;
+    }
+    const sdJwtPresentation = presentSdJwt(credential.sdJwt, requirement.disclosures);
+    const sdHash = await sha256Base64Url(sdJwtPresentation);
+    const kbJwt = await buildKbJwt({
+      nonce: payload.challenge.nonce,
+      audience: payload.challenge.audience,
+      holderJwk,
+      sdHash,
+      challengeExpiresAt: payload.challenge.expires_at
+    });
+    const presentation = `${sdJwtPresentation}${kbJwt}`;
+    return {
+      presentation,
+      nonce: payload.challenge.nonce,
+      audience: payload.challenge.audience
+    };
+  };
+
+  const createSocialProfile = async () => {
+    if (!identity) return;
+    setError("");
+    setStatus("Checking policy and creating social profile...");
+    try {
+      const req = (await fetchSocialRequirements("social.profile.create")) ?? socialRequirements;
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/profile/create`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          handle: socialHandle,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        reason?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.reason ??
+          payload.message ??
+          (response.ok ? "Profile created by policy allow." : "Profile denied by policy.")
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Create profile failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const runEntertainmentAction = async (
+    actionId: string,
+    path: string,
+    body: Record<string, unknown>,
+    options: { spaceId?: string; method?: "POST" | "GET" } = {}
+  ) => {
+    if (!identity) return null;
+    const req = await fetchSocialRequirements(actionId, options.spaceId);
+    if (!req) return null;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return null;
+    const response = await fetch(`${services.appGateway}${path}`, {
+      method: options.method ?? "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subjectDid: identity.did, ...body, ...proof })
+    });
+    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    setSocialDecision(String(payload.decision ?? (response.ok ? "ALLOW" : "DENY")));
+    setSocialReason(String(payload.message ?? ""));
+    if (!response.ok) {
+      throw new Error(String(payload.message ?? "Action denied"));
+    }
+    return payload;
+  };
+
+  const openSyncStream = (
+    sessionId: string,
+    permissionToken: string,
+    onEvent: (event: Record<string, unknown>) => void
+  ) => {
+    const base = new URL(services.appGateway);
+    const protocol = base.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${base.host}/v1/social/sync/session/${encodeURIComponent(sessionId)}/stream?permission_token=${encodeURIComponent(permissionToken)}`;
+    const socket = new WebSocket(wsUrl);
+    socket.onmessage = (message) => {
+      try {
+        const parsed = JSON.parse(String(message.data)) as Record<string, unknown>;
+        onEvent(parsed);
+      } catch {
+        // ignore non-json messages
+      }
+    };
+    socket.onerror = () => {
+      setSyncHint(
+        "Sync stream unavailable via gateway. In dev, connect directly to social-service stream endpoint."
+      );
+    };
+    return socket;
+  };
+
+  const subscribeScrollStream = (sessionId: string, permissionToken: string) => {
+    const socket = openSyncStream(sessionId, permissionToken, (event) => {
+      if (String(event.type) !== "sync_event") return;
+      const payload = (event.event as Record<string, unknown> | undefined)?.payload_json as
+        | Record<string, unknown>
+        | undefined;
+      const y = Number(payload?.scrollY ?? 0);
+      if (followHostScroll) {
+        window.scrollTo({ top: Number.isFinite(y) ? y : 0, behavior: "smooth" });
+        setSyncHint("Following host scroll in real time.");
+      } else {
+        setSyncHint("Sync available - enable follow host to jump to latest position.");
+      }
+    });
+    return socket;
+  };
+
+  const subscribeListenStream = (sessionId: string, permissionToken: string) => {
+    return openSyncStream(sessionId, permissionToken, (event) => {
+      if (String(event.type) !== "sync_event") return;
+      const payload = (event.event as Record<string, unknown> | undefined)?.payload_json;
+      setListenState(JSON.stringify(payload ?? {}, null, 2));
+    });
+  };
+
+  const explainCapability = async (actionId: string, spaceId?: string) => {
+    const req = await fetchSocialRequirements(actionId, spaceId);
+    const requirement = req?.requirements?.[0];
+    if (!requirement) {
+      setShowCapabilityExplain("No requirement metadata available.");
+      return;
+    }
+    const has = hasCapability(requirement.vct);
+    setShowCapabilityExplain(
+      `Requires ${requirement.label ?? requirement.vct}. You ${has ? "have" : "do not have"} it. Aura tier: ${currentAuraTier}.`
+    );
+  };
+
+  const loadPresenceState = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/presence/state?spaceId=${encodeURIComponent(spaceId)}`
+    );
+    if (!response.ok) throw new Error(await response.text());
+    setPresenceState(JSON.stringify(await response.json(), null, 2));
+  };
+
+  const createSocialPost = async () => {
+    if (!identity) return;
+    setError("");
+    setStatus("Checking policy and creating social post...");
+    try {
+      const req = (await fetchSocialRequirements("social.post.create")) ?? socialRequirements;
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/post`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          content: socialPostText,
+          visibility: "public",
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        reason?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.reason ??
+          payload.message ??
+          (response.ok ? "Post created by policy allow." : "Post denied by policy.")
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Create post failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const createSocialReply = async () => {
+    if (!identity) return;
+    const firstPost = socialFeed[0];
+    const postId = String(firstPost?.post_id ?? "");
+    if (!postId) {
+      setError("Load feed first to pick a post for reply.");
+      return;
+    }
+    setError("");
+    setStatus("Checking policy and creating social reply...");
+    try {
+      const req = (await fetchSocialRequirements("social.reply.create")) ?? socialRequirements;
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/reply`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          postId,
+          content: socialReplyText,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.message ??
+          (response.ok ? "Reply created by policy allow." : "Reply denied by policy.")
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Create reply failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const createSocialFollow = async () => {
+    if (!identity) return;
+    if (!socialFollowDid.trim()) {
+      setError("Enter a DID to follow.");
+      return;
+    }
+    setError("");
+    setStatus("Checking policy and creating follow...");
+    try {
+      const req = (await fetchSocialRequirements("social.follow.create")) ?? socialRequirements;
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/follow`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          followeeDid: socialFollowDid,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.message ?? (response.ok ? "Follow saved." : "Follow denied by policy.")
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Follow failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const createSocialReport = async () => {
+    if (!identity) return;
+    const firstPost = socialFeed[0];
+    const targetPostId = String(firstPost?.post_id ?? "");
+    if (!targetPostId) {
+      setError("Load feed first to report a post.");
+      return;
+    }
+    setError("");
+    setStatus("Submitting safety report...");
+    try {
+      const req = (await fetchSocialRequirements("social.report.create")) ?? socialRequirements;
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/report`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          targetPostId,
+          reasonCode: socialReportReason,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.message ?? (response.ok ? "Report captured." : "Report denied by policy.")
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Report failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadSocialFeed = async () => {
+    setError("");
+    setStatus("Loading social feed...");
+    try {
+      const query = identity?.did ? `?viewerDid=${encodeURIComponent(identity.did)}` : "";
+      const response = await fetch(`${services.appGateway}/v1/social/feed${query}`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = (await response.json()) as { posts?: Array<Record<string, unknown>> };
+      setSocialFeed(payload.posts ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Feed load failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadFlowFeed = async () => {
+    setError("");
+    setStatus("Loading flow feed...");
+    try {
+      const url = new URL("/v1/social/feed/flow", services.appGateway);
+      if (identity?.did) {
+        url.searchParams.set("viewerDid", identity.did);
+      }
+      url.searchParams.set("trust", flowTrustLens);
+      if (flowSafetyStrict) {
+        url.searchParams.set("safety", "strict");
+      }
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = (await response.json()) as { posts?: Array<Record<string, unknown>> };
+      setSocialFeed(payload.posts ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Flow feed load failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadActiveFeed = async () => {
+    if (feedMode === "flow") {
+      await loadFlowFeed();
+      return;
+    }
+    await loadSocialFeed();
+  };
+
+  const explainPost = async (postId: string) => {
+    setError("");
+    setStatus("Loading post explanation...");
+    try {
+      const url = new URL(
+        `/v1/social/post/${encodeURIComponent(postId)}/explain`,
+        services.appGateway
+      );
+      if (identity?.did) {
+        url.searchParams.set("viewerDid", identity.did);
+      }
+      url.searchParams.set("feedMode", feedMode);
+      if (feedMode === "flow") {
+        url.searchParams.set("trust", flowTrustLens);
+        if (flowSafetyStrict) {
+          url.searchParams.set("safety", "strict");
+        }
+      }
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      setPostExplain((await response.json()) as PostExplainResponse);
+      setPostExplainId(postId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Explain request failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadSocialFunnel = async () => {
+    setError("");
+    setStatus("Loading trust funnel metrics...");
+    try {
+      const response = await fetch(`${services.appGateway}/v1/social/funnel`);
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = (await response.json()) as Record<string, unknown>;
+      setSocialFunnel(JSON.stringify(payload, null, 2));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Funnel load failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadSpaces = async () => {
+    setError("");
+    setStatus("Loading spaces directory...");
+    try {
+      const url = new URL("/v1/social/spaces", services.appGateway);
+      if (spaceSearch.trim()) {
+        url.searchParams.set("search", spaceSearch.trim());
+      }
+      url.searchParams.set("limit", "25");
+      const response = await fetch(url.toString());
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      const payload = (await response.json()) as { spaces?: SpaceDirectoryEntry[] };
+      setSpaces(payload.spaces ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load spaces");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadSpaceFeed = async (spaceId: string) => {
+    const query = identity?.did ? `&viewerDid=${encodeURIComponent(identity.did)}` : "";
+    const response = await fetch(
+      `${services.appGateway}/v1/social/space/feed?spaceId=${encodeURIComponent(spaceId)}${query}`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { posts?: Array<Record<string, unknown>> };
+    setSpaceFeed(payload.posts ?? []);
+  };
+
+  const loadSpaceFlow = async (spaceId: string) => {
+    const url = new URL("/v1/social/space/flow", services.appGateway);
+    url.searchParams.set("spaceId", spaceId);
+    url.searchParams.set("trust", spaceTrustLens);
+    if (identity?.did) {
+      url.searchParams.set("viewerDid", identity.did);
+    }
+    if (spaceSafetyStrict) {
+      url.searchParams.set("safety", "strict");
+    }
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { posts?: Array<Record<string, unknown>> };
+    setSpaceFeed(payload.posts ?? []);
+  };
+
+  const loadActiveSpaceFeed = async (spaceId: string) => {
+    if (spaceFeedMode === "flow") {
+      await loadSpaceFlow(spaceId);
+      return;
+    }
+    await loadSpaceFeed(spaceId);
+  };
+
+  const loadSpaceGovernance = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/governance`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    setSpaceGovernance((await response.json()) as SpaceGovernanceResponse);
+  };
+
+  const openSpace = async (spaceId: string) => {
+    setError("");
+    setStatus("Opening space...");
+    try {
+      const [detailResponse, rulesResponse] = await Promise.all([
+        fetch(`${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}`),
+        fetch(`${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/rules`)
+      ]);
+      if (!detailResponse.ok) {
+        throw new Error(await detailResponse.text());
+      }
+      if (!rulesResponse.ok) {
+        throw new Error(await rulesResponse.text());
+      }
+      setSelectedSpaceId(spaceId);
+      setSpaceDetail((await detailResponse.json()) as SpaceDetailResponse);
+      setSpaceRules((await rulesResponse.json()) as SpaceRulesPreview);
+      await loadActiveSpaceFeed(spaceId);
+      await loadSpaceGovernance(spaceId);
+      if (canModerateInSpace && identity) {
+        await loadModerationCases(spaceId);
+        await loadSpaceModerationAudit(spaceId);
+      } else {
+        setModerationCases([]);
+        setSpaceModerationAudit([]);
+      }
+      await loadSpaceAnalytics(spaceId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open space");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const joinSpace = async (spaceId: string) => {
+    if (!identity) return;
+    setError("");
+    setStatus("Joining space...");
+    try {
+      const req = await fetchSocialRequirements("social.space.join", spaceId);
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/space/join`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          spaceId,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        message?: string;
+      };
+      setSocialDecision(payload.decision ?? (response.ok ? "ALLOW" : "DENY"));
+      setSocialReason(
+        payload.message ?? (response.ok ? "Joined the space." : "Join denied by policy.")
+      );
+      if (response.ok) {
+        await openSpace(spaceId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Join failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const createSpacePost = async (spaceId: string) => {
+    if (!identity) return;
+    setError("");
+    setSpaceTrustHint("");
+    setStatus("Posting inside space...");
+    try {
+      const req = await fetchSocialRequirements("social.space.post.create", spaceId);
+      if (!req) return;
+      const proof = await buildSocialPresentationPayload(req);
+      if (!proof) return;
+      const response = await fetch(`${services.appGateway}/v1/social/space/post`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          spaceId,
+          content: spaceComposeText,
+          ...proof
+        })
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        decision?: string;
+        message?: string;
+      };
+      const decision = payload.decision ?? (response.ok ? "ALLOW" : "DENY");
+      setSocialDecision(decision);
+      setSocialReason(
+        payload.message ??
+          (response.ok ? "Space post published." : "Denied. Capability requirement not met.")
+      );
+      if (!response.ok) {
+        const requirementLabel =
+          req.requirements[0]?.label ?? req.requirements[0]?.vct ?? "required capability";
+        setSpaceTrustHint(
+          `Missing requirement: ${requirementLabel}. Aura tier: ${currentAuraTier}. Use the Trust Panel for explainers.`
+        );
+      } else {
+        await loadSpaceFeed(spaceId);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Space post failed");
+    } finally {
+      setStatus("");
+    }
+  };
+
+  const loadModerationCases = async (spaceId: string) => {
+    if (!identity || !canModerateInSpace) return;
+    const requirements = await fetchSocialRequirements("social.space.moderate", spaceId);
+    if (!requirements) return;
+    const proof = await buildSocialPresentationPayload(requirements);
+    if (!proof) return;
+    const url = new URL(
+      `/v1/social/spaces/${encodeURIComponent(spaceId)}/moderation/cases`,
+      services.appGateway
+    );
+    url.searchParams.set("subjectDid", identity.did);
+    url.searchParams.set("presentation", proof.presentation);
+    url.searchParams.set("nonce", proof.nonce);
+    url.searchParams.set("audience", proof.audience);
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as {
+      cases?: Array<{ case_id: string; report_id: string; status: "OPEN" | "ACK" | "RESOLVED" }>;
+    };
+    setModerationCases(payload.cases ?? []);
+  };
+
+  const loadSpaceModerationAudit = async (spaceId: string) => {
+    if (!identity || !canModerateInSpace) return;
+    const requirements = await fetchSocialRequirements("social.space.moderate", spaceId);
+    if (!requirements) return;
+    const proof = await buildSocialPresentationPayload(requirements);
+    if (!proof) return;
+    const url = new URL(
+      `/v1/social/spaces/${encodeURIComponent(spaceId)}/moderation/audit`,
+      services.appGateway
+    );
+    url.searchParams.set("subjectDid", identity.did);
+    url.searchParams.set("presentation", proof.presentation);
+    url.searchParams.set("nonce", proof.nonce);
+    url.searchParams.set("audience", proof.audience);
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { actions?: Array<Record<string, unknown>> };
+    setSpaceModerationAudit(payload.actions ?? []);
+  };
+
+  const loadSpaceAnalytics = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/analytics`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    setSpaceAnalytics(JSON.stringify(await response.json(), null, 2));
+  };
+
+  const resolveModerationCase = async (spaceId: string, caseId: string) => {
+    if (!identity || !canModerateInSpace) return;
+    setError("");
+    setStatus("Resolving moderation case...");
+    try {
+      const requirements = await fetchSocialRequirements("social.space.moderate", spaceId);
+      if (!requirements) return;
+      const proof = await buildSocialPresentationPayload(requirements);
+      if (!proof) return;
+      const response = await fetch(
+        `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/moderation/cases/${encodeURIComponent(caseId)}/resolve`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            subjectDid: identity.did,
+            presentation: proof.presentation,
+            nonce: proof.nonce,
+            audience: proof.audience,
+            anchor: true
+          })
+        }
+      );
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      await loadModerationCases(spaceId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Resolve failed");
     } finally {
       setStatus("");
     }
@@ -783,7 +1736,7 @@ export default function App() {
   };
 
   return (
-    <div className="page">
+    <div className={`page ${theme === "night" ? "theme-night" : "theme-day"}`}>
       <div className="banner">
         <div className="row">
           <strong>Environment</strong>
@@ -793,8 +1746,7 @@ export default function App() {
           </span>
         </div>
         <div className="muted">
-          Demo assumptions: DEV_MODE=true, onboarding strategy selectable (sponsored or
-          self-funded).
+          Demo assumptions: DEV_MODE=true, Hedera Testnet only, self-funded onboarding only.
         </div>
         <div className="stack">
           <div className="muted">Gateway: {services.appGateway}</div>
@@ -804,6 +1756,12 @@ export default function App() {
           <div className="muted">Policy: {services.policyService}</div>
         </div>
         <div className="row">
+          <button
+            className="btn secondary"
+            onClick={() => setTheme((prev) => (prev === "day" ? "night" : "day"))}
+          >
+            {theme === "day" ? "Switch to night theme" : "Switch to day theme"}
+          </button>
           <button className="btn secondary" onClick={applyLocalPreset}>
             Load demo endpoints
           </button>
@@ -907,7 +1865,7 @@ export default function App() {
                 onChange={() => setOnboardingStrategy("sponsored")}
                 disabled={!allowSponsored}
               />
-              <span>Sponsored: no wallet required</span>
+              <span>Sponsored onboarding disabled by policy</span>
             </label>
             <label className="row checkbox">
               <input
@@ -927,43 +1885,56 @@ export default function App() {
           {onboardingStrategy === "user_pays" && (
             <div className="card stack">
               <div className="muted">
-                Demo warning: never paste real mainnet keys here. Use a wallet connector in
-                production.
+                HashPack-first path is attempted on create. If unavailable, WalletConnect+HashPack
+                is attempted next, then SDK local key entry is used.
               </div>
-              <label className="stack">
-                <span className="muted">Hedera account id (Testnet)</span>
-                <input
-                  value={payerAccountId}
-                  onChange={(event) => setPayerAccountId(event.target.value)}
-                  placeholder="0.0.1234567"
-                />
-              </label>
-              <label className="stack">
-                <span className="muted">Hedera private key (stored in-session only)</span>
-                <input
-                  type="password"
-                  value={payerPrivateKey}
-                  onChange={(event) => setPayerPrivateKey(event.target.value)}
-                  placeholder="302e..."
-                />
-              </label>
-              {isTestnet && !payerAccountId.trim() && !payerPrivateKey.trim() && (
+              {isTestnet ? (
                 <label className="row checkbox">
                   <input
                     type="checkbox"
-                    checked={useOperatorFallback}
-                    onChange={(event) => setUseOperatorFallback(event.target.checked)}
+                    checked={testnetDemoOnlyConfirmed}
+                    onChange={(event) => setTestnetDemoOnlyConfirmed(event.target.checked)}
                   />
-                  <span>Use local testnet operator account for demo</span>
+                  <span>TESTNET DEMO ONLY (required to enable SDK key entry)</span>
                 </label>
+              ) : (
+                <div className="muted">SDK key entry is disabled outside Hedera testnet.</div>
               )}
-              {!isTestnet && (
-                <div className="muted">Testnet-only shortcut disabled on non-testnet networks.</div>
+              {isTestnet && testnetDemoOnlyConfirmed && (
+                <>
+                  <label className="stack">
+                    <span className="muted">Hedera account id (Testnet)</span>
+                    <input
+                      value={payerAccountId}
+                      onChange={(event) => setPayerAccountId(event.target.value)}
+                      placeholder="0.0.1234567"
+                    />
+                  </label>
+                  <label className="stack">
+                    <span className="muted">Hedera private key (stored in-session only)</span>
+                    <input
+                      type="password"
+                      value={payerPrivateKey}
+                      onChange={(event) => setPayerPrivateKey(event.target.value)}
+                      placeholder="302e..."
+                    />
+                  </label>
+                  {!payerAccountId.trim() && !payerPrivateKey.trim() && (
+                    <label className="row checkbox">
+                      <input
+                        type="checkbox"
+                        checked={useOperatorFallback}
+                        onChange={(event) => setUseOperatorFallback(event.target.checked)}
+                      />
+                      <span>Use local testnet operator account for demo</span>
+                    </label>
+                  )}
+                </>
               )}
               <div className="muted">
-                Never use mainnet keys here. Production uses wallet connectors.
+                Testnet only. Never paste mainnet keys. Production uses wallet connectors.
               </div>
-              <div className="muted">Connect wallet later (WalletConnect not wired yet).</div>
+              <div className="muted">Active onboarding method: {onboardingMethodUsed}</div>
             </div>
           )}
         </div>
@@ -992,6 +1963,9 @@ export default function App() {
         <div className="row">
           <button className="btn secondary" onClick={requestDemoCredential} disabled={!identity}>
             Request demo proof
+          </button>
+          <button className="btn secondary" onClick={requestSocialCredential} disabled={!identity}>
+            Request social account proof
           </button>
         </div>
         <div className="stack">
@@ -1050,6 +2024,581 @@ export default function App() {
       </section>
 
       <section className="card stack">
+        <h2>Social demo (policy-gated)</h2>
+        <p className="muted">
+          Every social action is ALLOW/DENY by policy verification. No passwords, DID + proofs only.
+        </p>
+        <div className="row">
+          <button
+            className="btn secondary"
+            onClick={() => fetchSocialRequirements("social.profile.create")}
+            disabled={!identity}
+          >
+            Requirements: create profile
+          </button>
+          <button
+            className="btn secondary"
+            onClick={() => fetchSocialRequirements("social.post.create")}
+            disabled={!identity}
+          >
+            Requirements: post
+          </button>
+          <button
+            className="btn secondary"
+            onClick={() => fetchSocialRequirements("social.reply.create")}
+            disabled={!identity}
+          >
+            Requirements: reply
+          </button>
+        </div>
+        {socialRequirements && (
+          <div className="stack">
+            <div>
+              <strong>Active action:</strong> {socialAction}
+            </div>
+            {socialRequirements.requirements.map((req) => (
+              <div key={`social-${req.vct}`}>
+                <strong>{catalog[req.vct]?.display?.title ?? req.vct}</strong>
+                <div className="muted">
+                  Required details to share: {req.disclosures.join(", ") || "none"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="card stack">
+          <strong>Trust panel</strong>
+          <div>
+            <strong>Required capability:</strong>{" "}
+            {currentSocialRequirement?.label ?? currentSocialRequirement?.vct ?? "Not loaded"}
+          </div>
+          <div className="muted">
+            {currentSocialRequirement
+              ? (socialCapabilityDescriptions[currentSocialRequirement.vct] ??
+                "Capability requirement for this action.")
+              : "Load social requirements to see the current capability contract."}
+          </div>
+          <div>
+            <strong>Aura tier:</strong> {currentAuraTier}
+          </div>
+          <div className="muted">
+            {auraTierDescriptions[currentAuraTier] ?? auraTierDescriptions.none}
+          </div>
+          <div className="row">
+            <button className="btn secondary" onClick={loadAuraExplain} disabled={!dsrToken}>
+              Explain this tier
+            </button>
+            <span className="muted">
+              Aura explain endpoint: <code>/v1/aura/explain</code> (requires DSR token)
+            </span>
+          </div>
+        </div>
+        <label className="stack">
+          <span className="muted">Handle (hashed before storage)</span>
+          <input value={socialHandle} onChange={(event) => setSocialHandle(event.target.value)} />
+        </label>
+        <div className="row">
+          <button className="btn" onClick={createSocialProfile} disabled={!identity}>
+            Create profile
+          </button>
+        </div>
+        <label className="stack">
+          <span className="muted">Post text</span>
+          <textarea
+            rows={3}
+            value={socialPostText}
+            onChange={(event) => setSocialPostText(event.target.value)}
+          />
+        </label>
+        <div className="row">
+          <button className="btn" onClick={createSocialPost} disabled={!identity}>
+            Create post
+          </button>
+          <button className="btn secondary" onClick={createSocialReply} disabled={!identity}>
+            Reply to first post
+          </button>
+          <button className="btn secondary" onClick={loadActiveFeed}>
+            Refresh feed
+          </button>
+          <button className="btn secondary" onClick={loadSocialFunnel}>
+            Trust funnel
+          </button>
+        </div>
+        <div className="card stack">
+          <strong>Discovery mode</strong>
+          <div className="row">
+            <button
+              className={`btn ${feedMode === "signal" ? "" : "secondary"}`}
+              onClick={() => setFeedMode("signal")}
+            >
+              Signal
+            </button>
+            <button
+              className={`btn ${feedMode === "flow" ? "" : "secondary"}`}
+              onClick={() => setFeedMode("flow")}
+            >
+              Flow
+            </button>
+          </div>
+          {feedMode === "flow" && (
+            <div className="stack">
+              <label className="stack">
+                <span className="muted">Trust lens</span>
+                <select
+                  value={flowTrustLens}
+                  onChange={(event) => setFlowTrustLens(event.target.value as FlowTrustLens)}
+                >
+                  <option value="trusted_creator">Trusted Creator</option>
+                  <option value="verified_only">Verified Only</option>
+                  <option value="space_members">Space Members</option>
+                </select>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={flowSafetyStrict}
+                  onChange={(event) => setFlowSafetyStrict(event.target.checked)}
+                />
+                <span>Safety strict</span>
+              </label>
+            </div>
+          )}
+        </div>
+        <label className="stack">
+          <span className="muted">Follow DID</span>
+          <input
+            value={socialFollowDid}
+            onChange={(event) => setSocialFollowDid(event.target.value)}
+            placeholder="did:hedera:testnet:..."
+          />
+        </label>
+        <div className="row">
+          <button className="btn secondary" onClick={createSocialFollow} disabled={!identity}>
+            Follow
+          </button>
+        </div>
+        <label className="stack">
+          <span className="muted">Reply text</span>
+          <textarea
+            rows={2}
+            value={socialReplyText}
+            onChange={(event) => setSocialReplyText(event.target.value)}
+          />
+        </label>
+        <label className="stack">
+          <span className="muted">Report reason code</span>
+          <input
+            value={socialReportReason}
+            onChange={(event) => setSocialReportReason(event.target.value)}
+          />
+        </label>
+        <div className="row">
+          <button className="btn danger" onClick={createSocialReport} disabled={!identity}>
+            Report first post
+          </button>
+        </div>
+        {socialDecision && (
+          <div className="stack">
+            <div>
+              <strong>Policy decision:</strong> {socialDecision === "ALLOW" ? "Allowed" : "Denied"}
+            </div>
+            {socialReason && <div className="muted">{socialReason}</div>}
+            {socialDecision !== "ALLOW" && (
+              <div className="card stack">
+                <strong>Why can't I post here?</strong>
+                <div className="muted">
+                  Missing capability:{" "}
+                  {currentSocialRequirement?.label ??
+                    currentSocialRequirement?.vct ??
+                    "policy capability"}
+                  .
+                </div>
+                <div className="muted">Aura tier progress: {currentAuraTier}</div>
+                <div className="muted">Contributing signals: {auraSignalSummary}</div>
+                <div className="muted">
+                  Next step: check <code>/v1/aura/explain</code> and complete actions that increase
+                  your tier.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        <div className="stack">
+          <strong>Feed</strong>
+          {socialFeed.length === 0 && <div className="muted">No visible posts.</div>}
+          {socialFeed.map((post, index) => (
+            <div key={String(post.post_id ?? index)} className="card stack post-card">
+              <button
+                className="post-explain-icon"
+                onClick={() => explainPost(String(post.post_id ?? ""))}
+                disabled={!post.post_id}
+                aria-label="Why shown?"
+                title="Why shown?"
+              >
+                ?
+              </button>
+              <div>{String(post.content_text ?? "")}</div>
+              {Array.isArray(post.trust_stamps) && post.trust_stamps.length > 0 && (
+                <div className="row">
+                  {(post.trust_stamps as unknown[]).map((stamp, stampIndex) => (
+                    <span key={`${String(stamp)}-${stampIndex}`} className="badge badge-trust">
+                      {String(stamp)}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="muted">visibility: {String(post.visibility ?? "public")}</div>
+            </div>
+          ))}
+        </div>
+        {postExplain && (
+          <div className="card stack">
+            <div className="row">
+              <strong>Why shown?</strong>
+              <span className="muted">{postExplainId.slice(0, 12)}...</span>
+              <button
+                className="btn secondary"
+                onClick={() => {
+                  setPostExplain(null);
+                  setPostExplainId("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <div className="stack">
+              {postExplain.reasons.map((reason) => (
+                <div key={reason} className="muted">
+                  {reason}
+                </div>
+              ))}
+            </div>
+            {postExplain.trustStampSummary && (
+              <div className="row">
+                <span className="badge badge-trust">
+                  Tier: {postExplain.trustStampSummary.tier ?? "bronze"}
+                </span>
+                <span className="badge badge-trust">
+                  Capability: {postExplain.trustStampSummary.capability ?? "can_post"}
+                </span>
+                <span className="badge badge-trust">
+                  Domain: {postExplain.trustStampSummary.domain ?? "social"}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+        {socialFunnel && <pre>{socialFunnel}</pre>}
+      </section>
+
+      <section className="card stack">
+        <h2>Spaces directory</h2>
+        <p className="muted">
+          Rules are visible before joining. Capabilities gate join, posting, and moderation.
+        </p>
+        <div className="row">
+          <input
+            value={spaceSearch}
+            onChange={(event) => setSpaceSearch(event.target.value)}
+            placeholder="Search spaces..."
+          />
+          <button className="btn secondary" onClick={loadSpaces}>
+            Refresh spaces
+          </button>
+        </div>
+        <div className="spaces-grid">
+          {spaces.map((space) => (
+            <button
+              key={space.space_id}
+              className={`card stack space-card ${selectedSpaceId === space.space_id ? "active" : ""}`}
+              onClick={() => openSpace(space.space_id)}
+            >
+              <strong>{space.name}</strong>
+              <div className="muted">/{space.slug}</div>
+              <div className="muted">{space.description || "No description yet."}</div>
+              <div className="row">
+                <span className="badge">{space.member_count} members</span>
+                <span className="badge badge-trust">
+                  Posting requires: {space.posting_requirement_summary || "policy capability"}
+                </span>
+              </div>
+            </button>
+          ))}
+          {spaces.length === 0 && <div className="muted">No spaces loaded yet.</div>}
+        </div>
+        {spaceDetail && (
+          <div className="card stack">
+            <div className="row">
+              <h3>{spaceDetail.space.name}</h3>
+              {spaceRoleBadges.map((badge) => (
+                <span
+                  key={badge}
+                  className={`badge ${
+                    badge === "Moderator"
+                      ? "badge-moderator"
+                      : badge === "Poster"
+                        ? "badge-poster"
+                        : badge === "Member"
+                          ? "badge-member"
+                          : "badge-trust"
+                  }`}
+                >
+                  {badge}
+                </span>
+              ))}
+            </div>
+            <div className="muted">/{spaceDetail.space.slug}</div>
+            <div className="muted">{spaceDetail.space.description}</div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() => joinSpace(spaceDetail.space.space_id)}
+                disabled={!identity}
+              >
+                Join space
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() => loadActiveSpaceFeed(spaceDetail.space.space_id)}
+              >
+                Refresh space feed
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() => loadSpaceGovernance(spaceDetail.space.space_id)}
+              >
+                Governance
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() => loadSpaceAnalytics(spaceDetail.space.space_id)}
+              >
+                Space analytics
+              </button>
+            </div>
+            <div className="card stack">
+              <strong>Space discovery mode</strong>
+              <div className="row">
+                <button
+                  className={`btn ${spaceFeedMode === "signal" ? "" : "secondary"}`}
+                  onClick={() => setSpaceFeedMode("signal")}
+                >
+                  Space Signal
+                </button>
+                <button
+                  className={`btn ${spaceFeedMode === "flow" ? "" : "secondary"}`}
+                  onClick={() => setSpaceFeedMode("flow")}
+                >
+                  Space Flow
+                </button>
+              </div>
+              {spaceFeedMode === "flow" && (
+                <div className="stack">
+                  <label className="stack">
+                    <span className="muted">Space trust lens</span>
+                    <select
+                      value={spaceTrustLens}
+                      onChange={(event) => setSpaceTrustLens(event.target.value as FlowTrustLens)}
+                    >
+                      <option value="trusted_creator">Trusted Creator</option>
+                      <option value="verified_only">Verified Only</option>
+                      <option value="space_members">Space Members</option>
+                    </select>
+                  </label>
+                  <label className="row checkbox">
+                    <input
+                      type="checkbox"
+                      checked={spaceSafetyStrict}
+                      onChange={(event) => setSpaceSafetyStrict(event.target.checked)}
+                    />
+                    <span>Safety strict</span>
+                  </label>
+                </div>
+              )}
+            </div>
+            <label className="stack">
+              <span className="muted">Compose in space</span>
+              <textarea
+                rows={2}
+                value={spaceComposeText}
+                onChange={(event) => setSpaceComposeText(event.target.value)}
+              />
+            </label>
+            <div className="row">
+              <button
+                className="btn"
+                onClick={() => createSpacePost(spaceDetail.space.space_id)}
+                disabled={!identity}
+              >
+                Post to space
+              </button>
+            </div>
+            {spaceTrustHint && (
+              <div className="card stack">
+                <strong>Why can't I post here?</strong>
+                <div className="muted">{spaceTrustHint}</div>
+                <div className="muted">
+                  Use <code>/v1/aura/explain</code> to review tier progress and contributing signals
+                  summary.
+                </div>
+                <button className="btn secondary" onClick={loadAuraExplain} disabled={!dsrToken}>
+                  Open Trust Panel
+                </button>
+              </div>
+            )}
+            <div className="stack">
+              <strong>Space feed</strong>
+              {spaceFeed.length === 0 && (
+                <div className="muted">No visible posts for this space.</div>
+              )}
+              {spaceFeed.map((post, index) => (
+                <div key={String(post.space_post_id ?? index)} className="card stack">
+                  <div>{String(post.content_text ?? "")}</div>
+                  {Array.isArray(post.trust_stamps) && post.trust_stamps.length > 0 && (
+                    <div className="row">
+                      {(post.trust_stamps as unknown[]).map((stamp, stampIndex) => (
+                        <span key={`${String(stamp)}-${stampIndex}`} className="badge badge-trust">
+                          {String(stamp)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {spaceRules && (
+              <div className="card stack">
+                <strong>Rules & Trust</strong>
+                <div className="muted">
+                  Policy pack: {spaceDetail.policy_pack.display_name} (
+                  {spaceDetail.policy_pack.policy_pack_id})
+                </div>
+                <div className="stack">
+                  <strong>Join requirements</strong>
+                  {spaceRules.join_requirements.map((entry) => (
+                    <div key={`join-${entry.vct}`} className="row">
+                      <span>{entry.label}</span>
+                      <span
+                        className={`badge ${hasCapability(entry.vct) ? "badge-allow" : "badge-deny"}`}
+                      >
+                        {hasCapability(entry.vct) ? "You have this" : "Missing"}
+                      </span>
+                    </div>
+                  ))}
+                  <strong>Post requirements</strong>
+                  {spaceRules.post_requirements.map((entry) => (
+                    <div key={`post-${entry.vct}`} className="row">
+                      <span>{entry.label}</span>
+                      <span
+                        className={`badge ${hasCapability(entry.vct) ? "badge-allow" : "badge-deny"}`}
+                      >
+                        {hasCapability(entry.vct) ? "You have this" : "Missing"}
+                      </span>
+                    </div>
+                  ))}
+                  <strong>Moderation requirements</strong>
+                  {spaceRules.moderation_requirements.map((entry) => (
+                    <div key={`mod-${entry.vct}`} className="row">
+                      <span>{entry.label}</span>
+                      <span
+                        className={`badge ${hasCapability(entry.vct) ? "badge-allow" : "badge-deny"}`}
+                      >
+                        {hasCapability(entry.vct) ? "You have this" : "Missing"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="muted">
+                  Why? Open Trust Panel for aura and capability explainers.
+                </div>
+              </div>
+            )}
+            {spaceGovernance && (
+              <div className="card stack">
+                <strong>Governance transparency</strong>
+                <div className="muted">
+                  Pack: {spaceGovernance.policy_pack?.display_name ?? "n/a"} (
+                  {spaceGovernance.policy_pack?.policy_pack_id ?? "n/a"})
+                </div>
+                <div className="row">
+                  <span className="badge badge-trust">
+                    Post floor: {spaceGovernance.trust_floor?.post ?? "bronze"}
+                  </span>
+                  <span className="badge">
+                    Post policy v{spaceGovernance.policy_versions?.post?.version ?? "?"}
+                  </span>
+                  <span className="badge">
+                    Pinning: {spaceGovernance.pinning?.post ? "pinned" : "not pinned"}
+                  </span>
+                </div>
+              </div>
+            )}
+            {canModerateInSpace && (
+              <div className="card stack">
+                <div className="row">
+                  <strong>Moderation queue (stub)</strong>
+                  <button
+                    className="btn secondary"
+                    onClick={() => loadModerationCases(spaceDetail.space.space_id)}
+                    disabled={!identity}
+                  >
+                    Refresh cases
+                  </button>
+                  <button
+                    className="btn secondary"
+                    onClick={() => loadSpaceModerationAudit(spaceDetail.space.space_id)}
+                    disabled={!identity}
+                  >
+                    Audit view
+                  </button>
+                </div>
+                {moderationCases.length === 0 && (
+                  <div className="muted">No open moderation cases.</div>
+                )}
+                {moderationCases.map((entry) => (
+                  <div key={entry.case_id} className="row">
+                    <span className="badge">{entry.status}</span>
+                    <span className="muted">Report: {entry.report_id.slice(0, 12)}...</span>
+                    {entry.status !== "RESOLVED" && (
+                      <button
+                        className="btn secondary"
+                        onClick={() =>
+                          resolveModerationCase(spaceDetail.space.space_id, entry.case_id)
+                        }
+                        disabled={!identity}
+                      >
+                        Resolve
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {spaceModerationAudit.length > 0 && (
+              <div className="card stack">
+                <strong>Moderator audit (hash-only)</strong>
+                {spaceModerationAudit.slice(0, 6).map((entry, idx) => (
+                  <div key={`${String(entry.audit_hash ?? idx)}`} className="row">
+                    <span className="badge">{String(entry.operation ?? "op")}</span>
+                    <span className="muted">
+                      audit: {String(entry.audit_hash ?? "").slice(0, 16)}...
+                    </span>
+                    <span className="muted">reason: {String(entry.reason_code ?? "n/a")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {spaceAnalytics && (
+              <div className="card stack">
+                <strong>Space analytics</strong>
+                <pre>{spaceAnalytics}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="card stack">
         <h2>4) Reputation (derived from actions)</h2>
         <p className="muted">
           Reputation here is domain-scoped and derived from verifiable actions, not social graphs.
@@ -1083,7 +2632,7 @@ export default function App() {
       </section>
 
       <section className="card stack">
-        <h2>5) Your data choices</h2>
+        <h2>Privacy panel</h2>
         <p className="muted">
           Export returns hash-only records. Unlink removes off-chain data; on-chain anchors remain
           immutable.
@@ -1190,6 +2739,347 @@ export default function App() {
           </div>
         )}
       </aside>
+
+      <button
+        className="command-orb"
+        aria-label="Open command launcher"
+        onClick={() => setShowCommandOrb((prev) => !prev)}
+      >
+        Orb
+      </button>
+      {showCommandOrb && (
+        <div className="command-orb-panel card stack">
+          <strong>Command Orb</strong>
+          <button className="btn secondary" onClick={createIdentity}>
+            Create identity
+          </button>
+          <button className="btn secondary" onClick={requestSocialCredential} disabled={!identity}>
+            Request social proof
+          </button>
+          <button className="btn secondary" onClick={createSocialPost} disabled={!identity}>
+            Compose and post
+          </button>
+          <button className="btn secondary" onClick={loadSocialFeed}>
+            Open feed
+          </button>
+          <button className="btn secondary" onClick={loadSpaces}>
+            Spaces
+          </button>
+          <button className="btn secondary" onClick={runDsrExport} disabled={!identity}>
+            Open privacy panel actions
+          </button>
+          <div className="card stack">
+            <strong>Entertainment</strong>
+            <label className="stack">
+              <span className="muted">Space id (for scoped actions)</span>
+              <input
+                value={entSpaceId}
+                onChange={(event) => setEntSpaceId(event.target.value)}
+                placeholder="space uuid"
+              />
+            </label>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "media.emoji.pack.create",
+                    "/v1/social/media/emoji/pack/create",
+                    {
+                      spaceId: entSpaceId || undefined,
+                      visibility: "private"
+                    }
+                  ).then((payload) => {
+                    if (payload?.packId) setEntEmojiPackId(String(payload.packId));
+                  })
+                }
+                disabled={!identity}
+              >
+                Emoji Studio: create pack
+              </button>
+              <button
+                className="post-explain-icon"
+                aria-label="Explain emoji pack create gate"
+                title="Explain"
+                onClick={() =>
+                  explainCapability("media.emoji.pack.create", entSpaceId || undefined)
+                }
+              >
+                ?
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "media.emoji.pack.publish",
+                    "/v1/social/media/emoji/pack/publish",
+                    {
+                      packId: entEmojiPackId,
+                      spaceId: entSpaceId
+                    },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entEmojiPackId || !entSpaceId}
+              >
+                Emoji Studio: publish to space
+              </button>
+              <button
+                className="post-explain-icon"
+                aria-label="Explain emoji publish gate"
+                title="Explain"
+                onClick={() =>
+                  explainCapability("media.emoji.pack.publish", entSpaceId || undefined)
+                }
+              >
+                ?
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "media.soundpack.create",
+                    "/v1/social/media/soundpack/create",
+                    {
+                      spaceId: entSpaceId || undefined,
+                      visibility: "private"
+                    }
+                  ).then((payload) => {
+                    if (payload?.packId) setEntSoundpackId(String(payload.packId));
+                  })
+                }
+                disabled={!identity}
+              >
+                Soundpacks: create pack
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "media.soundpack.activate_in_space",
+                    "/v1/social/media/soundpack/activate",
+                    { packId: entSoundpackId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entSoundpackId || !entSpaceId}
+              >
+                Soundpacks: activate in space
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "presence.set_mode",
+                    "/v1/social/presence/set_mode",
+                    { spaceId: entSpaceId, mode: "quiet" },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entSpaceId}
+              >
+                Presence: set quiet
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() => {
+                  if (!entSpaceId) return;
+                  loadPresenceState(entSpaceId);
+                }}
+                disabled={!entSpaceId}
+              >
+                Presence: view state
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.scroll.create_session",
+                    "/v1/social/sync/scroll/create_session",
+                    { spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    if (payload?.sessionId) setEntScrollSessionId(String(payload.sessionId));
+                  })
+                }
+                disabled={!identity || !entSpaceId}
+              >
+                Start Scroll Group
+              </button>
+              <button
+                className="post-explain-icon"
+                aria-label="Explain scroll host gate"
+                title="Explain"
+                onClick={() =>
+                  explainCapability("sync.scroll.create_session", entSpaceId || undefined)
+                }
+              >
+                ?
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.scroll.join_session",
+                    "/v1/social/sync/scroll/join_session",
+                    { sessionId: entScrollSessionId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    const token = String(payload?.permissionToken ?? "");
+                    if (!token || !entScrollSessionId) return;
+                    setEntScrollPermissionToken(token);
+                    subscribeScrollStream(entScrollSessionId, token);
+                  })
+                }
+                disabled={!identity || !entScrollSessionId || !entSpaceId}
+              >
+                Join Scroll Group
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.scroll.end_session",
+                    "/v1/social/sync/scroll/end_session",
+                    { sessionId: entScrollSessionId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entScrollSessionId || !entSpaceId}
+              >
+                End Scroll Group
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.scroll.sync_event",
+                    "/v1/social/sync/scroll/sync_event",
+                    {
+                      sessionId: entScrollSessionId,
+                      permissionToken: entScrollPermissionToken,
+                      eventType: "SCROLL_SYNC",
+                      payload: { scrollY: Math.round(window.scrollY), t: Date.now() }
+                    },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entScrollSessionId || !entScrollPermissionToken}
+              >
+                Send Scroll Sync
+              </button>
+              <label className="muted">
+                <input
+                  type="checkbox"
+                  checked={followHostScroll}
+                  onChange={(event) => setFollowHostScroll(event.target.checked)}
+                />{" "}
+                follow host
+              </label>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.listen.create_session",
+                    "/v1/social/sync/listen/create_session",
+                    { spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    if (payload?.sessionId) setEntListenSessionId(String(payload.sessionId));
+                  })
+                }
+                disabled={!identity || !entSpaceId}
+              >
+                Start Listen Group
+              </button>
+              <button
+                className="post-explain-icon"
+                aria-label="Explain listen host gate"
+                title="Explain"
+                onClick={() =>
+                  explainCapability("sync.listen.create_session", entSpaceId || undefined)
+                }
+              >
+                ?
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.listen.join_session",
+                    "/v1/social/sync/listen/join_session",
+                    { sessionId: entListenSessionId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    const token = String(payload?.permissionToken ?? "");
+                    if (!token || !entListenSessionId) return;
+                    setEntListenPermissionToken(token);
+                    subscribeListenStream(entListenSessionId, token);
+                  })
+                }
+                disabled={!identity || !entListenSessionId || !entSpaceId}
+              >
+                Join Listen Group
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.listen.end_session",
+                    "/v1/social/sync/listen/end_session",
+                    { sessionId: entListenSessionId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entListenSessionId || !entSpaceId}
+              >
+                End Listen Group
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.listen.broadcast_control",
+                    "/v1/social/sync/listen/broadcast_control",
+                    {
+                      sessionId: entListenSessionId,
+                      permissionToken: entListenPermissionToken,
+                      eventType: "LISTEN_STATE",
+                      payload: {
+                        playing: true,
+                        cursorMs: Math.floor(Date.now() % 240000),
+                        trackId: "placeholder-track"
+                      }
+                    },
+                    { spaceId: entSpaceId }
+                  )
+                }
+                disabled={!identity || !entListenSessionId || !entListenPermissionToken}
+              >
+                Broadcast Listen State
+              </button>
+            </div>
+            {showCapabilityExplain && <div className="muted">{showCapabilityExplain}</div>}
+            {syncHint && <div className="muted">{syncHint}</div>}
+            {listenState && <pre>{listenState}</pre>}
+            {presenceState && <pre>{presenceState}</pre>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -19,6 +19,7 @@ import { registerVerifyRoutes } from "./routes/verify.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerCapabilitiesRoutes } from "./routes/capabilities.js";
 import { registerDidRoutes } from "./routes/dids.js";
+import { registerSocialRoutes } from "./routes/social.js";
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -179,6 +180,7 @@ export const buildServer = (input?: {
   registerOnboardRoutes(app, context);
   registerVerifyRoutes(app, context);
   registerDidRoutes(app, context);
+  registerSocialRoutes(app, context);
 
   return app;
 };
