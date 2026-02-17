@@ -22,7 +22,12 @@ const floorSetSchema = z.object({
 
 export const registerPolicyRoutes = (app: FastifyInstance) => {
   app.get("/v1/requirements", async (request, reply) => {
-    const query = z.object({ action: z.string().min(1) }).parse(request.query);
+    const query = z
+      .object({
+        action: z.string().min(1),
+        space_id: z.string().uuid().optional()
+      })
+      .parse(request.query);
     let policy;
     try {
       policy = await getPolicyForAction(query.action);
@@ -59,11 +64,13 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
         disclosures: req.disclosures,
         revocation: req.revocation,
         predicates: req.predicates,
+        context_predicates: req.context_predicates ?? [],
         purpose_limits: catalog?.purpose_limits ?? {},
         presentation_templates: catalog?.presentation_templates ?? {},
         sd_defaults: catalog?.sd_defaults ?? []
       };
     });
+    const responseContext = query.space_id ? { space_id: query.space_id } : undefined;
 
     const nonce = randomBytes(32).toString("base64url");
     const audience = `cuncta.action:${query.action}`;
@@ -95,8 +102,10 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
       action: query.action,
       action_id: query.action,
       policyId: policy.policyId,
+      policyHash,
       version: policy.version,
       binding: policy.logic.binding ?? { mode: "kb-jwt", require: true },
+      context: responseContext,
       requirements,
       obligations: policy.logic.obligations ?? [],
       challenge: {
@@ -112,7 +121,8 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
     let result;
     try {
       result = await evaluate({
-        action: body.action
+        action: body.action,
+        context: body.context
       });
     } catch (error) {
       if (error instanceof Error && error.message === "policy_integrity_failed") {

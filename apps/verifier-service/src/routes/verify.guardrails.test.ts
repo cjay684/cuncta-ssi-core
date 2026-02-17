@@ -84,6 +84,8 @@ const createPresentation = async (input: {
   vct: string;
   nonce: string;
   audience: string;
+  claims?: Record<string, unknown>;
+  selectiveDisclosure?: string[];
 }) => {
   const sdJwt = await issueSdJwtVc({
     issuerJwk: input.issuerJwk,
@@ -91,12 +93,13 @@ const createPresentation = async (input: {
       iss: input.issuerDid,
       sub: input.subjectDid,
       vct: input.vct,
+      ...(input.claims ?? {}),
       status: {
         statusListCredential: "/status-lists/default",
         statusListIndex: "0"
       }
     },
-    selectiveDisclosure: [],
+    selectiveDisclosure: input.selectiveDisclosure ?? [],
     typMode: "strict"
   });
   const kbKey = await importJWK(input.holderPrivateJwk, "EdDSA");
@@ -501,5 +504,187 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
   } finally {
     await db.destroy();
     await jwksServer.close();
+  }
+});
+
+test("verifier denies space-scoped credential reuse across spaces", async () => {
+  process.env.NODE_ENV = "development";
+  process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
+  process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
+  process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
+  process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
+
+  const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
+  const policyJwk = await exportJWK(privateKey);
+  policyJwk.kid = `policy-kid-${randomUUID()}`;
+  process.env.POLICY_SIGNING_JWK = JSON.stringify(policyJwk);
+
+  const { privateKey: issuerPriv, publicKey: issuerPub } = await generateKeyPair("EdDSA", {
+    extractable: true
+  });
+  const issuerPrivateJwk = await exportJWK(issuerPriv);
+  issuerPrivateJwk.kid = `issuer-${randomUUID()}`;
+  issuerPrivateJwk.alg = "EdDSA";
+  const issuerPublicJwk = await exportJWK(issuerPub);
+  issuerPublicJwk.kid = issuerPrivateJwk.kid;
+  issuerPublicJwk.alg = "EdDSA";
+
+  const db = createDb(dbUrl);
+  try {
+    await runMigrations(db);
+    const actionId = `social.space.post.create.${randomUUID()}`;
+    const audience = `cuncta.action:${actionId}`;
+    const nonce = makeNonce();
+    const spaceA = randomUUID();
+    const spaceB = randomUUID();
+    const issuerDid = `did:hedera:testnet:${randomUUID()}`;
+    const subjectDid = `did:hedera:testnet:${randomUUID()}`;
+    const vct = `cuncta.social.space.poster.${randomUUID()}`;
+
+    await db("verification_challenges").del();
+    await db("policy_version_floor").where({ action_id: actionId }).del();
+    await db("policies").where({ action_id: actionId }).del();
+    await db("actions").where({ action_id: actionId }).del();
+
+    await db("actions").insert({
+      action_id: actionId,
+      description: "space context binding test",
+      created_at: nowIso(),
+      updated_at: nowIso()
+    });
+
+    const policyId = `policy.space.ctx.${randomUUID()}.v2`;
+    const policyHash = await seedPolicy({
+      db,
+      actionId,
+      policyId,
+      version: 2,
+      logic: {
+        requirements: [
+          {
+            vct,
+            issuer: { mode: "allowlist", allowed: [issuerDid] },
+            disclosures: ["space_id"],
+            predicates: [{ path: "poster", op: "eq", value: true }],
+            context_predicates: [{ left: "context.space_id", right: "claims.space_id", op: "eq" }],
+            revocation: { required: false }
+          }
+        ],
+        obligations: []
+      },
+      policyJwk
+    });
+
+    await db("policy_version_floor")
+      .insert({
+        action_id: actionId,
+        min_version: 2,
+        updated_at: nowIso()
+      })
+      .onConflict("action_id")
+      .merge({ min_version: 2, updated_at: nowIso() });
+
+    await seedChallenge({
+      db,
+      actionId,
+      policyId,
+      policyVersion: 2,
+      policyHash,
+      nonce,
+      audience
+    });
+
+    const { privateKey: holderPriv, publicKey: holderPub } = await generateKeyPair("EdDSA", {
+      extractable: true
+    });
+    const holderPrivateJwk = await exportJWK(holderPriv);
+    holderPrivateJwk.alg = "EdDSA";
+    const holderPublicJwk = await exportJWK(holderPub);
+    holderPublicJwk.alg = "EdDSA";
+
+    const presentation = await createPresentation({
+      issuerJwk: issuerPrivateJwk,
+      holderPublicJwk,
+      holderPrivateJwk,
+      subjectDid,
+      issuerDid,
+      vct,
+      nonce,
+      audience,
+      claims: {
+        poster: true,
+        space_id: spaceA
+      },
+      selectiveDisclosure: ["space_id"]
+    });
+
+    const { config } = await import("../config.js");
+    config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
+    config.POLICY_VERSION_FLOOR_ENFORCED = true;
+    config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+    config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+    config.ISSUER_JWKS = JSON.stringify({ keys: [issuerPublicJwk] });
+
+    const { registerVerifyRoutes, __test__ } = await import("./verify.js");
+    __test__.resetIssuerKeyCache();
+    __test__.resetPolicyVerifyKey();
+    const app = fastify();
+    registerVerifyRoutes(app);
+
+    const allowResponse = await app.inject({
+      method: "POST",
+      url: `/v1/verify?action=${encodeURIComponent(actionId)}`,
+      payload: {
+        presentation,
+        nonce,
+        audience,
+        context: { space_id: spaceA }
+      }
+    });
+    assert.equal(allowResponse.statusCode, 200);
+    const allowBody = allowResponse.json() as { decision?: string };
+    assert.equal(allowBody.decision, "ALLOW");
+
+    const nonceMismatch = makeNonce();
+    await seedChallenge({
+      db,
+      actionId,
+      policyId,
+      policyVersion: 2,
+      policyHash,
+      nonce: nonceMismatch,
+      audience
+    });
+    const denyResponse = await app.inject({
+      method: "POST",
+      url: `/v1/verify?action=${encodeURIComponent(actionId)}`,
+      payload: {
+        presentation: await createPresentation({
+          issuerJwk: issuerPrivateJwk,
+          holderPublicJwk,
+          holderPrivateJwk,
+          subjectDid,
+          issuerDid,
+          vct,
+          nonce: nonceMismatch,
+          audience,
+          claims: {
+            poster: true,
+            space_id: spaceA
+          },
+          selectiveDisclosure: ["space_id"]
+        }),
+        nonce: nonceMismatch,
+        audience,
+        context: { space_id: spaceB }
+      }
+    });
+    assert.equal(denyResponse.statusCode, 200);
+    const denyBody = denyResponse.json() as { decision?: string; reasons?: string[] };
+    assert.equal(denyBody.decision, "DENY");
+    assert.ok(denyBody.reasons?.includes("space_context_mismatch"));
+    await app.close();
+  } finally {
+    await db.destroy();
   }
 });

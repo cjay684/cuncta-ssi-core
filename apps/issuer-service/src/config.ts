@@ -74,6 +74,10 @@ const envSchema = z.object({
     clampNumber(2000, 250, 10_000),
     z.number().int().min(250).max(10_000)
   ),
+  ANCHOR_TICK_TIMEOUT_MS: z.preprocess(
+    clampNumber(120_000, 10_000, 600_000),
+    z.number().int().min(10_000).max(600_000)
+  ),
   AURA_WORKER_POLL_MS: z.preprocess(
     clampNumber(5000, 250, 30_000),
     z.number().int().min(250).max(30_000)

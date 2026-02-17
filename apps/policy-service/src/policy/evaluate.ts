@@ -10,6 +10,12 @@ export const PredicateSchema = z.object({
   value: z.unknown().optional()
 });
 
+export const ContextPredicateSchema = z.object({
+  left: z.string().min(1),
+  right: z.string().min(1),
+  op: z.enum(["eq"])
+});
+
 export const IssuerRuleSchema = z.object({
   mode: z.enum(["allowlist", "env"]),
   allowed: z.array(z.string()).optional(),
@@ -21,6 +27,7 @@ export const RequirementSchema = z.object({
   issuer: IssuerRuleSchema.optional(),
   disclosures: z.array(z.string()).default([]),
   predicates: z.array(PredicateSchema).default([]),
+  context_predicates: z.array(ContextPredicateSchema).default([]),
   revocation: z.object({ required: z.boolean() }).optional()
 });
 
@@ -79,7 +86,7 @@ export const getPolicyForAction = async (actionId: string): Promise<PolicyRecord
   };
 };
 
-export const evaluate = async (input: { action: string }) => {
+export const evaluate = async (input: { action: string; context?: Record<string, unknown> }) => {
   const record = await getPolicyForAction(input.action);
   if (!record) {
     return {
@@ -88,7 +95,8 @@ export const evaluate = async (input: { action: string }) => {
       policyVersion: undefined,
       requirements: [],
       obligations: [],
-      binding: undefined
+      binding: undefined,
+      context: input.context
     };
   }
   return {
@@ -98,6 +106,7 @@ export const evaluate = async (input: { action: string }) => {
     policyHash: record.policyHash,
     requirements: record.logic.requirements,
     obligations: record.logic.obligations,
-    binding: record.logic.binding
+    binding: record.logic.binding,
+    context: input.context
   };
 };

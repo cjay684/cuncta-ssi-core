@@ -28,6 +28,7 @@ export type ErrorCode =
   | "sponsored_onboarding_disabled"
   | "maintenance_mode"
   | "privacy_erased"
+  | "policy_pack_hash_mismatch"
   | "internal_error";
 
 export type ErrorResponse = {

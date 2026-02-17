@@ -12,6 +12,7 @@ import { getDidHashes, getLookupHashes } from "../pseudonymizer.js";
 import { metrics } from "../metrics.js";
 import { ensureAuraRuleIntegrity } from "../aura/auraIntegrity.js";
 import { bumpPrivacyEraseEpoch, markPrivacyEraseEver } from "../audit.js";
+import { requireServiceAuth } from "../auth.js";
 
 const requestSchema = z.object({
   did: z.string().min(3)
@@ -29,6 +30,10 @@ const restrictSchema = z.object({
 
 const eraseSchema = z.object({
   mode: z.literal("unlink")
+});
+
+const internalPrivacyStatusSchema = z.object({
+  subjectDidHash: z.string().min(10)
 });
 
 const exportResponseSchema = z.object({
@@ -120,6 +125,21 @@ const verifyKbJwt = async (input: { kbJwt: string; nonce: string; audience: stri
 };
 
 export const registerPrivacyRoutes = (app: FastifyInstance) => {
+  app.get("/v1/internal/privacy/status", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:privacy_status"] });
+    if (reply.sent) return;
+    const query = internalPrivacyStatusSchema.parse(request.query ?? {});
+    const db = await getDb();
+    const [restriction, tombstone] = await Promise.all([
+      db("privacy_restrictions").where({ did_hash: query.subjectDidHash }).first(),
+      db("privacy_tombstones").where({ did_hash: query.subjectDidHash }).first()
+    ]);
+    return reply.send({
+      restricted: Boolean(restriction),
+      tombstoned: Boolean(tombstone)
+    });
+  });
+
   app.post("/v1/privacy/request", async (request, reply) => {
     const body = requestSchema.parse(request.body);
     const db = await getDb();

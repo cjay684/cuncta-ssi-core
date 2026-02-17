@@ -119,6 +119,12 @@ const buildClaims = (
   return applyTemplate(claims, context) as Record<string, unknown>;
 };
 
+const deriveSpaceId = (domain: string): string | null => {
+  if (!domain.startsWith("space:")) return null;
+  const value = domain.slice("space:".length).trim();
+  return value.length > 0 ? value : null;
+};
+
 export const processAuraSignalsOnce = async () => {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -192,6 +198,7 @@ export const processAuraSignalsOnce = async () => {
       const context = {
         tier,
         domain,
+        space_id: deriveSpaceId(domain) ?? domain,
         score: Number(score.toFixed(4)),
         diversity,
         now: new Date().toISOString()

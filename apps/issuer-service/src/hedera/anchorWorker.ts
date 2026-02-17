@@ -56,6 +56,28 @@ type AnchorOutboxRow = {
   attempts?: number | string | null;
 };
 
+const elapsedMs = (startedAt: number) => Date.now() - startedAt;
+
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorCode: string
+): Promise<T> => {
+  let timer: NodeJS.Timeout | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(errorCode)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+};
+
 export const processAnchorOutboxOnce = async (
   publisher?: (row: AnchorOutboxRow) => Promise<AnchorReceipt>
 ) => {
@@ -72,6 +94,7 @@ export const processAnchorOutboxOnce = async (
   const staleBefore = new Date(
     Date.now() - config.ANCHOR_OUTBOX_PROCESSING_TIMEOUT_MS
   ).toISOString();
+  const claimPhaseStartedAt = Date.now();
   await db("anchor_outbox")
     .where({ status: "PROCESSING" })
     .andWhere((builder) => {
@@ -82,11 +105,24 @@ export const processAnchorOutboxOnce = async (
       processing_started_at: null,
       updated_at: new Date().toISOString()
     });
+  log.info("anchor.worker.phase", {
+    phase: "claim_outbox",
+    step: "reclaim_stale_processing",
+    elapsed_ms: elapsedMs(claimPhaseStartedAt)
+  });
+
+  const fetchPendingStartedAt = Date.now();
   const rows = await db("anchor_outbox")
     .whereIn("status", ["PENDING", "FAILED"])
     .andWhere("next_retry_at", "<=", now)
     .orderBy("created_at", "asc")
     .limit(config.OUTBOX_BATCH_SIZE);
+  log.info("anchor.worker.phase", {
+    phase: "claim_outbox",
+    step: "fetch_pending_rows",
+    rows: rows.length,
+    elapsed_ms: elapsedMs(fetchPendingStartedAt)
+  });
 
   if (!rows.length) {
     metrics.incCounter("worker_runs_total", {
@@ -96,7 +132,17 @@ export const processAnchorOutboxOnce = async (
     return;
   }
 
-  const clientInfo = publisher ? null : await getClient();
+  let clientInfo: Awaited<ReturnType<typeof getClient>> = null;
+  if (!publisher) {
+    const fetchTopicStartedAt = Date.now();
+    clientInfo = await getClient();
+    log.info("anchor.worker.phase", {
+      phase: "fetch_topic",
+      step: "ensure_topic",
+      has_client: Boolean(clientInfo),
+      elapsed_ms: elapsedMs(fetchTopicStartedAt)
+    });
+  }
   let hadError = false;
   const markDead = async (row: AnchorOutboxRow, reason: string, attempts: number) => {
     await db("anchor_outbox").where({ outbox_id: row.outbox_id }).update({
@@ -143,6 +189,12 @@ export const processAnchorOutboxOnce = async (
     if (!updated) {
       continue;
     }
+    log.info("anchor.worker.phase", {
+      phase: "claim_outbox",
+      step: "mark_processing",
+      outbox_id: row.outbox_id,
+      event_type: row.event_type
+    });
 
     try {
       const alreadyAnchored = await db("anchor_receipts")
@@ -161,6 +213,7 @@ export const processAnchorOutboxOnce = async (
       }
 
       const payloadMeta = (row.payload_meta ?? {}) as Record<string, unknown>;
+      const publishStartedAt = Date.now();
       const anchor = publisher
         ? await publisher(row)
         : await publishAnchorMessage(clientInfo!.client, clientInfo!.topicId, {
@@ -168,7 +221,14 @@ export const processAnchorOutboxOnce = async (
             sha256: row.payload_hash,
             metadata: payloadMeta
           });
+      log.info("anchor.worker.phase", {
+        phase: "publish_hcs",
+        outbox_id: row.outbox_id,
+        event_type: row.event_type,
+        elapsed_ms: elapsedMs(publishStartedAt)
+      });
 
+      const writeReceiptStartedAt = Date.now();
       await db("anchor_receipts")
         .insert({
           payload_hash: row.payload_hash,
@@ -179,7 +239,14 @@ export const processAnchorOutboxOnce = async (
         })
         .onConflict("payload_hash")
         .ignore();
+      log.info("anchor.worker.phase", {
+        phase: "write_receipt",
+        outbox_id: row.outbox_id,
+        event_type: row.event_type,
+        elapsed_ms: elapsedMs(writeReceiptStartedAt)
+      });
 
+      const markConfirmedStartedAt = Date.now();
       await db("anchor_outbox").where({ outbox_id: row.outbox_id }).update({
         status: "CONFIRMED",
         processing_started_at: null,
@@ -189,6 +256,12 @@ export const processAnchorOutboxOnce = async (
       if (row.event_type === "AUDIT_LOG_HEAD") {
         await markAuditHeadAnchored(row.payload_hash);
       }
+      log.info("anchor.worker.phase", {
+        phase: "mark_confirmed",
+        outbox_id: row.outbox_id,
+        event_type: row.event_type,
+        elapsed_ms: elapsedMs(markConfirmedStartedAt)
+      });
     } catch (error) {
       hadError = true;
       const message = error instanceof Error ? error.message : "anchor_failed";
@@ -233,6 +306,7 @@ export const processAnchorOutboxOnce = async (
 
 export const startAnchorWorker = (options?: { process?: () => Promise<void> }) => {
   const intervalMs = config.ANCHOR_WORKER_POLL_MS;
+  const tickTimeoutMs = config.ANCHOR_TICK_TIMEOUT_MS;
   const runProcess = options?.process ?? processAnchorOutboxOnce;
   let inFlight = false;
   let lastSkipLogAt = 0;
@@ -246,16 +320,33 @@ export const startAnchorWorker = (options?: { process?: () => Promise<void> }) =
       return;
     }
     inFlight = true;
+    const tickStartedAt = Date.now();
     try {
-      await runProcess();
+      await withTimeout(runProcess(), tickTimeoutMs, "tick_timeout");
+      workerStatus.lastError = null;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "anchor_tick_failed";
+      workerStatus.lastError = message;
+      if (message === "tick_timeout") {
+        metrics.incCounter("anchor_worker_error_total");
+        metrics.incCounter("anchor_worker_tick_timeout_total");
+        log.error("anchor.worker.tick_timeout", { timeout_ms: tickTimeoutMs });
+      } else {
+        metrics.incCounter("anchor_worker_error_total");
+        log.error("anchor.worker.tick_failed", { error: message });
+      }
     } finally {
+      log.info("anchor.worker.tick_complete", {
+        elapsed_ms: elapsedMs(tickStartedAt),
+        timed_out: workerStatus.lastError === "tick_timeout"
+      });
       inFlight = false;
     }
   };
 
-  tick().catch((error) => log.error("anchor.worker.tick_failed", { error }));
+  void tick();
   const timer = setInterval(() => {
-    tick().catch((error) => log.error("anchor.worker.tick_failed", { error }));
+    void tick();
   }, intervalMs);
 
   return () => clearInterval(timer);

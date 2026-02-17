@@ -30,6 +30,7 @@ const requirementsResponseSchema = z.object({
   action: z.string(),
   policyId: z.string().optional(),
   policyVersion: z.number().optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
   binding: z
     .object({
       mode: z.enum(["kb-jwt", "nonce"]),
@@ -57,6 +58,15 @@ const requirementsResponseSchema = z.object({
           })
         )
         .default([]),
+      context_predicates: z
+        .array(
+          z.object({
+            left: z.string().min(1),
+            right: z.string().min(1),
+            op: z.enum(["eq"])
+          })
+        )
+        .default([]),
       presentation_templates: z.record(z.string(), z.unknown()).optional()
     })
   ),
@@ -80,6 +90,15 @@ const requirementSchema = z.object({
     .optional(),
   disclosures: z.array(z.string()).default([]),
   predicates: z.array(predicateSchema).default([]),
+  context_predicates: z
+    .array(
+      z.object({
+        left: z.string().min(1),
+        right: z.string().min(1),
+        op: z.enum(["eq"])
+      })
+    )
+    .default([]),
   revocation: z.object({ required: z.boolean() }).optional()
 });
 
@@ -97,7 +116,8 @@ const policyLogicSchema = z.object({
 const verifyBodySchema = z.object({
   presentation: z.string().min(10).max(config.VERIFY_MAX_PRESENTATION_BYTES),
   nonce: z.string().min(10).max(config.VERIFY_MAX_NONCE_CHARS),
-  audience: z.string().min(3).max(config.VERIFY_MAX_AUDIENCE_CHARS)
+  audience: z.string().min(3).max(config.VERIFY_MAX_AUDIENCE_CHARS),
+  context: z.record(z.string(), z.unknown()).optional()
 });
 
 const jwksSchema = z.object({
@@ -222,16 +242,29 @@ const evaluatePredicate = (
   }
 };
 
-const fetchRequirements = async (action: string) => {
+const fetchRequirements = async (action: string, context?: Record<string, unknown>) => {
   const response = await fetch(`${config.POLICY_SERVICE_BASE_URL}/v1/policy/evaluate`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action })
+    body: JSON.stringify({ action, context })
   });
   if (!response.ok) {
     throw new Error("requirements_fetch_failed");
   }
   return requirementsResponseSchema.parse(await response.json());
+};
+
+const evaluateContextPredicate = (
+  predicate: { left: string; right: string; op: "eq" },
+  context: Record<string, unknown>,
+  claims: Record<string, unknown>
+) => {
+  const leftValue = getByPath({ context, claims }, predicate.left);
+  const rightValue = getByPath({ context, claims }, predicate.right);
+  if (predicate.op === "eq") {
+    return leftValue !== undefined && rightValue !== undefined && leftValue === rightValue;
+  }
+  return false;
 };
 
 export const registerVerifyRoutes = (app: FastifyInstance) => {
@@ -316,7 +349,7 @@ export const registerVerifyRoutes = (app: FastifyInstance) => {
         policyLogic = policyLogicSchema.parse(logic);
       } else {
         try {
-          requirements = await fetchRequirements(action.action);
+          requirements = await fetchRequirements(action.action, body.context);
           if (!requirements.policyId || !requirements.policyVersion) {
             return reply.code(409).send(
               makeErrorResponse("challenge_invalid", "Challenge policy not pinned", {
@@ -520,6 +553,45 @@ export const registerVerifyRoutes = (app: FastifyInstance) => {
           );
           if (!predicatesOk) {
             deny("predicate_failed");
+          }
+        }
+
+        if (decision === "ALLOW" && requirement) {
+          const contextPredicates = requirement.context_predicates ?? [];
+          const contextPredicatesOk = contextPredicates.every((predicate) =>
+            evaluateContextPredicate(
+              predicate,
+              (body.context ?? requirements?.context ?? {}) as Record<string, unknown>,
+              result.claims
+            )
+          );
+          if (!contextPredicatesOk) {
+            deny("space_context_mismatch");
+          }
+        }
+
+        // Backward-compatible hardening for existing space policies that predate context predicates.
+        if (
+          decision === "ALLOW" &&
+          requirement &&
+          ["social.space.join", "social.space.post.create", "social.space.moderate"].includes(
+            action.action
+          ) &&
+          (requirement.context_predicates ?? []).length === 0
+        ) {
+          const requestSpaceId = getByPath(
+            { context: (body.context ?? requirements?.context ?? {}) as Record<string, unknown> },
+            "context.space_id"
+          );
+          const claimSpaceId = getByPath({ claims: result.claims }, "claims.space_id");
+          if (
+            typeof requestSpaceId !== "string" ||
+            requestSpaceId.length === 0 ||
+            typeof claimSpaceId !== "string" ||
+            claimSpaceId.length === 0 ||
+            requestSpaceId !== claimSpaceId
+          ) {
+            deny("space_context_mismatch");
           }
         }
 
