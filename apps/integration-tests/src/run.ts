@@ -2287,6 +2287,135 @@ const run = async () => {
           }
         });
 
+      const hashPrefix = (value: string | null | undefined) =>
+        value && value.length > 0 ? value.slice(0, 12) : "none";
+      const parseAuraTier = (raw: unknown): "bronze" | "silver" | "gold" => {
+        const fallback = "bronze" as const;
+        if (!raw || typeof raw !== "object") {
+          if (typeof raw === "string") {
+            try {
+              const parsed = JSON.parse(raw) as unknown;
+              return parseAuraTier(parsed);
+            } catch {
+              return fallback;
+            }
+          }
+          return fallback;
+        }
+        const tierValue = String((raw as Record<string, unknown>).tier ?? "bronze").toLowerCase();
+        if (tierValue === "gold" || tierValue === "silver" || tierValue === "bronze") {
+          return tierValue;
+        }
+        return fallback;
+      };
+      const getAuraTierForDomain = async (subjectDidHash: string, domain: string) => {
+        const row = (await db("aura_state")
+          .where({ subject_did_hash: subjectDidHash, domain })
+          .select("state")
+          .first()) as { state?: unknown } | undefined;
+        return parseAuraTier(row?.state);
+      };
+      const hasTrustedCreatorCredential = async (subjectDidHash: string) => {
+        const row = await db("issuance_events")
+          .where({ subject_did_hash: subjectDidHash, vct: "cuncta.social.trusted_creator" })
+          .first();
+        return Boolean(row);
+      };
+      const logFlowFeedSummary = async (input: {
+        trust: "trusted_creator" | "verified_only" | "space_members";
+        spaceId?: string;
+        viewerSubjectHash: string;
+        targetAuthorHash: string;
+        posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+      }) => {
+        console.log(
+          `[diag] flow_feed_request trust=${input.trust} space_id=${input.spaceId ?? "none"} viewer_hash_prefix=${hashPrefix(input.viewerSubjectHash)} author_hash_prefix=${hashPrefix(input.targetAuthorHash)}`
+        );
+        if (input.posts.length === 0) {
+          console.log("[diag] flow_feed_response empty feed");
+          return;
+        }
+        const postIds = input.posts.map((entry) => entry.post_id);
+        const postRows = (await db("social_posts")
+          .whereIn("post_id", postIds)
+          .select("post_id", "author_subject_did_hash")) as Array<{
+          post_id: string;
+          author_subject_did_hash: string;
+        }>;
+        const postById = new Map(postRows.map((row) => [String(row.post_id), row]));
+        const authorHashes = Array.from(
+          new Set(postRows.map((row) => String(row.author_subject_did_hash)))
+        );
+        const socialAuraRows = (await db("aura_state")
+          .whereIn("subject_did_hash", authorHashes)
+          .andWhere({ domain: "social" })
+          .select("subject_did_hash", "state")) as Array<{
+          subject_did_hash: string;
+          state: unknown;
+        }>;
+        const socialTierByAuthor = new Map<string, "bronze" | "silver" | "gold">(
+          socialAuraRows.map((row) => [row.subject_did_hash, parseAuraTier(row.state)])
+        );
+        const trustedRows = (await db("issuance_events")
+          .whereIn("subject_did_hash", authorHashes)
+          .andWhere({ vct: "cuncta.social.trusted_creator" })
+          .select("subject_did_hash")
+          .groupBy("subject_did_hash")) as Array<{ subject_did_hash: string }>;
+        const trustedSet = new Set(trustedRows.map((row) => row.subject_did_hash));
+        console.log(
+          `[diag] flow_feed_response count=${input.posts.length} post_ids=${JSON.stringify(postIds)}`
+        );
+        for (const [index, post] of input.posts.entries()) {
+          const row = postById.get(post.post_id);
+          const authorHash = row?.author_subject_did_hash ?? "";
+          const socialTier = socialTierByAuthor.get(authorHash) ?? "bronze";
+          const trustStampSummary = {
+            tier: socialTier,
+            capability:
+              socialTier === "gold" || socialTier === "silver" || trustedSet.has(authorHash)
+                ? "trusted_creator"
+                : "can_post",
+            domain: "social"
+          };
+          console.log(
+            `[diag] flow_feed_post[${index}] post_id=${post.post_id} author_hash_prefix=${hashPrefix(authorHash)} trust_stamps=${JSON.stringify(post.trust_stamps ?? [])} trust_stamp_summary=${JSON.stringify(trustStampSummary)}`
+          );
+        }
+      };
+      const logTrustedLensAuthorInputs = async (input: {
+        viewerSubjectHash: string;
+        targetAuthorHash: string;
+        spaceId: string;
+      }) => {
+        const socialTier = await getAuraTierForDomain(input.targetAuthorHash, "social");
+        const spaceTier = await getAuraTierForDomain(
+          input.targetAuthorHash,
+          `space:${input.spaceId}`
+        );
+        const trustedCreatorCredential = await hasTrustedCreatorCredential(input.targetAuthorHash);
+        const viewerMembership = await db("social_space_memberships")
+          .where({
+            subject_did_hash: input.viewerSubjectHash,
+            space_id: input.spaceId,
+            status: "ACTIVE"
+          })
+          .first();
+        const sharedMembership = await db("social_space_memberships as viewer")
+          .join("social_space_memberships as author", "viewer.space_id", "author.space_id")
+          .where("viewer.subject_did_hash", input.viewerSubjectHash)
+          .andWhere("viewer.status", "ACTIVE")
+          .andWhere("author.subject_did_hash", input.targetAuthorHash)
+          .andWhere("author.status", "ACTIVE")
+          .select("viewer.space_id")
+          .first();
+        const moderationRestriction = await db("social_space_member_restrictions")
+          .where({ subject_did_hash: input.targetAuthorHash, space_id: input.spaceId })
+          .first();
+        console.log(
+          `[diag] trusted_lens_inputs social_tier=${socialTier} space_tier=${spaceTier} trusted_creator_credential=${trustedCreatorCredential} viewer_space_member=${Boolean(viewerMembership)} viewer_shared_space_with_author=${Boolean(sharedMembership)} author_moderation_restricted=${Boolean(moderationRestriction)} viewer_hash_prefix=${hashPrefix(input.viewerSubjectHash)} author_hash_prefix=${hashPrefix(input.targetAuthorHash)}`
+        );
+      };
+
       await runSocialPhase(
         "space default pack pinning",
         "DB social_space_policy_packs pinned hashes non-null",
@@ -2908,11 +3037,56 @@ const run = async () => {
         "flow feed trusted lens",
         "GET /v1/social/feed/flow trust=trusted_creator includes trusted actor",
         async () => {
+          await waitForSocialDbRow(
+            "flow feed trusted lens",
+            "trusted_creator_readiness",
+            async () => {
+              const socialTier = await getAuraTierForDomain(trustedActorHash, "social");
+              if (socialTier === "silver" || socialTier === "gold") {
+                return { reason: "aura_state", socialTier };
+              }
+              const trustedCredential = await hasTrustedCreatorCredential(trustedActorHash);
+              if (trustedCredential) {
+                return { reason: "trusted_creator_credential", socialTier };
+              }
+              const queueRow = await db("aura_issuance_queue")
+                .where({
+                  subject_did_hash: trustedActorHash,
+                  domain: "social",
+                  output_vct: "cuncta.social.trusted_creator"
+                })
+                .whereIn("status", ["PENDING", "ISSUED"])
+                .orderBy("created_at", "desc")
+                .first();
+              if (queueRow) {
+                return { reason: "aura_issuance_queue", socialTier };
+              }
+              return null;
+            },
+            120_000,
+            2_000
+          );
+
+          await logTrustedLensAuthorInputs({
+            viewerSubjectHash: socialSubjectHash,
+            targetAuthorHash: trustedActorHash,
+            spaceId: createdSpace.spaceId
+          });
+
           let seen = false;
           for (let attempt = 0; attempt < 10; attempt += 1) {
-            const flowFeed = await requestJson<{ posts: Array<{ post_id: string }> }>(
+            const flowFeed = await requestJson<{
+              posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+            }>(
               `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(socialHolderDid)}&trust=trusted_creator&limit=20`
             );
+            await logFlowFeedSummary({
+              trust: "trusted_creator",
+              spaceId: createdSpace.spaceId,
+              viewerSubjectHash: socialSubjectHash,
+              targetAuthorHash: trustedActorHash,
+              posts: flowFeed.posts
+            });
             if (flowFeed.posts.some((entry) => entry.post_id === trustedPost.postId)) {
               seen = true;
               break;
