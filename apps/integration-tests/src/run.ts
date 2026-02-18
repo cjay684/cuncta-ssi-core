@@ -2415,6 +2415,153 @@ const run = async () => {
           `[diag] trusted_lens_inputs social_tier=${socialTier} space_tier=${spaceTier} trusted_creator_credential=${trustedCreatorCredential} viewer_space_member=${Boolean(viewerMembership)} viewer_shared_space_with_author=${Boolean(sharedMembership)} author_moderation_restricted=${Boolean(moderationRestriction)} viewer_hash_prefix=${hashPrefix(input.viewerSubjectHash)} author_hash_prefix=${hashPrefix(input.targetAuthorHash)}`
         );
       };
+      const getPrivacyFlags = async (subjectDidHash: string) => {
+        const [restricted, tombstoned] = await Promise.all([
+          db("privacy_restrictions").where({ did_hash: subjectDidHash }).first(),
+          db("privacy_tombstones").where({ did_hash: subjectDidHash }).first()
+        ]);
+        return {
+          restricted: Boolean(restricted),
+          tombstoned: Boolean(tombstoned)
+        };
+      };
+      const logSpaceLensInputs = async (input: {
+        viewerSubjectHash: string;
+        targetAuthorHash: string;
+        spaceId: string;
+      }) => {
+        const [
+          viewerMembershipRows,
+          authorMembershipRows,
+          sharedRows,
+          viewerPrivacy,
+          authorPrivacy
+        ] = await Promise.all([
+          db("social_space_memberships")
+            .where({
+              subject_did_hash: input.viewerSubjectHash,
+              space_id: input.spaceId,
+              status: "ACTIVE"
+            })
+            .count<{ count: string }>("space_id as count")
+            .first(),
+          db("social_space_memberships")
+            .where({
+              subject_did_hash: input.targetAuthorHash,
+              space_id: input.spaceId,
+              status: "ACTIVE"
+            })
+            .count<{ count: string }>("space_id as count")
+            .first(),
+          db("social_space_memberships as viewer")
+            .join("social_space_memberships as author", "viewer.space_id", "author.space_id")
+            .where("viewer.subject_did_hash", input.viewerSubjectHash)
+            .andWhere("viewer.status", "ACTIVE")
+            .andWhere("author.subject_did_hash", input.targetAuthorHash)
+            .andWhere("author.status", "ACTIVE")
+            .andWhere("viewer.space_id", input.spaceId)
+            .count<{ count: string }>("viewer.space_id as count")
+            .first(),
+          getPrivacyFlags(input.viewerSubjectHash),
+          getPrivacyFlags(input.targetAuthorHash)
+        ]);
+        const [viewerModeration, authorModeration] = await Promise.all([
+          db("social_space_member_restrictions")
+            .where({
+              subject_did_hash: input.viewerSubjectHash,
+              space_id: input.spaceId
+            })
+            .first(),
+          db("social_space_member_restrictions")
+            .where({
+              subject_did_hash: input.targetAuthorHash,
+              space_id: input.spaceId
+            })
+            .first()
+        ]);
+        console.log(
+          `[diag] space_lens_inputs space_id=${input.spaceId} viewer_hash_prefix=${hashPrefix(input.viewerSubjectHash)} author_hash_prefix=${hashPrefix(input.targetAuthorHash)} viewer_space_member=${Number(viewerMembershipRows?.count ?? 0) > 0} author_space_member=${Number(authorMembershipRows?.count ?? 0) > 0} viewer_shared_space_with_author=${Number(sharedRows?.count ?? 0) > 0} viewer_membership_rows=${Number(viewerMembershipRows?.count ?? 0)} author_membership_rows=${Number(authorMembershipRows?.count ?? 0)} viewer_privacy_restricted=${viewerPrivacy.restricted} viewer_privacy_tombstoned=${viewerPrivacy.tombstoned} author_privacy_restricted=${authorPrivacy.restricted} author_privacy_tombstoned=${authorPrivacy.tombstoned} viewer_moderation_restricted=${Boolean(viewerModeration)} author_moderation_restricted=${Boolean(authorModeration)}`
+        );
+      };
+      const logSpaceFlowSummary = async (input: {
+        endpoint: string;
+        trust: "trusted_creator" | "verified_only" | "space_members" | "none";
+        spaceId: string;
+        viewerSubjectHash: string;
+        targetAuthorHash: string;
+        posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+      }) => {
+        console.log(
+          `[diag] space_flow_request endpoint=${input.endpoint} trust=${input.trust} space_id=${input.spaceId} viewer_hash_prefix=${hashPrefix(input.viewerSubjectHash)} author_hash_prefix=${hashPrefix(input.targetAuthorHash)}`
+        );
+        if (input.posts.length === 0) {
+          console.log("[diag] space_flow_response empty feed");
+          return;
+        }
+        const spacePostIds = input.posts.map((entry) => entry.space_post_id);
+        const postRows = (await db("social_space_posts")
+          .whereIn("space_post_id", spacePostIds)
+          .select("space_post_id", "author_subject_did_hash")) as Array<{
+          space_post_id: string;
+          author_subject_did_hash: string;
+        }>;
+        const postById = new Map(postRows.map((row) => [String(row.space_post_id), row]));
+        const authorHashes = Array.from(
+          new Set(postRows.map((row) => String(row.author_subject_did_hash)))
+        );
+        const socialAuraRows = (await db("aura_state")
+          .whereIn("subject_did_hash", authorHashes)
+          .andWhere({ domain: "social" })
+          .select("subject_did_hash", "state")) as Array<{
+          subject_did_hash: string;
+          state: unknown;
+        }>;
+        const spaceAuraRows = (await db("aura_state")
+          .whereIn("subject_did_hash", authorHashes)
+          .andWhere({ domain: `space:${input.spaceId}` })
+          .select("subject_did_hash", "state")) as Array<{
+          subject_did_hash: string;
+          state: unknown;
+        }>;
+        const socialTierByAuthor = new Map<string, "bronze" | "silver" | "gold">(
+          socialAuraRows.map((row) => [row.subject_did_hash, parseAuraTier(row.state)])
+        );
+        const spaceTierByAuthor = new Map<string, "bronze" | "silver" | "gold">(
+          spaceAuraRows.map((row) => [row.subject_did_hash, parseAuraTier(row.state)])
+        );
+        const trustedRows = (await db("issuance_events")
+          .whereIn("subject_did_hash", authorHashes)
+          .andWhere({ vct: "cuncta.social.trusted_creator" })
+          .select("subject_did_hash")
+          .groupBy("subject_did_hash")) as Array<{ subject_did_hash: string }>;
+        const trustedSet = new Set(trustedRows.map((row) => row.subject_did_hash));
+        console.log(
+          `[diag] space_flow_response count=${input.posts.length} post_ids=${JSON.stringify(spacePostIds)}`
+        );
+        for (const [index, post] of input.posts.entries()) {
+          const row = postById.get(post.space_post_id);
+          const authorHash = row?.author_subject_did_hash ?? "";
+          const socialTier = socialTierByAuthor.get(authorHash) ?? "bronze";
+          const spaceTier = spaceTierByAuthor.get(authorHash) ?? "bronze";
+          const effectiveTier =
+            socialTier === "gold" || spaceTier === "gold"
+              ? "gold"
+              : socialTier === "silver" || spaceTier === "silver"
+                ? "silver"
+                : "bronze";
+          const trustStampSummary = {
+            tier: effectiveTier,
+            capability:
+              effectiveTier === "gold" || effectiveTier === "silver" || trustedSet.has(authorHash)
+                ? "trusted_creator"
+                : "can_post",
+            domain: `space:${input.spaceId}`
+          };
+          console.log(
+            `[diag] space_flow_post[${index}] space_post_id=${post.space_post_id} author_hash_prefix=${hashPrefix(authorHash)} trust_stamps=${JSON.stringify(post.trust_stamps ?? [])} trust_stamp_summary=${JSON.stringify(trustStampSummary)}`
+          );
+        }
+      };
 
       await runSocialPhase(
         "space default pack pinning",
@@ -3037,34 +3184,156 @@ const run = async () => {
         "flow feed trusted lens",
         "GET /v1/social/feed/flow trust=trusted_creator includes trusted actor",
         async () => {
-          await waitForSocialDbRow(
+          const baselineFlowEndpoint = `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(
+            socialHolderDid
+          )}&limit=20`;
+          const baselineReady = await waitForSocialDbRow(
             "flow feed trusted lens",
-            "trusted_creator_readiness",
+            "baseline_flow_author_visibility",
             async () => {
-              const socialTier = await getAuraTierForDomain(trustedActorHash, "social");
-              if (socialTier === "silver" || socialTier === "gold") {
-                return { reason: "aura_state", socialTier };
+              const baselineFeed = await requestJson<{
+                posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+              }>(baselineFlowEndpoint);
+              const baselinePostIds = baselineFeed.posts.map((entry) => entry.post_id);
+              const baselineRows = baselinePostIds.length
+                ? ((await db("social_posts")
+                    .whereIn("post_id", baselinePostIds)
+                    .select("post_id", "author_subject_did_hash")) as Array<{
+                    post_id: string;
+                    author_subject_did_hash: string;
+                  }>)
+                : [];
+              const authorPrefixes = Array.from(
+                new Set(baselineRows.map((row) => hashPrefix(row.author_subject_did_hash)))
+              );
+              console.log(
+                `[diag] baseline_flow_response count=${baselineFeed.posts.length} post_ids=${JSON.stringify(
+                  baselinePostIds
+                )} author_hash_prefixes=${JSON.stringify(authorPrefixes)}`
+              );
+              if (baselineFeed.posts.length === 0) {
+                console.log("[diag] baseline_flow_response empty feed");
               }
-              const trustedCredential = await hasTrustedCreatorCredential(trustedActorHash);
-              if (trustedCredential) {
-                return { reason: "trusted_creator_credential", socialTier };
+              const hasTrustedActorPostInBaseline =
+                baselineFeed.posts.some((entry) => entry.post_id === trustedPost.postId) ||
+                baselineRows.some((row) => row.author_subject_did_hash === trustedActorHash);
+              if (hasTrustedActorPostInBaseline) {
+                return { feedCount: baselineFeed.posts.length, reason: "baseline_flow_visible" };
               }
-              const queueRow = await db("aura_issuance_queue")
-                .where({
-                  subject_did_hash: trustedActorHash,
-                  domain: "social",
-                  output_vct: "cuncta.social.trusted_creator"
-                })
-                .whereIn("status", ["PENDING", "ISSUED"])
-                .orderBy("created_at", "desc")
-                .first();
-              if (queueRow) {
-                return { reason: "aura_issuance_queue", socialTier };
+              const [trustedActorPostCountRow, trustedActorSignalCountRow] = await Promise.all([
+                db("social_posts")
+                  .where({ author_subject_did_hash: trustedActorHash })
+                  .whereNull("deleted_at")
+                  .count<{ count: string }>("post_id as count")
+                  .first(),
+                db("aura_signals")
+                  .where({ subject_did_hash: trustedActorHash })
+                  .whereIn("signal", ["social.post_success", "social.reply_success"])
+                  .count<{ count: string }>("id as count")
+                  .first()
+              ]);
+              const trustedActorPostCount = Number(trustedActorPostCountRow?.count ?? 0);
+              const trustedActorSignalCount = Number(trustedActorSignalCountRow?.count ?? 0);
+              console.log(
+                `[diag] signal_feed_fallback posts=${trustedActorPostCount} signals=${trustedActorSignalCount}`
+              );
+              if (trustedActorPostCount >= 1 && trustedActorSignalCount >= 1) {
+                return { feedCount: baselineFeed.posts.length, reason: "signal_feed_visible" };
               }
               return null;
             },
             120_000,
             2_000
+          );
+          console.log(
+            `[social.wait.ok] gate=baseline_flow_author_visibility reason=${baselineReady?.reason ?? "unknown"} feed_count=${baselineReady?.feedCount ?? 0}`
+          );
+
+          let trustedSocialTier = await getAuraTierForDomain(trustedActorHash, "social");
+          let expectedPostSignalCount = Number(
+            (
+              await db("aura_signals")
+                .where({ subject_did_hash: trustedActorHash, signal: "social.post_success" })
+                .count<{ count: string }>("id as count")
+                .first()
+            )?.count ?? 0
+          );
+          for (
+            let actionIndex = 0;
+            actionIndex < 2 && trustedSocialTier === "bronze";
+            actionIndex += 1
+          ) {
+            console.log(
+              `[diag] trusted_creator_boost start index=${actionIndex + 1} social_tier_before=${trustedSocialTier}`
+            );
+            const extraPostRequirements = await ensureRequirements(
+              "social.post.create",
+              await requestJson<{
+                challenge: { nonce: string; audience: string };
+                requirements: Array<{
+                  vct: string;
+                  disclosures?: string[];
+                  predicates?: Array<{ path: string; op: string; value?: unknown }>;
+                }>;
+              }>(`${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=social.post.create`)
+            );
+            const extraPostPresentation = await buildPresentation({
+              sdJwt: trustedActor.baseCredential.credential,
+              disclose: buildDisclosureList(extraPostRequirements.requirements[0]),
+              nonce: extraPostRequirements.challenge.nonce,
+              audience: extraPostRequirements.challenge.audience,
+              holderJwk: trustedActor.keys.publicJwk,
+              holderKey: trustedActor.keys.cryptoKey
+            });
+            const extraPost = await postJson<{ decision: string; postId: string }>(
+              `${APP_GATEWAY_BASE_URL}/v1/social/post`,
+              {
+                subjectDid: trustedActor.did,
+                content: `Trusted flow boost post ${actionIndex + 1} for deterministic silver readiness.`,
+                visibility: "public",
+                presentation: extraPostPresentation,
+                nonce: extraPostRequirements.challenge.nonce,
+                audience: extraPostRequirements.challenge.audience
+              }
+            );
+            assert.equal(extraPost.decision, "ALLOW");
+            expectedPostSignalCount += 1;
+            await waitForSocialDbRow(
+              "flow feed trusted lens",
+              `trusted_actor_post_success_${actionIndex + 1}`,
+              async () => {
+                const signalCount = await db("aura_signals")
+                  .where({ subject_did_hash: trustedActorHash, signal: "social.post_success" })
+                  .count<{ count: string }>("id as count")
+                  .first();
+                return Number(signalCount?.count ?? 0) >= expectedPostSignalCount
+                  ? signalCount
+                  : null;
+              },
+              120_000,
+              2_000
+            );
+            trustedSocialTier = await getAuraTierForDomain(trustedActorHash, "social");
+            console.log(
+              `[diag] trusted_creator_boost progress index=${actionIndex + 1} social_tier_after=${trustedSocialTier}`
+            );
+          }
+          const tierReady = await waitForSocialDbRow(
+            "flow feed trusted lens",
+            "trusted_creator_social_tier_silver",
+            async () => {
+              const socialTier = await getAuraTierForDomain(trustedActorHash, "social");
+              console.log(`[diag] trusted_creator_tier_check social_tier=${socialTier}`);
+              if (socialTier === "silver" || socialTier === "gold") {
+                return { socialTier };
+              }
+              return null;
+            },
+            120_000,
+            2_000
+          );
+          console.log(
+            `[social.wait.ok] gate=trusted_creator_social_tier_silver social_tier=${tierReady?.socialTier ?? "bronze"}`
           );
 
           await logTrustedLensAuthorInputs({
@@ -3100,11 +3369,68 @@ const run = async () => {
         "flow feed space lens",
         "GET /v1/social/feed/flow trust=space_members contains shared-space author",
         async () => {
+          await waitForSocialDbRow(
+            "flow feed space lens",
+            "space_members_readiness",
+            async () => {
+              const [viewerMembership, authorSpacePost] = await Promise.all([
+                db("social_space_memberships")
+                  .where({
+                    subject_did_hash: socialSubjectHash,
+                    space_id: createdSpace.spaceId,
+                    status: "ACTIVE"
+                  })
+                  .first(),
+                db("social_space_posts")
+                  .where({
+                    space_id: createdSpace.spaceId,
+                    author_subject_did_hash: trustedActorHash
+                  })
+                  .whereNull("deleted_at")
+                  .first()
+              ]);
+              if (!viewerMembership || !authorSpacePost) {
+                return null;
+              }
+              const weakerFeed = await requestJson<{
+                posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+              }>(
+                `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(socialHolderDid)}&limit=20`
+              );
+              await logFlowFeedSummary({
+                trust: "space_members",
+                spaceId: createdSpace.spaceId,
+                viewerSubjectHash: socialSubjectHash,
+                targetAuthorHash: trustedActorHash,
+                posts: weakerFeed.posts
+              });
+              if (!weakerFeed.posts.some((entry) => entry.post_id === trustedPost.postId)) {
+                return null;
+              }
+              return { ready: true };
+            },
+            120_000,
+            2_000
+          );
+          await logSpaceLensInputs({
+            viewerSubjectHash: socialSubjectHash,
+            targetAuthorHash: trustedActorHash,
+            spaceId: createdSpace.spaceId
+          });
           let seen = false;
           for (let attempt = 0; attempt < 10; attempt += 1) {
-            const flowFeed = await requestJson<{ posts: Array<{ post_id: string }> }>(
+            const flowFeed = await requestJson<{
+              posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+            }>(
               `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(socialHolderDid)}&trust=space_members&limit=20`
             );
+            await logFlowFeedSummary({
+              trust: "space_members",
+              spaceId: createdSpace.spaceId,
+              viewerSubjectHash: socialSubjectHash,
+              targetAuthorHash: trustedActorHash,
+              posts: flowFeed.posts
+            });
             if (flowFeed.posts.some((entry) => entry.post_id === trustedPost.postId)) {
               seen = true;
               break;
@@ -3131,11 +3457,93 @@ const run = async () => {
         "space flow trusted lens",
         "GET /v1/social/space/flow trust=trusted_creator includes trusted space author",
         async () => {
-          const flowFeed = await requestJson<{ posts: Array<{ space_post_id: string }> }>(
-            `${APP_GATEWAY_BASE_URL}/v1/social/space/flow?spaceId=${encodeURIComponent(createdSpace.spaceId)}&viewerDid=${encodeURIComponent(
-              socialHolderDid
-            )}&trust=trusted_creator&limit=20`
+          const trustedSpaceFlowEndpoint = `${APP_GATEWAY_BASE_URL}/v1/social/space/flow?spaceId=${encodeURIComponent(
+            createdSpace.spaceId
+          )}&viewerDid=${encodeURIComponent(socialHolderDid)}&trust=trusted_creator&limit=20`;
+          const baselineSpaceFlowEndpoint = `${APP_GATEWAY_BASE_URL}/v1/social/space/flow?spaceId=${encodeURIComponent(
+            createdSpace.spaceId
+          )}&viewerDid=${encodeURIComponent(socialHolderDid)}&limit=20`;
+          await waitForSocialDbRow(
+            "space flow trusted lens",
+            "space_flow_trusted_readiness",
+            async () => {
+              const [viewerMembership, authorPostInSpace] = await Promise.all([
+                db("social_space_memberships")
+                  .where({
+                    subject_did_hash: socialSubjectHash,
+                    space_id: createdSpace.spaceId,
+                    status: "ACTIVE"
+                  })
+                  .first(),
+                db("social_space_posts")
+                  .where({
+                    space_id: createdSpace.spaceId,
+                    author_subject_did_hash: trustedActorHash
+                  })
+                  .whereNull("deleted_at")
+                  .first()
+              ]);
+              if (!viewerMembership || !authorPostInSpace) {
+                return null;
+              }
+              const [socialTier, spaceTier, trustedCreatorCredential] = await Promise.all([
+                getAuraTierForDomain(trustedActorHash, "social"),
+                getAuraTierForDomain(trustedActorHash, `space:${createdSpace.spaceId}`),
+                hasTrustedCreatorCredential(trustedActorHash)
+              ]);
+              const trustedTierReady =
+                socialTier === "silver" ||
+                socialTier === "gold" ||
+                spaceTier === "silver" ||
+                spaceTier === "gold" ||
+                trustedCreatorCredential;
+              if (!trustedTierReady) {
+                return null;
+              }
+              const baselineFlow = await requestJson<{
+                posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+              }>(baselineSpaceFlowEndpoint);
+              await logSpaceFlowSummary({
+                endpoint: baselineSpaceFlowEndpoint,
+                trust: "none",
+                spaceId: createdSpace.spaceId,
+                viewerSubjectHash: socialSubjectHash,
+                targetAuthorHash: trustedActorHash,
+                posts: baselineFlow.posts
+              });
+              if (
+                !baselineFlow.posts.some(
+                  (entry) => entry.space_post_id === trustedSpacePost.spacePostId
+                )
+              ) {
+                return null;
+              }
+              return { ready: true, socialTier, spaceTier, trustedCreatorCredential };
+            },
+            120_000,
+            2_000
           );
+          await logTrustedLensAuthorInputs({
+            viewerSubjectHash: socialSubjectHash,
+            targetAuthorHash: trustedActorHash,
+            spaceId: createdSpace.spaceId
+          });
+          await logSpaceLensInputs({
+            viewerSubjectHash: socialSubjectHash,
+            targetAuthorHash: trustedActorHash,
+            spaceId: createdSpace.spaceId
+          });
+          const flowFeed = await requestJson<{
+            posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+          }>(trustedSpaceFlowEndpoint);
+          await logSpaceFlowSummary({
+            endpoint: trustedSpaceFlowEndpoint,
+            trust: "trusted_creator",
+            spaceId: createdSpace.spaceId,
+            viewerSubjectHash: socialSubjectHash,
+            targetAuthorHash: trustedActorHash,
+            posts: flowFeed.posts
+          });
           assert.ok(
             flowFeed.posts.some((entry) => entry.space_post_id === trustedSpacePost.spacePostId)
           );
