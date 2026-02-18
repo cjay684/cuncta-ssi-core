@@ -4135,6 +4135,632 @@ const run = async () => {
         `${APP_GATEWAY_BASE_URL}/v1/social/presence/state?spaceId=${encodeURIComponent(createdSpace.spaceId)}`
       );
       assert.ok(presenceState.states.some((entry) => entry.mode === "active"));
+      const presencePingReq = await ensureRequirements(
+        "presence.ping",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=presence.ping&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const presencePingPresentation = await buildPresentation({
+        sdJwt: presenceCredential.credential,
+        disclose: buildDisclosureList(presencePingReq.requirements[0]),
+        nonce: presencePingReq.challenge.nonce,
+        audience: presencePingReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const presencePing = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/presence/ping`,
+        {
+          subjectDid: socialHolderDid,
+          mode: "active",
+          presentation: presencePingPresentation,
+          nonce: presencePingReq.challenge.nonce,
+          audience: presencePingReq.challenge.audience
+        }
+      );
+      assert.equal(presencePing.decision, "ALLOW");
+      const presenceStrip = await requestJson<{
+        counts: { quiet: number; active: number; immersive: number };
+      }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/presence?subjectDid=${encodeURIComponent(socialHolderDid)}`
+      );
+      assert.ok(presenceStrip.counts.active >= 1);
+
+      const crewCreateReq = await ensureRequirements(
+        "social.crew.create",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=social.crew.create&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const crewPosterCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.social.space.poster",
+        claims: {
+          poster: true,
+          tier: "silver",
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const crewCreatePresentation = await buildPresentation({
+        sdJwt: crewPosterCredential.credential,
+        disclose: buildDisclosureList(crewCreateReq.requirements[0]),
+        nonce: crewCreateReq.challenge.nonce,
+        audience: crewCreateReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const createdCrew = await postJson<{ decision: string; crewId: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/crews`,
+        {
+          subjectDid: socialHolderDid,
+          name: "Alpha Crew",
+          presentation: crewCreatePresentation,
+          nonce: crewCreateReq.challenge.nonce,
+          audience: crewCreateReq.challenge.audience
+        }
+      );
+      assert.equal(createdCrew.decision, "ALLOW");
+      const crewJoinReq = await ensureRequirements(
+        "social.crew.join",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=social.crew.join&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const crewMemberCredential = await issueCredentialFor({
+        subjectDid: trustedActor.did,
+        vct: "cuncta.social.space.member",
+        claims: {
+          member: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const crewJoinPresentation = await buildPresentation({
+        sdJwt: crewMemberCredential.credential,
+        disclose: buildDisclosureList(crewJoinReq.requirements[0]),
+        nonce: crewJoinReq.challenge.nonce,
+        audience: crewJoinReq.challenge.audience,
+        holderJwk: trustedActor.keys.publicJwk,
+        holderKey: trustedActor.keys.cryptoKey
+      });
+      const joinedCrew = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/crews/${encodeURIComponent(createdCrew.crewId)}/join`,
+        {
+          subjectDid: trustedActor.did,
+          presentation: crewJoinPresentation,
+          nonce: crewJoinReq.challenge.nonce,
+          audience: crewJoinReq.challenge.audience
+        }
+      );
+      assert.equal(joinedCrew.decision, "ALLOW");
+      const crewPresence = await requestJson<{ active_count: number }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/crews/${encodeURIComponent(createdCrew.crewId)}/presence?subjectDid=${encodeURIComponent(socialHolderDid)}`
+      );
+      assert.ok(crewPresence.active_count >= 1);
+
+      const challengeCreateReq = await ensureRequirements(
+        "challenge.create",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=challenge.create&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const stewardCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.social.space.steward",
+        claims: {
+          steward: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const challengeCreatePresentation = await buildPresentation({
+        sdJwt: stewardCredential.credential,
+        disclose: buildDisclosureList(challengeCreateReq.requirements[0]),
+        nonce: challengeCreateReq.challenge.nonce,
+        audience: challengeCreateReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const createdChallenge = await postJson<{ decision: string; challengeId: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/challenges`,
+        {
+          subjectDid: socialHolderDid,
+          cadence: "daily",
+          title: "Daily banter drop",
+          durationHours: 1,
+          presentation: challengeCreatePresentation,
+          nonce: challengeCreateReq.challenge.nonce,
+          audience: challengeCreateReq.challenge.audience
+        }
+      );
+      assert.equal(createdChallenge.decision, "ALLOW");
+      const challengeJoinReq = await ensureRequirements(
+        "challenge.join",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=challenge.join&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const challengeMemberCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.social.space.member",
+        claims: {
+          member: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const challengeJoinPresentation = await buildPresentation({
+        sdJwt: challengeMemberCredential.credential,
+        disclose: buildDisclosureList(challengeJoinReq.requirements[0]),
+        nonce: challengeJoinReq.challenge.nonce,
+        audience: challengeJoinReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const joinedChallenge = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/challenges/${encodeURIComponent(createdChallenge.challengeId)}/join`,
+        {
+          subjectDid: socialHolderDid,
+          presentation: challengeJoinPresentation,
+          nonce: challengeJoinReq.challenge.nonce,
+          audience: challengeJoinReq.challenge.audience
+        }
+      );
+      assert.equal(joinedChallenge.decision, "ALLOW");
+      await db("social_space_streaks")
+        .insert({
+          space_id: createdSpace.spaceId,
+          subject_hash: socialSubjectHash,
+          streak_type: "daily_challenge",
+          current_count: 1,
+          best_count: 1,
+          last_completed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .onConflict(["space_id", "subject_hash", "streak_type"])
+        .merge({
+          current_count: 1,
+          best_count: 1,
+          last_completed_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          updated_at: new Date().toISOString()
+        });
+      await runSocialPhase(
+        "pulse overlay (pre-complete)",
+        "GET /v1/social/spaces/:spaceId/pulse returns crew/challenge/streak cards",
+        async () => {
+          const pulseBeforeComplete = await requestJson<{
+            cards?: Array<{ type?: string }>;
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse?subjectDid=${encodeURIComponent(
+              socialHolderDid
+            )}`
+          );
+          const pulseTypes = new Set((pulseBeforeComplete.cards ?? []).map((entry) => entry.type));
+          assert.equal(pulseTypes.has("crew_active"), true);
+          assert.equal(pulseTypes.has("challenge_ending"), true);
+          assert.equal(pulseTypes.has("streak_risk"), true);
+        }
+      );
+      const challengeCompleteReq = await ensureRequirements(
+        "challenge.complete",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=challenge.complete&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const challengeCompletePresentation = await buildPresentation({
+        sdJwt: challengeMemberCredential.credential,
+        disclose: buildDisclosureList(challengeCompleteReq.requirements[0]),
+        nonce: challengeCompleteReq.challenge.nonce,
+        audience: challengeCompleteReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const completedChallenge = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/challenges/${encodeURIComponent(createdChallenge.challengeId)}/complete`,
+        {
+          subjectDid: socialHolderDid,
+          presentation: challengeCompletePresentation,
+          nonce: challengeCompleteReq.challenge.nonce,
+          audience: challengeCompleteReq.challenge.audience
+        }
+      );
+      assert.equal(completedChallenge.decision, "ALLOW");
+      const streaks = await requestJson<{
+        you: Array<{ streak_type: string; current_count: number }>;
+      }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/streaks?subjectDid=${encodeURIComponent(socialHolderDid)}`
+      );
+      assert.ok(streaks.you.some((entry) => entry.streak_type === "daily_challenge"));
+
+      const ritualCreateReq = await ensureRequirements(
+        "ritual.create",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=ritual.create&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const ritualPosterCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.social.space.poster",
+        claims: {
+          poster: true,
+          tier: "silver",
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const ritualCreatePresentation = await buildPresentation({
+        sdJwt: ritualPosterCredential.credential,
+        disclose: buildDisclosureList(ritualCreateReq.requirements[0]),
+        nonce: ritualCreateReq.challenge.nonce,
+        audience: ritualCreateReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const ritualCreated = await postJson<{ decision: string; ritualId: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/ritual/create`,
+        {
+          subjectDid: socialHolderDid,
+          spaceId: createdSpace.spaceId,
+          title: "10-minute drop",
+          description: "Post now",
+          durationMinutes: 10,
+          presentation: ritualCreatePresentation,
+          nonce: ritualCreateReq.challenge.nonce,
+          audience: ritualCreateReq.challenge.audience
+        }
+      );
+      assert.equal(ritualCreated.decision, "ALLOW");
+      const ritualJoinReq = await ensureRequirements(
+        "ritual.participate",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=ritual.participate&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const ritualMemberCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.social.space.member",
+        claims: {
+          member: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const ritualJoinPresentation = await buildPresentation({
+        sdJwt: ritualMemberCredential.credential,
+        disclose: buildDisclosureList(ritualJoinReq.requirements[0]),
+        nonce: ritualJoinReq.challenge.nonce,
+        audience: ritualJoinReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const ritualJoined = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/ritual/participate`,
+        {
+          subjectDid: socialHolderDid,
+          ritualId: ritualCreated.ritualId,
+          spaceId: createdSpace.spaceId,
+          presentation: ritualJoinPresentation,
+          nonce: ritualJoinReq.challenge.nonce,
+          audience: ritualJoinReq.challenge.audience
+        }
+      );
+      assert.equal(ritualJoined.decision, "ALLOW");
+      const ritualCompleteReq = await ensureRequirements(
+        "ritual.complete",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=ritual.complete&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const ritualCompletePresentation = await buildPresentation({
+        sdJwt: ritualMemberCredential.credential,
+        disclose: buildDisclosureList(ritualCompleteReq.requirements[0]),
+        nonce: ritualCompleteReq.challenge.nonce,
+        audience: ritualCompleteReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const ritualCompleted = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/ritual/complete`,
+        {
+          subjectDid: socialHolderDid,
+          ritualId: ritualCreated.ritualId,
+          spaceId: createdSpace.spaceId,
+          presentation: ritualCompletePresentation,
+          nonce: ritualCompleteReq.challenge.nonce,
+          audience: ritualCompleteReq.challenge.audience
+        }
+      );
+      assert.equal(ritualCompleted.decision, "ALLOW");
+      const leaderboardAfterRitual = await requestJson<{
+        top_contributors: Array<{ signals?: { ritual_complete?: number } }>;
+      }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/leaderboard?window=7d`
+      );
+      assert.ok(leaderboardAfterRitual.top_contributors.length >= 1);
+      const visibilityReq = await ensureRequirements(
+        "presence.ping",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=presence.ping&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const visibilityPresentation = await buildPresentation({
+        sdJwt: presenceCredential.credential,
+        disclose: buildDisclosureList(visibilityReq.requirements[0]),
+        nonce: visibilityReq.challenge.nonce,
+        audience: visibilityReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/profile/visibility`,
+        {
+          subjectDid: socialHolderDid,
+          showOnLeaderboard: true,
+          showOnPresence: false,
+          presenceLabel: "social-holder",
+          presentation: visibilityPresentation,
+          nonce: visibilityReq.challenge.nonce,
+          audience: visibilityReq.challenge.audience
+        }
+      );
+
+      const huddleHostReq = await ensureRequirements(
+        "sync.hangout.create_session",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=sync.hangout.create_session&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const huddleHostCredential = await issueCredentialFor({
+        subjectDid: socialHolderDid,
+        vct: "cuncta.sync.huddle_host",
+        claims: {
+          huddle_host: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const huddleCreatePresentation = await buildPresentation({
+        sdJwt: huddleHostCredential.credential,
+        disclose: buildDisclosureList(huddleHostReq.requirements[0]),
+        nonce: huddleHostReq.challenge.nonce,
+        audience: huddleHostReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const huddleCreated = await postJson<{ decision: string; sessionId: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/sync/hangout/create_session`,
+        {
+          subjectDid: socialHolderDid,
+          spaceId: createdSpace.spaceId,
+          presentation: huddleCreatePresentation,
+          nonce: huddleHostReq.challenge.nonce,
+          audience: huddleHostReq.challenge.audience
+        }
+      );
+      assert.equal(huddleCreated.decision, "ALLOW");
+      const huddleJoinReq = await ensureRequirements(
+        "sync.hangout.join_session",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=sync.hangout.join_session&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const trustedPresenceCredential = await issueCredentialFor({
+        subjectDid: trustedActor.did,
+        vct: "cuncta.presence.mode_access",
+        claims: {
+          mode_access: true,
+          domain: `space:${createdSpace.spaceId}`,
+          space_id: createdSpace.spaceId,
+          as_of: new Date().toISOString()
+        }
+      });
+      const huddleJoinPresentation = await buildPresentation({
+        sdJwt: trustedPresenceCredential.credential,
+        disclose: buildDisclosureList(huddleJoinReq.requirements[0]),
+        nonce: huddleJoinReq.challenge.nonce,
+        audience: huddleJoinReq.challenge.audience,
+        holderJwk: trustedActor.keys.publicJwk,
+        holderKey: trustedActor.keys.cryptoKey
+      });
+      const huddleJoined = await postJson<{ decision: string; participant_count: number }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/sync/hangout/join_session`,
+        {
+          subjectDid: trustedActor.did,
+          sessionId: huddleCreated.sessionId,
+          spaceId: createdSpace.spaceId,
+          presentation: huddleJoinPresentation,
+          nonce: huddleJoinReq.challenge.nonce,
+          audience: huddleJoinReq.challenge.audience
+        }
+      );
+      assert.equal(huddleJoined.decision, "ALLOW");
+      assert.ok(huddleJoined.participant_count >= 2);
+      await runSocialPhase(
+        "pulse overlay (live hangout + prefs)",
+        "GET+POST pulse endpoints respect cards and category preferences",
+        async () => {
+          const pulseWithHangout = await requestJson<{
+            cards?: Array<{ type?: string }>;
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse?subjectDid=${encodeURIComponent(
+              socialHolderDid
+            )}`
+          );
+          const liveTypes = new Set((pulseWithHangout.cards ?? []).map((entry) => entry.type));
+          assert.equal(liveTypes.has("hangout_live"), true);
+          assert.equal(liveTypes.has("streak_risk"), false);
+          const pulsePrefReq = await ensureRequirements(
+            "presence.ping",
+            await requestJson<{
+              challenge: { nonce: string; audience: string };
+              requirements: Array<{
+                vct: string;
+                disclosures?: string[];
+                predicates?: Array<{ path: string; op: string; value?: unknown }>;
+              }>;
+            }>(
+              `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=presence.ping&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+            )
+          );
+          const pulsePrefPresentation = await buildPresentation({
+            sdJwt: presenceCredential.credential,
+            disclose: buildDisclosureList(pulsePrefReq.requirements[0]),
+            nonce: pulsePrefReq.challenge.nonce,
+            audience: pulsePrefReq.challenge.audience,
+            holderJwk: socialHolderKeys.publicJwk,
+            holderKey: socialHolderKeys.cryptoKey
+          });
+          const prefUpdate = await postJson<{
+            preferences?: { notifyHangouts?: boolean };
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse/preferences`,
+            {
+              subjectDid: socialHolderDid,
+              notifyHangouts: false,
+              presentation: pulsePrefPresentation,
+              nonce: pulsePrefReq.challenge.nonce,
+              audience: pulsePrefReq.challenge.audience
+            }
+          );
+          assert.equal(prefUpdate.preferences?.notifyHangouts, false);
+          const pulseAfterPref = await requestJson<{
+            cards?: Array<{ type?: string }>;
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse?subjectDid=${encodeURIComponent(
+              socialHolderDid
+            )}`
+          );
+          const prefTypes = new Set((pulseAfterPref.cards ?? []).map((entry) => entry.type));
+          assert.equal(prefTypes.has("hangout_live"), false);
+        }
+      );
+      const huddleEndReq = await ensureRequirements(
+        "sync.hangout.end_session",
+        await requestJson<{
+          challenge: { nonce: string; audience: string };
+          requirements: Array<{
+            vct: string;
+            disclosures?: string[];
+            predicates?: Array<{ path: string; op: string; value?: unknown }>;
+          }>;
+        }>(
+          `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=sync.hangout.end_session&space_id=${encodeURIComponent(createdSpace.spaceId)}`
+        )
+      );
+      const huddleEndPresentation = await buildPresentation({
+        sdJwt: huddleHostCredential.credential,
+        disclose: buildDisclosureList(huddleEndReq.requirements[0]),
+        nonce: huddleEndReq.challenge.nonce,
+        audience: huddleEndReq.challenge.audience,
+        holderJwk: socialHolderKeys.publicJwk,
+        holderKey: socialHolderKeys.cryptoKey
+      });
+      const huddleEnded = await postJson<{ decision: string }>(
+        `${APP_GATEWAY_BASE_URL}/v1/social/sync/hangout/end_session`,
+        {
+          subjectDid: socialHolderDid,
+          sessionId: huddleCreated.sessionId,
+          spaceId: createdSpace.spaceId,
+          reasonCode: "host_done",
+          presentation: huddleEndPresentation,
+          nonce: huddleEndReq.challenge.nonce,
+          audience: huddleEndReq.challenge.audience
+        }
+      );
+      assert.equal(huddleEnded.decision, "ALLOW");
 
       const scrollHostReq = await ensureRequirements(
         "sync.scroll.create_session",
@@ -4192,16 +4818,6 @@ const run = async () => {
           `${APP_GATEWAY_BASE_URL}/v1/social/requirements?action=sync.scroll.join_session&space_id=${encodeURIComponent(createdSpace.spaceId)}`
         )
       );
-      const trustedPresenceCredential = await issueCredentialFor({
-        subjectDid: trustedActor.did,
-        vct: "cuncta.presence.mode_access",
-        claims: {
-          mode_access: true,
-          domain: `space:${createdSpace.spaceId}`,
-          space_id: createdSpace.spaceId,
-          as_of: new Date().toISOString()
-        }
-      });
       const scrollJoinPresentation = await buildPresentation({
         sdJwt: trustedPresenceCredential.credential,
         disclose: buildDisclosureList(scrollJoinReq.requirements[0]),
@@ -4500,6 +5116,28 @@ const run = async () => {
         }
       );
       assert.equal(restrictedJoinAttempt.status, 403);
+      const restrictedPresencePing = await fetch(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/presence/ping`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            subjectDid: trustedActor.did,
+            mode: "active",
+            presentation: presencePingPresentation,
+            nonce: presencePingReq.challenge.nonce,
+            audience: presencePingReq.challenge.audience
+          })
+        }
+      );
+      assert.equal(restrictedPresencePing.status, 403);
+      const restrictedPulse = await fetch(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse?subjectDid=${encodeURIComponent(
+          trustedActor.did
+        )}`,
+        { headers: gatewayHeaders() }
+      );
+      assert.equal(restrictedPulse.status, 200);
 
       const trustedErase = await postJson<{ status: string }>(
         `${ISSUER_SERVICE_BASE_URL}/v1/privacy/erase`,
@@ -4524,6 +5162,17 @@ const run = async () => {
         }
       );
       assert.equal(erasedJoinAttempt.status, 403);
+      const erasedPulse = await fetch(
+        `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/pulse?subjectDid=${encodeURIComponent(
+          trustedActor.did
+        )}`,
+        { headers: gatewayHeaders() }
+      );
+      assert.ok([200, 403].includes(erasedPulse.status));
+      if (erasedPulse.status === 200) {
+        const payload = (await erasedPulse.json()) as { cards?: unknown[] };
+        assert.equal((payload.cards ?? []).length, 0);
+      }
 
       const erasedEventAttempt = await fetch(
         `${APP_GATEWAY_BASE_URL}/v1/social/sync/scroll/sync_event`,
@@ -4738,6 +5387,17 @@ const run = async () => {
           assert.equal(
             spaceFeedAfterErase.posts.some(
               (post) => post.space_post_id === spacePostForErase.spacePostId
+            ),
+            false
+          );
+          const leaderboardAfterErase = await requestJson<{
+            top_contributors: Array<{ identity?: { displayName?: string; anonymous?: boolean } }>;
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/leaderboard?window=7d`
+          );
+          assert.equal(
+            leaderboardAfterErase.top_contributors.some(
+              (entry) => entry.identity?.displayName === "social-holder"
             ),
             false
           );
