@@ -3369,14 +3369,27 @@ const run = async () => {
         "flow feed space lens",
         "GET /v1/social/feed/flow trust=space_members contains shared-space author",
         async () => {
+          const baselineFlowEndpoint = `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(
+            socialHolderDid
+          )}&limit=20`;
+          const baselineSpaceFlowEndpoint = `${APP_GATEWAY_BASE_URL}/v1/social/space/flow?spaceId=${encodeURIComponent(
+            createdSpace.spaceId
+          )}&viewerDid=${encodeURIComponent(socialHolderDid)}&limit=20`;
           await waitForSocialDbRow(
             "flow feed space lens",
             "space_members_readiness",
             async () => {
-              const [viewerMembership, authorSpacePost] = await Promise.all([
+              const [viewerMembership, authorMembership, authorSpacePost] = await Promise.all([
                 db("social_space_memberships")
                   .where({
                     subject_did_hash: socialSubjectHash,
+                    space_id: createdSpace.spaceId,
+                    status: "ACTIVE"
+                  })
+                  .first(),
+                db("social_space_memberships")
+                  .where({
+                    subject_did_hash: trustedActorHash,
                     space_id: createdSpace.spaceId,
                     status: "ACTIVE"
                   })
@@ -3389,25 +3402,55 @@ const run = async () => {
                   .whereNull("deleted_at")
                   .first()
               ]);
-              if (!viewerMembership || !authorSpacePost) {
+              if (!viewerMembership || !authorMembership || !authorSpacePost) {
                 return null;
               }
-              const weakerFeed = await requestJson<{
-                posts: Array<{ post_id: string; trust_stamps?: string[] }>;
-              }>(
-                `${APP_GATEWAY_BASE_URL}/v1/social/feed/flow?viewerDid=${encodeURIComponent(socialHolderDid)}&limit=20`
-              );
+              const [baselineFlowFeed, baselineSpaceFlow] = await Promise.all([
+                requestJson<{
+                  posts: Array<{ post_id: string; trust_stamps?: string[] }>;
+                }>(baselineFlowEndpoint),
+                requestJson<{
+                  posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+                }>(baselineSpaceFlowEndpoint)
+              ]);
               await logFlowFeedSummary({
                 trust: "space_members",
                 spaceId: createdSpace.spaceId,
                 viewerSubjectHash: socialSubjectHash,
                 targetAuthorHash: trustedActorHash,
-                posts: weakerFeed.posts
+                posts: baselineFlowFeed.posts
               });
-              if (!weakerFeed.posts.some((entry) => entry.post_id === trustedPost.postId)) {
+              await logSpaceFlowSummary({
+                endpoint: baselineSpaceFlowEndpoint,
+                trust: "none",
+                spaceId: createdSpace.spaceId,
+                viewerSubjectHash: socialSubjectHash,
+                targetAuthorHash: trustedActorHash,
+                posts: baselineSpaceFlow.posts
+              });
+              const baselineFlowHasExpectedPost = baselineFlowFeed.posts.some(
+                (entry) => entry.post_id === trustedPost.postId
+              );
+              const baselineSpaceFlowHasExpectedPost = baselineSpaceFlow.posts.some(
+                (entry) => entry.space_post_id === trustedSpacePost.spacePostId
+              );
+              console.log(
+                `[diag] flow_space_lens_readiness space_id=${createdSpace.spaceId} viewer_hash_prefix=${hashPrefix(
+                  socialSubjectHash
+                )} author_hash_prefix=${hashPrefix(
+                  trustedActorHash
+                )} baseline_flow_count=${baselineFlowFeed.posts.length} space_flow_count=${
+                  baselineSpaceFlow.posts.length
+                } baseline_flow_has_expected=${baselineFlowHasExpectedPost} space_flow_has_expected=${baselineSpaceFlowHasExpectedPost}`
+              );
+              if (!baselineFlowHasExpectedPost || !baselineSpaceFlowHasExpectedPost) {
                 return null;
               }
-              return { ready: true };
+              return {
+                ready: true,
+                baselineFlowCount: baselineFlowFeed.posts.length,
+                baselineSpaceFlowCount: baselineSpaceFlow.posts.length
+              };
             },
             120_000,
             2_000
@@ -3491,15 +3534,9 @@ const run = async () => {
                 getAuraTierForDomain(trustedActorHash, `space:${createdSpace.spaceId}`),
                 hasTrustedCreatorCredential(trustedActorHash)
               ]);
-              const trustedTierReady =
-                socialTier === "silver" ||
-                socialTier === "gold" ||
-                spaceTier === "silver" ||
-                spaceTier === "gold" ||
-                trustedCreatorCredential;
-              if (!trustedTierReady) {
-                return null;
-              }
+              console.log(
+                `[diag] space_flow_trusted_readiness_tiers social_tier=${socialTier} space_tier=${spaceTier} trusted_creator_credential=${trustedCreatorCredential}`
+              );
               const baselineFlow = await requestJson<{
                 posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
               }>(baselineSpaceFlowEndpoint);
