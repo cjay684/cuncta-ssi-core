@@ -253,7 +253,165 @@ const soundpackActivateSchema = z.object({
 const presenceSetModeSchema = z.object({
   subjectDid: z.string().min(3),
   spaceId: z.string().uuid(),
-  mode: z.enum(["quiet", "active"]),
+  mode: z.enum(["quiet", "active", "immersive"]),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const presencePingSchema = z.object({
+  subjectDid: z.string().min(3),
+  mode: z.enum(["quiet", "active", "immersive"]).optional(),
+  crewId: z.string().uuid().optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const spacePresenceQuerySchema = z.object({
+  subjectDid: z.string().min(3).optional()
+});
+const profileVisibilitySchema = z.object({
+  subjectDid: z.string().min(3),
+  showOnLeaderboard: z.boolean().optional().default(false),
+  showOnPresence: z.boolean().optional().default(false),
+  presenceLabel: z.string().trim().min(1).max(64).optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const ritualCreateSchema = z.object({
+  subjectDid: z.string().min(3),
+  spaceId: z.string().uuid(),
+  title: z.string().trim().min(3).max(120),
+  description: z.string().trim().max(300).optional(),
+  durationMinutes: z.number().int().min(5).max(60).default(10),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const ritualParticipateSchema = z.object({
+  subjectDid: z.string().min(3),
+  ritualId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const ritualCompleteSchema = z.object({
+  subjectDid: z.string().min(3),
+  ritualId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const ritualEndSchema = z.object({
+  subjectDid: z.string().min(3),
+  ritualId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const crewCreateSchema = z.object({
+  subjectDid: z.string().min(3),
+  name: z.string().trim().min(2).max(64),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const crewJoinSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const crewInviteSchema = z.object({
+  subjectDid: z.string().min(3),
+  inviteeDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const crewLeaveSchema = z.object({
+  subjectDid: z.string().min(3)
+});
+const crewPresenceQuerySchema = z.object({
+  subjectDid: z.string().min(3).optional()
+});
+const challengeCreateSchema = z.object({
+  subjectDid: z.string().min(3),
+  cadence: z.enum(["daily", "weekly", "ad_hoc"]).default("daily"),
+  title: z.string().trim().min(3).max(120),
+  durationHours: z
+    .number()
+    .int()
+    .min(1)
+    .max(24 * 14)
+    .default(24),
+  crewId: z.string().uuid().optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const challengeJoinSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const challengeCompleteSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const challengeEndSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const rankingsQuerySchema = z.object({
+  type: z.enum(["contributors", "streaks"]).default("contributors")
+});
+const leaderboardQuerySchema = z.object({
+  window: z.enum(["7d", "14d"]).default("7d")
+});
+const pulseQuerySchema = z.object({
+  subjectDid: z.string().min(3).optional()
+});
+const pulsePreferencesUpdateSchema = z.object({
+  subjectDid: z.string().min(3),
+  enabled: z.boolean().optional(),
+  notifyHangouts: z.boolean().optional(),
+  notifyCrews: z.boolean().optional(),
+  notifyChallenges: z.boolean().optional(),
+  notifyRankings: z.boolean().optional(),
+  notifyStreaks: z.boolean().optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const huddleCreateSessionSchema = z.object({
+  subjectDid: z.string().min(3),
+  spaceId: z.string().uuid(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const huddleJoinSessionSchema = z.object({
+  subjectDid: z.string().min(3),
+  sessionId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const huddleEndSessionSchema = z.object({
+  subjectDid: z.string().min(3),
+  sessionId: z.string().uuid(),
+  spaceId: z.string().uuid(),
+  reasonCode: z.string().trim().min(2).max(64).default("ended_by_host"),
   presentation: z.string().min(10),
   nonce: z.string().min(10),
   audience: z.string().min(3)
@@ -430,7 +588,26 @@ type FunnelAction =
   | "listen_create"
   | "listen_join"
   | "listen_event"
-  | "listen_end";
+  | "listen_end"
+  | "presence_ping"
+  | "huddle_create"
+  | "huddle_join"
+  | "huddle_end"
+  | "ritual_create"
+  | "ritual_participate"
+  | "ritual_complete"
+  | "ritual_end"
+  | "crew_create"
+  | "crew_join"
+  | "crew_invite"
+  | "crew_leave"
+  | "challenge_create"
+  | "challenge_join"
+  | "challenge_complete"
+  | "challenge_end"
+  | "hangout_create"
+  | "hangout_join"
+  | "hangout_end";
 type PrivacyStatus = { restricted: boolean; tombstoned: boolean };
 type VerifyResponse = {
   decision?: "ALLOW" | "DENY";
@@ -464,7 +641,9 @@ const requirementLabels: Record<string, string> = {
   "cuncta.presence.mode_access": "Presence mode access",
   "cuncta.sync.scroll_host": "Scroll host",
   "cuncta.sync.listen_host": "Listen host",
-  "cuncta.sync.session_participant": "Sync session participant"
+  "cuncta.sync.session_participant": "Sync session participant",
+  "cuncta.sync.huddle_host": "Hangout host",
+  "cuncta.social.ritual_creator": "Ritual creator"
 };
 
 const requirementLabel = (vct: string, label?: string) => label ?? requirementLabels[vct] ?? vct;
@@ -530,7 +709,26 @@ const funnel: Record<
   listen_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
   listen_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
   listen_event: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
-  listen_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 }
+  listen_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  presence_ping: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  huddle_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  huddle_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  huddle_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  ritual_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  ritual_participate: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  ritual_complete: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  ritual_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  crew_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  crew_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  crew_invite: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  crew_leave: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  challenge_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  challenge_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  challenge_complete: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  challenge_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  hangout_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  hangout_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  hangout_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 }
 };
 
 const incAttempt = (action: FunnelAction) => {
@@ -558,7 +756,9 @@ type SyncSubscriber = {
 };
 const syncSubscribers = new Map<string, Set<SyncSubscriber>>();
 const syncEventBuckets = new Map<string, { windowMs: number; count: number; startedAt: number }>();
+const presencePingBuckets = new Map<string, { count: number; startedAt: number }>();
 let syncEventLastRetentionPruneAt = 0;
+let presenceLastPruneAt = 0;
 
 const addSyncSubscriber = (sessionId: string, subscriber: SyncSubscriber) => {
   const existing = syncSubscribers.get(sessionId) ?? new Set<SyncSubscriber>();
@@ -624,7 +824,7 @@ const getSyncSession = async (sessionId: string) => {
     | {
         session_id: string;
         space_id: string;
-        kind: "scroll" | "listen";
+        kind: "scroll" | "listen" | "huddle";
         host_subject_did_hash: string;
         status: "ACTIVE" | "ENDED";
         policy_pack_id?: string | null;
@@ -635,7 +835,7 @@ const getSyncSession = async (sessionId: string) => {
 const ensureSyncSessionAccess = async (input: {
   sessionId: string;
   spaceId: string;
-  expectedKind?: "scroll" | "listen";
+  expectedKind?: "scroll" | "listen" | "huddle";
 }) => {
   const session = await getSyncSession(input.sessionId);
   if (!session) {
@@ -692,6 +892,554 @@ const hasActiveSpaceMembership = async (spaceId: string, subjectDidHash: string)
     .where({ space_id: spaceId, subject_did_hash: subjectDidHash, status: "ACTIVE" })
     .first();
   return Boolean(row);
+};
+
+const pruneExpiredPresenceRows = async () => {
+  const nowMs = Date.now();
+  if (nowMs - presenceLastPruneAt < 30_000) return;
+  presenceLastPruneAt = nowMs;
+  const ttlCutoff = new Date(nowMs - config.PRESENCE_PING_TTL_SECONDS * 1000).toISOString();
+  const db = await getDb();
+  await db("social_space_presence_pings").where("last_seen_at", "<", ttlCutoff).del();
+  await db("presence_space_states").where("updated_at", "<", ttlCutoff).del();
+};
+
+const checkPresencePingRateLimit = (subjectDidHash: string, spaceId: string) => {
+  const key = `${spaceId}:${subjectDidHash}`;
+  const now = Date.now();
+  const windowMs = config.PRESENCE_PING_RATE_WINDOW_SECONDS * 1000;
+  const current = presencePingBuckets.get(key);
+  if (!current || now - current.startedAt >= windowMs) {
+    presencePingBuckets.set(key, { count: 1, startedAt: now });
+    return true;
+  }
+  if (current.count >= config.PRESENCE_PING_RATE_MAX_PER_WINDOW) {
+    return false;
+  }
+  current.count += 1;
+  return true;
+};
+
+const getPresenceCounts = async (spaceId: string, activeCutoff: string) => {
+  const rows = (await (
+    await getDb()
+  )("presence_space_states as states")
+    .join("social_space_presence_pings as pings", function joinPresence() {
+      this.on("states.space_id", "=", "pings.space_id").andOn(
+        "states.subject_hash",
+        "=",
+        "pings.subject_hash"
+      );
+    })
+    .where("states.space_id", spaceId)
+    .andWhere("pings.last_seen_at", ">=", activeCutoff)
+    .select("states.mode")
+    .orderBy("states.updated_at", "desc")) as Array<{ mode: string }>;
+  const counts = { quiet: 0, active: 0, immersive: 0 };
+  for (const row of rows) {
+    const mode = String(row.mode ?? "active");
+    if (mode === "quiet") counts.quiet += 1;
+    else if (mode === "immersive") counts.immersive += 1;
+    else counts.active += 1;
+  }
+  return counts;
+};
+
+const getCrewById = async (crewId: string) =>
+  (await (await getDb())("social_space_crews")
+    .where({ crew_id: crewId })
+    .whereNull("archived_at")
+    .first()) as
+    | {
+        crew_id: string;
+        space_id: string;
+        name: string;
+      }
+    | undefined;
+
+const isCrewCaptain = async (crewId: string, subjectHash: string) => {
+  const row = await (await getDb())("social_space_crew_members")
+    .where({ crew_id: crewId, subject_hash: subjectHash, role: "captain" })
+    .whereNull("left_at")
+    .first();
+  return Boolean(row);
+};
+
+const isCrewMember = async (crewId: string, subjectHash: string) => {
+  const row = await (await getDb())("social_space_crew_members")
+    .where({ crew_id: crewId, subject_hash: subjectHash })
+    .whereNull("left_at")
+    .first();
+  return Boolean(row);
+};
+
+const startOfUtcDay = (input: Date) => {
+  const next = new Date(input);
+  next.setUTCHours(0, 0, 0, 0);
+  return next;
+};
+
+const startOfUtcWeek = (input: Date) => {
+  const day = input.getUTCDay();
+  const diffToMonday = (day + 6) % 7;
+  const next = startOfUtcDay(input);
+  next.setUTCDate(next.getUTCDate() - diffToMonday);
+  return next;
+};
+
+const applyStreakCompletion = async (input: {
+  spaceId: string;
+  subjectHash: string;
+  streakType: "daily_challenge" | "weekly_challenge";
+  completedAtIso: string;
+}) => {
+  const db = await getDb();
+  const row = (await db("social_space_streaks")
+    .where({
+      space_id: input.spaceId,
+      subject_hash: input.subjectHash,
+      streak_type: input.streakType
+    })
+    .first()) as
+    | {
+        current_count: number;
+        best_count: number;
+        last_completed_at: string | null;
+      }
+    | undefined;
+  const completedAt = new Date(input.completedAtIso);
+  const boundary =
+    input.streakType === "daily_challenge"
+      ? startOfUtcDay(completedAt)
+      : startOfUtcWeek(completedAt);
+  let nextCurrent = 1;
+  if (row?.last_completed_at) {
+    const last = new Date(row.last_completed_at);
+    const lastBoundary =
+      input.streakType === "daily_challenge" ? startOfUtcDay(last) : startOfUtcWeek(last);
+    if (lastBoundary.getTime() === boundary.getTime()) {
+      nextCurrent = Number(row.current_count ?? 0);
+    } else if (boundary.getTime() - lastBoundary.getTime() <= 8 * 24 * 60 * 60 * 1000) {
+      nextCurrent = Number(row.current_count ?? 0) + 1;
+    }
+  }
+  const best = Math.max(Number(row?.best_count ?? 0), nextCurrent);
+  await db("social_space_streaks")
+    .insert({
+      space_id: input.spaceId,
+      subject_hash: input.subjectHash,
+      streak_type: input.streakType,
+      current_count: nextCurrent,
+      best_count: best,
+      last_completed_at: input.completedAtIso,
+      updated_at: input.completedAtIso
+    })
+    .onConflict(["space_id", "subject_hash", "streak_type"])
+    .merge({
+      current_count: nextCurrent,
+      best_count: best,
+      last_completed_at: input.completedAtIso,
+      updated_at: input.completedAtIso
+    });
+};
+
+const buildLeaderboard = async (spaceId: string, windowDays: number) => {
+  const db = await getDb();
+  const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+  const signals = (await db("social_action_log")
+    .whereIn("action_type", ["social.post.create", "social.reply.create", "ritual.complete"])
+    .andWhere({ decision: "COMPLETE" })
+    .andWhere("created_at", ">=", since)
+    .whereNotNull("subject_did_hash")
+    .select("subject_did_hash", "action_type", "created_at")) as Array<{
+    subject_did_hash: string;
+    action_type: string;
+    created_at: string;
+  }>;
+  const bySubject = new Map<
+    string,
+    { post: number; reply: number; ritual: number; activeDays: Set<string> }
+  >();
+  for (const row of signals) {
+    const subject = String(row.subject_did_hash);
+    const bucket = bySubject.get(subject) ?? {
+      post: 0,
+      reply: 0,
+      ritual: 0,
+      activeDays: new Set<string>()
+    };
+    if (row.action_type === "social.post.create") bucket.post += 1;
+    else if (row.action_type === "social.reply.create") bucket.reply += 1;
+    else if (row.action_type === "ritual.complete") bucket.ritual += 1;
+    bucket.activeDays.add(String(row.created_at).slice(0, 10));
+    bySubject.set(subject, bucket);
+  }
+  const rows: Array<{
+    subjectHash: string;
+    score: number;
+    post: number;
+    reply: number;
+    ritual: number;
+    activeDays: number;
+  }> = [];
+  for (const [subjectHash, bucket] of bySubject.entries()) {
+    const postScore = Math.sqrt(Math.min(bucket.post, 20));
+    const replyScore = Math.sqrt(Math.min(bucket.reply, 30));
+    const ritualScore = 1.8 * Math.sqrt(Math.min(bucket.ritual, 14));
+    const diversityWeight = 1 + Math.min(bucket.activeDays.size, 7) * 0.04;
+    const score = Number(((postScore + replyScore + ritualScore) * diversityWeight).toFixed(4));
+    rows.push({
+      subjectHash,
+      score,
+      post: bucket.post,
+      reply: bucket.reply,
+      ritual: bucket.ritual,
+      activeDays: bucket.activeDays.size
+    });
+  }
+  rows.sort((a, b) => b.score - a.score);
+  const topRows = rows.slice(0, config.LEADERBOARD_TOP_N * 3);
+  const privacyCache = new Map<string, PrivacyStatus>();
+  const optInRows = (await db("social_space_profile_settings")
+    .where({ space_id: spaceId })
+    .whereIn(
+      "subject_hash",
+      topRows.map((entry) => entry.subjectHash)
+    )
+    .select("subject_hash", "show_on_leaderboard", "presence_label")) as Array<{
+    subject_hash: string;
+    show_on_leaderboard: boolean;
+    presence_label: string | null;
+  }>;
+  const optInByHash = new Map(
+    optInRows.map((row) => [
+      String(row.subject_hash),
+      { show: Boolean(row.show_on_leaderboard), label: row.presence_label }
+    ])
+  );
+  const profileRows = (await db("social_profiles")
+    .whereIn(
+      "subject_did_hash",
+      topRows.map((entry) => entry.subjectHash)
+    )
+    .whereNull("deleted_at")
+    .select("subject_did_hash", "display_name", "handle")) as Array<{
+    subject_did_hash: string;
+    display_name: string | null;
+    handle: string | null;
+  }>;
+  const profileByHash = new Map(profileRows.map((row) => [String(row.subject_did_hash), row]));
+  const output: Array<Record<string, unknown>> = [];
+  for (const row of topRows) {
+    let privacy = privacyCache.get(row.subjectHash);
+    if (!privacy) {
+      privacy = await getPrivacyStatus(row.subjectHash).catch(() => ({
+        restricted: false,
+        tombstoned: false
+      }));
+      privacyCache.set(row.subjectHash, privacy);
+    }
+    if (privacy.restricted || privacy.tombstoned) continue;
+    const opt = optInByHash.get(row.subjectHash);
+    const profile = profileByHash.get(row.subjectHash);
+    output.push({
+      score: row.score,
+      signals: {
+        post_success: row.post,
+        reply_success: row.reply,
+        ritual_complete: row.ritual,
+        active_days: row.activeDays
+      },
+      identity:
+        opt?.show && (opt.label || profile?.display_name || profile?.handle)
+          ? {
+              displayName:
+                String(opt.label ?? "").trim() ||
+                String(profile?.display_name ?? "").trim() ||
+                String(profile?.handle ?? "").trim()
+            }
+          : { anonymous: true }
+    });
+    if (output.length >= config.LEADERBOARD_TOP_N) break;
+  }
+  return output;
+};
+
+type PulsePreferences = {
+  enabled: boolean;
+  notify_hangouts: boolean;
+  notify_crews: boolean;
+  notify_challenges: boolean;
+  notify_rankings: boolean;
+  notify_streaks: boolean;
+};
+
+type PulseCard = {
+  type: "crew_active" | "hangout_live" | "challenge_ending" | "streak_risk" | "rank_up";
+  title: string;
+  value: string | number;
+  cta: string;
+  explain: string;
+  route:
+    | "open_crews"
+    | "join_hangout"
+    | "open_challenges"
+    | "complete_challenge"
+    | "open_rankings"
+    | "compose_post";
+  sessionId?: string;
+  challengeId?: string;
+};
+
+const defaultPulsePreferences: PulsePreferences = {
+  enabled: true,
+  notify_hangouts: true,
+  notify_crews: true,
+  notify_challenges: true,
+  notify_rankings: true,
+  notify_streaks: true
+};
+
+const toPulsePreferencesResponse = (prefs: PulsePreferences) => ({
+  enabled: prefs.enabled,
+  notifyHangouts: prefs.notify_hangouts,
+  notifyCrews: prefs.notify_crews,
+  notifyChallenges: prefs.notify_challenges,
+  notifyRankings: prefs.notify_rankings,
+  notifyStreaks: prefs.notify_streaks
+});
+
+const getPulsePreferences = async (
+  spaceId: string,
+  subjectHash: string | null
+): Promise<PulsePreferences> => {
+  if (!subjectHash) return defaultPulsePreferences;
+  const row = (await (await getDb())("social_space_pulse_preferences")
+    .where({ space_id: spaceId, subject_hash: subjectHash })
+    .first()) as Partial<PulsePreferences> | undefined;
+  if (!row) return defaultPulsePreferences;
+  return {
+    enabled: Boolean(row.enabled),
+    notify_hangouts: Boolean(row.notify_hangouts),
+    notify_crews: Boolean(row.notify_crews),
+    notify_challenges: Boolean(row.notify_challenges),
+    notify_rankings: Boolean(row.notify_rankings),
+    notify_streaks: Boolean(row.notify_streaks)
+  };
+};
+
+const upsertPulsePreferences = async (
+  spaceId: string,
+  subjectHash: string,
+  next: PulsePreferences
+) => {
+  const now = new Date().toISOString();
+  await (
+    await getDb()
+  )("social_space_pulse_preferences")
+    .insert({
+      space_id: spaceId,
+      subject_hash: subjectHash,
+      ...next,
+      updated_at: now
+    })
+    .onConflict(["space_id", "subject_hash"])
+    .merge({ ...next, updated_at: now });
+};
+
+const formatMinutesUntil = (isoTime: string) => {
+  const deltaMs = Math.max(0, new Date(isoTime).getTime() - Date.now());
+  const minutes = Math.max(1, Math.ceil(deltaMs / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0 ? `${hours}h ${remainder}m` : `${hours}h`;
+};
+
+const buildPulseCards = async (input: {
+  spaceId: string;
+  subjectHash: string | null;
+  preferences: PulsePreferences;
+}): Promise<PulseCard[]> => {
+  if (!input.preferences.enabled) return [];
+  const db = await getDb();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const cards: PulseCard[] = [];
+
+  if (input.preferences.notify_crews && input.subjectHash) {
+    const viewerCrews = (await db("social_space_crew_members as members")
+      .join("social_space_crews as crews", "members.crew_id", "crews.crew_id")
+      .where({
+        "members.subject_hash": input.subjectHash,
+        "crews.space_id": input.spaceId
+      })
+      .whereNull("members.left_at")
+      .whereNull("crews.archived_at")
+      .select("members.crew_id")) as Array<{ crew_id: string }>;
+    const crewIds = viewerCrews.map((row) => row.crew_id);
+    if (crewIds.length > 0) {
+      const cutoff = new Date(Date.now() - config.PRESENCE_PING_TTL_SECONDS * 1000).toISOString();
+      const activeCrewRow = await db("social_space_crew_members as members")
+        .join("social_space_presence_pings as pings", function joinCrewPulsePresence() {
+          this.on("members.subject_hash", "=", "pings.subject_hash");
+        })
+        .whereIn("members.crew_id", crewIds)
+        .whereNull("members.left_at")
+        .andWhere("pings.space_id", input.spaceId)
+        .andWhere("pings.last_seen_at", ">=", cutoff)
+        .countDistinct<{ count: string }>("members.subject_hash as count")
+        .first();
+      const activeCount = Number(activeCrewRow?.count ?? 0);
+      if (activeCount > 0) {
+        cards.push({
+          type: "crew_active",
+          title: "Your crew is active",
+          value: activeCount,
+          cta: "Open Crew",
+          explain:
+            "Crew activity uses recent presence pings from members in your active crews for this space.",
+          route: "open_crews"
+        });
+      }
+    }
+  }
+
+  if (input.preferences.notify_hangouts) {
+    const hangoutRow = (await db("sync_sessions")
+      .where({ space_id: input.spaceId, kind: "huddle", status: "ACTIVE" })
+      .orderBy("created_at", "desc")
+      .first()) as { session_id: string } | undefined;
+    if (hangoutRow?.session_id) {
+      const countRow = await db("sync_sessions")
+        .where({ space_id: input.spaceId, kind: "huddle", status: "ACTIVE" })
+        .count<{ count: string }>("session_id as count")
+        .first();
+      cards.push({
+        type: "hangout_live",
+        title: "Hangout live now",
+        value: Number(countRow?.count ?? 1),
+        cta: "Join Hangout",
+        explain: "A hangout is live when its control-plane session is active in this space.",
+        route: "join_hangout",
+        sessionId: hangoutRow.session_id
+      });
+    }
+  }
+
+  if (input.preferences.notify_challenges) {
+    const soonCutoffIso = new Date(
+      Date.now() + config.PULSE_CHALLENGE_ENDING_SOON_SECONDS * 1000
+    ).toISOString();
+    const endingChallenge = (await db("social_space_challenges")
+      .where({ space_id: input.spaceId, status: "ACTIVE" })
+      .andWhere("ends_at", ">", nowIso)
+      .andWhere("ends_at", "<=", soonCutoffIso)
+      .orderBy("ends_at", "asc")
+      .first()) as { challenge_id: string; ends_at: string } | undefined;
+    if (endingChallenge) {
+      cards.push({
+        type: "challenge_ending",
+        title: "Challenge ends soon",
+        value: formatMinutesUntil(endingChallenge.ends_at),
+        cta: "Open Challenge",
+        explain: "Ending-soon highlights active challenges that close within your pulse window.",
+        route: "open_challenges",
+        challengeId: endingChallenge.challenge_id
+      });
+    }
+  }
+
+  if (input.preferences.notify_streaks && input.subjectHash) {
+    const streak = (await db("social_space_streaks")
+      .where({
+        space_id: input.spaceId,
+        subject_hash: input.subjectHash,
+        streak_type: "daily_challenge"
+      })
+      .first()) as { current_count: number } | undefined;
+    if (Number(streak?.current_count ?? 0) > 0) {
+      const startTodayIso = startOfUtcDay(now).toISOString();
+      const completedToday = await db("social_space_challenge_participation as participation")
+        .join(
+          "social_space_challenges as challenges",
+          "participation.challenge_id",
+          "challenges.challenge_id"
+        )
+        .where({
+          "participation.subject_hash": input.subjectHash,
+          "challenges.space_id": input.spaceId,
+          "challenges.cadence": "daily"
+        })
+        .whereNotNull("participation.completed_at")
+        .andWhere("participation.completed_at", ">=", startTodayIso)
+        .first();
+      if (!completedToday) {
+        cards.push({
+          type: "streak_risk",
+          title: "Streak at risk",
+          value: "Daily streak",
+          cta: "Complete Challenge",
+          explain: "Your daily challenge streak has no completion logged yet for today.",
+          route: "complete_challenge"
+        });
+      }
+    }
+  }
+
+  if (input.preferences.notify_rankings && input.subjectHash) {
+    const sinceIso = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const postRows = (await db("social_space_posts")
+      .where({ space_id: input.spaceId })
+      .whereNull("deleted_at")
+      .andWhere("created_at", ">=", sinceIso)
+      .select("author_subject_did_hash")) as Array<{ author_subject_did_hash: string }>;
+    const challengeRows = (await db("social_space_challenge_participation as participation")
+      .join(
+        "social_space_challenges as challenges",
+        "participation.challenge_id",
+        "challenges.challenge_id"
+      )
+      .where({ "challenges.space_id": input.spaceId })
+      .whereNotNull("participation.completed_at")
+      .andWhere("participation.completed_at", ">=", sinceIso)
+      .select("participation.subject_hash")) as Array<{ subject_hash: string }>;
+    const ritualRows = (await db("social_space_ritual_participants as participants")
+      .join("social_space_rituals as rituals", "participants.ritual_id", "rituals.ritual_id")
+      .where({ "rituals.space_id": input.spaceId })
+      .whereNotNull("participants.completed_at")
+      .andWhere("participants.completed_at", ">=", sinceIso)
+      .select("participants.subject_hash")) as Array<{ subject_hash: string }>;
+    const scoreBySubject = new Map<string, number>();
+    const addScore = (subject: string, amount: number) => {
+      scoreBySubject.set(subject, (scoreBySubject.get(subject) ?? 0) + amount);
+    };
+    for (const row of postRows) addScore(String(row.author_subject_did_hash), 1);
+    for (const row of challengeRows) addScore(String(row.subject_hash), 1);
+    for (const row of ritualRows) addScore(String(row.subject_hash), 1);
+    const ranked = [...scoreBySubject.entries()]
+      .map(([subject, score]) => ({ subject, score }))
+      .sort((a, b) => b.score - a.score);
+    const viewerIndex = ranked.findIndex((entry) => entry.subject === input.subjectHash);
+    if (viewerIndex > 0) {
+      const ahead = ranked[viewerIndex - 1];
+      const viewer = ranked[viewerIndex];
+      const scoreGap = Math.max(0, Number(ahead.score) - Number(viewer.score));
+      if (scoreGap <= config.PULSE_RANK_NEAR_GAP) {
+        cards.push({
+          type: "rank_up",
+          title: `${scoreGap} away from rank up`,
+          value: "Top Contributors",
+          cta: "View Rankings",
+          explain:
+            "Rank-up compares your recent verified actions in this space against the next contributor slot.",
+          route: "open_rankings"
+        });
+      }
+    }
+  }
+
+  return cards;
 };
 
 const getTierRateLimit = (tier: string) => {
@@ -866,6 +1614,8 @@ const purgeSubjectDataOnTombstone = async (subjectDidHash: string) => {
       .where({ owner_subject_hash: subjectDidHash })
       .update({ published_at: null });
     await trx("presence_space_states").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_presence_pings").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_profile_settings").where({ subject_hash: subjectDidHash }).del();
     await trx("presence_invite_events")
       .where({ inviter_hash: subjectDidHash })
       .update({ status: "ERASED" });
@@ -897,6 +1647,20 @@ const purgeSubjectDataOnTombstone = async (subjectDidHash: string) => {
       .update({
         reporter_subject_did_hash: hashHex(`erased:${subjectDidHash}`)
       });
+    await trx("social_space_ritual_participants").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_rituals")
+      .where({ created_by_subject_hash: subjectDidHash, status: "ACTIVE" })
+      .update({ status: "ENDED", closed_at: now });
+    await trx("social_space_crew_members").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_crews")
+      .where({ created_by_subject_hash: subjectDidHash })
+      .update({ archived_at: now });
+    await trx("social_space_challenge_participation").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_challenges")
+      .where({ created_by_subject_hash: subjectDidHash, status: "ACTIVE" })
+      .update({ status: "ENDED", ended_at: now });
+    await trx("social_space_streaks").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_pulse_preferences").where({ subject_hash: subjectDidHash }).del();
   });
 };
 
@@ -1290,13 +2054,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1358,13 +2120,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1421,13 +2181,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1479,13 +2237,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1533,13 +2289,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const reportId = randomUUID();
@@ -1620,13 +2374,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         audience: body.audience
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1712,13 +2464,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         context: { space_id: body.spaceId }
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1818,13 +2568,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         context: { space_id: body.spaceId }
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -1908,13 +2656,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         context: { space_id: body.spaceId }
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
 
@@ -2498,13 +3244,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         context: { space_id: spaceId }
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const db = await getDb();
@@ -2553,13 +3297,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
           context: { space_id: spaceId }
         });
       } catch {
-        return reply
-          .code(503)
-          .send(
-            makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-              devMode: config.DEV_MODE
-            })
-          );
+        return reply.code(503).send(
+          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+            devMode: config.DEV_MODE
+          })
+        );
       }
       if (gate.denied) return reply.code(403).send(gate.denied);
       const db = await getDb();
@@ -2664,13 +3406,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         context: { space_id: spaceId }
       });
     } catch {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const db = await getDb();
@@ -2736,6 +3476,1009 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       },
       moderation_actions_total: Number(moderationTotalRow?.count ?? 0)
     });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/leaderboard", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = leaderboardQuerySchema.parse(request.query ?? {});
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    }
+    const windowDays = query.window === "14d" ? 14 : 7;
+    const topContributors = await buildLeaderboard(spaceId, windowDays);
+    return reply.send({
+      space_id: spaceId,
+      window: query.window,
+      top_contributors: topContributors,
+      explain: "Ranked by verified contributions, not likes."
+    });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/rankings", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = rankingsQuerySchema.parse(request.query ?? {});
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    }
+    if (query.type === "contributors") {
+      const topContributors = await buildLeaderboard(spaceId, 7);
+      return reply.send({
+        space_id: spaceId,
+        type: "contributors",
+        title: "Top Contributors this week",
+        rows: topContributors
+      });
+    }
+    const rows = (await (await getDb())("social_space_streaks")
+      .where({ space_id: spaceId })
+      .orderBy("current_count", "desc")
+      .limit(config.LEADERBOARD_TOP_N)
+      .select("subject_hash", "streak_type", "current_count", "best_count")) as Array<{
+      subject_hash: string;
+      streak_type: string;
+      current_count: number;
+      best_count: number;
+    }>;
+    return reply.send({
+      space_id: spaceId,
+      type: "streaks",
+      title: "Top Streaks",
+      rows: rows.map((row) => ({
+        streak_type: row.streak_type,
+        current_count: Number(row.current_count ?? 0),
+        best_count: Number(row.best_count ?? 0)
+      }))
+    });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/crews", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = crewCreateSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "social.crew.create",
+      actionType: "crew_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "crew_create",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const crewId = randomUUID();
+    const now = new Date().toISOString();
+    const db = await getDb();
+    await db.transaction(async (trx) => {
+      await trx("social_space_crews").insert({
+        crew_id: crewId,
+        space_id: spaceId,
+        name: body.name,
+        created_by_subject_hash: subjectDidHash,
+        created_at: now
+      });
+      await trx("social_space_crew_members").insert({
+        crew_id: crewId,
+        subject_hash: subjectDidHash,
+        role: "captain",
+        joined_at: now
+      });
+    });
+    incCompleted("crew_create");
+    return reply.send({ decision: "ALLOW", crewId });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/crews", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const rows = (await (await getDb())("social_space_crews")
+      .where({ space_id: spaceId })
+      .whereNull("archived_at")
+      .orderBy("created_at", "desc")
+      .select("crew_id", "name", "created_at")) as Array<{
+      crew_id: string;
+      name: string;
+      created_at: string;
+    }>;
+    const crewIds = rows.map((row) => row.crew_id);
+    const memberCountRowsRaw =
+      crewIds.length === 0
+        ? []
+        : await (await getDb())("social_space_crew_members")
+            .whereIn("crew_id", crewIds)
+            .whereNull("left_at")
+            .groupBy("crew_id")
+            .select("crew_id")
+            .count<{ crew_id: string; count: string }>("crew_id as count");
+    const memberCountRows = memberCountRowsRaw as unknown as Array<{
+      crew_id: string;
+      count: string;
+    }>;
+    const memberCounts =
+      crewIds.length === 0
+        ? new Map<string, number>()
+        : new Map(memberCountRows.map((entry) => [entry.crew_id, Number(entry.count ?? 0)]));
+    return reply.send({
+      space_id: spaceId,
+      crews: rows.map((row) => ({
+        crew_id: row.crew_id,
+        name: row.name,
+        member_count: memberCounts.get(row.crew_id) ?? 0,
+        created_at: row.created_at
+      }))
+    });
+  });
+
+  app.post("/v1/social/crews/:crewId/join", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ crewId: z.string().uuid() }).parse(request.params ?? {});
+    const body = crewJoinSchema.parse(request.body ?? {});
+    const crew = await getCrewById(params.crewId);
+    if (!crew) return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(crew.space_id, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "social.crew.join",
+      actionType: "crew_join",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: crew.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (
+      await getDb()
+    )("social_space_crew_members")
+      .insert({
+        crew_id: params.crewId,
+        subject_hash: subjectDidHash,
+        role: "member",
+        joined_at: new Date().toISOString(),
+        left_at: null
+      })
+      .onConflict(["crew_id", "subject_hash"])
+      .merge({ left_at: null, joined_at: new Date().toISOString() });
+    incCompleted("crew_join");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/crews/:crewId/invite", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ crewId: z.string().uuid() }).parse(request.params ?? {});
+    const body = crewInviteSchema.parse(request.body ?? {});
+    const crew = await getCrewById(params.crewId);
+    if (!crew) return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const inviteeHash = pseudonymizer.didToHash(body.inviteeDid);
+    if (!(await hasActiveSpaceMembership(crew.space_id, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const captain = await isCrewCaptain(params.crewId, subjectDidHash);
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "social.crew.invite",
+      actionType: "crew_invite",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: crew.space_id }
+    }).catch(() => null);
+    let moderatorOverride = false;
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "crew_invite",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: crew.space_id }
+      }).catch(() => null);
+      moderatorOverride = Boolean(gate && !gate.denied);
+    }
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    if (!captain && !moderatorOverride) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Captain or moderator required"));
+    }
+    if (!(await hasActiveSpaceMembership(crew.space_id, inviteeHash))) {
+      return reply
+        .code(409)
+        .send(makeErrorResponse("invalid_request", "Invitee must join space first"));
+    }
+    await (
+      await getDb()
+    )("social_space_crew_members")
+      .insert({
+        crew_id: params.crewId,
+        subject_hash: inviteeHash,
+        role: "member",
+        joined_at: new Date().toISOString(),
+        left_at: null
+      })
+      .onConflict(["crew_id", "subject_hash"])
+      .merge({ left_at: null, joined_at: new Date().toISOString() });
+    incCompleted("crew_invite");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/crews/:crewId/leave", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ crewId: z.string().uuid() }).parse(request.params ?? {});
+    const body = crewLeaveSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const updated = await (await getDb())("social_space_crew_members")
+      .where({ crew_id: params.crewId, subject_hash: subjectDidHash })
+      .whereNull("left_at")
+      .update({ left_at: new Date().toISOString() });
+    if (!updated) {
+      return reply
+        .code(404)
+        .send(makeErrorResponse("invalid_request", "Crew membership not found"));
+    }
+    incCompleted("crew_leave");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.get("/v1/social/crews/:crewId/presence", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ crewId: z.string().uuid() }).parse(request.params ?? {});
+    const query = crewPresenceQuerySchema.parse(request.query ?? {});
+    const crew = await getCrewById(params.crewId);
+    if (!crew) return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+    const cutoff = new Date(Date.now() - config.PRESENCE_PING_TTL_SECONDS * 1000).toISOString();
+    const activeRows = (await (
+      await getDb()
+    )("social_space_crew_members as members")
+      .join("social_space_presence_pings as pings", function joinCrewPresence() {
+        this.on("members.subject_hash", "=", "pings.subject_hash");
+      })
+      .where({ "members.crew_id": params.crewId })
+      .andWhere("pings.space_id", crew.space_id)
+      .whereNull("members.left_at")
+      .andWhere("pings.last_seen_at", ">=", cutoff)
+      .count<{ count: string }>("members.subject_hash as count")
+      .first()) as { count: string } | undefined;
+    let yourActive = false;
+    if (query.subjectDid) {
+      const viewerHash = pseudonymizer.didToHash(query.subjectDid);
+      const row = await (
+        await getDb()
+      )("social_space_crew_members as members")
+        .join("social_space_presence_pings as pings", function joinSelfPresence() {
+          this.on("members.subject_hash", "=", "pings.subject_hash");
+        })
+        .where({ "members.crew_id": params.crewId, "members.subject_hash": viewerHash })
+        .andWhere("pings.space_id", crew.space_id)
+        .whereNull("members.left_at")
+        .andWhere("pings.last_seen_at", ">=", cutoff)
+        .first();
+      yourActive = Boolean(row);
+    }
+    return reply.send({
+      crew_id: params.crewId,
+      active_count: Number(activeRows?.count ?? 0),
+      you: { active: yourActive }
+    });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/challenges", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const now = new Date().toISOString();
+    const rows = (await (await getDb())("social_space_challenges")
+      .where({ space_id: spaceId })
+      .whereIn("status", ["ACTIVE"])
+      .andWhere("ends_at", ">", now)
+      .orderBy("starts_at", "asc")
+      .select("challenge_id", "cadence", "title", "starts_at", "ends_at", "crew_id")) as Array<{
+      challenge_id: string;
+      cadence: string;
+      title: string;
+      starts_at: string;
+      ends_at: string;
+      crew_id: string | null;
+    }>;
+    return reply.send({ space_id: spaceId, challenges: rows });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/challenges", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = challengeCreateSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "challenge.create",
+      actionType: "challenge_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "challenge_create",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const challengeId = randomUUID();
+    const now = Date.now();
+    const startsAt = new Date(now).toISOString();
+    const endsAt = new Date(now + body.durationHours * 60 * 60 * 1000).toISOString();
+    await (
+      await getDb()
+    )("social_space_challenges").insert({
+      challenge_id: challengeId,
+      space_id: spaceId,
+      cadence: body.cadence,
+      title: body.title,
+      starts_at: startsAt,
+      ends_at: endsAt,
+      created_by_subject_hash: subjectDidHash,
+      status: "ACTIVE",
+      crew_id: body.crewId ?? null,
+      created_at: startsAt
+    });
+    incCompleted("challenge_create");
+    return reply.send({ decision: "ALLOW", challengeId });
+  });
+
+  app.post("/v1/social/challenges/:challengeId/join", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ challengeId: z.string().uuid() }).parse(request.params ?? {});
+    const body = challengeJoinSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const challenge = (await (await getDb())("social_space_challenges")
+      .where({ challenge_id: params.challengeId, status: "ACTIVE" })
+      .first()) as { challenge_id: string; space_id: string; crew_id: string | null } | undefined;
+    if (!challenge) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Challenge not found"));
+    }
+    if (!(await hasActiveSpaceMembership(challenge.space_id, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (challenge.crew_id && !(await isCrewMember(challenge.crew_id, subjectDidHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "challenge.join",
+      actionType: "challenge_join",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: challenge.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (
+      await getDb()
+    )("social_space_challenge_participation")
+      .insert({
+        challenge_id: params.challengeId,
+        subject_hash: subjectDidHash,
+        joined_at: new Date().toISOString(),
+        completed_at: null
+      })
+      .onConflict(["challenge_id", "subject_hash"])
+      .ignore();
+    incCompleted("challenge_join");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/challenges/:challengeId/complete", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ challengeId: z.string().uuid() }).parse(request.params ?? {});
+    const body = challengeCompleteSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const db = await getDb();
+    const challenge = (await db("social_space_challenges")
+      .where({ challenge_id: params.challengeId, status: "ACTIVE" })
+      .first()) as
+      | {
+          challenge_id: string;
+          space_id: string;
+          cadence: "daily" | "weekly" | "ad_hoc";
+          crew_id: string | null;
+        }
+      | undefined;
+    if (!challenge) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Challenge not found"));
+    }
+    if (!(await hasActiveSpaceMembership(challenge.space_id, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (challenge.crew_id && !(await isCrewMember(challenge.crew_id, subjectDidHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "challenge.complete",
+      actionType: "challenge_complete",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: challenge.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const participation = await db("social_space_challenge_participation")
+      .where({ challenge_id: params.challengeId, subject_hash: subjectDidHash })
+      .first();
+    if (!participation) {
+      return reply.code(409).send(makeErrorResponse("invalid_request", "Join challenge first"));
+    }
+    if (participation.completed_at) {
+      return reply.send({ decision: "ALLOW", alreadyCompleted: true });
+    }
+    const evidence = await db("social_action_log")
+      .where({ subject_did_hash: subjectDidHash, decision: "COMPLETE" })
+      .whereIn("action_type", ["social.post.create", "social.reply.create"])
+      .orderBy("created_at", "desc")
+      .first();
+    if (!evidence) {
+      return reply
+        .code(409)
+        .send(
+          makeErrorResponse("invalid_request", "Verified contribution required before complete")
+        );
+    }
+    const nowIso = new Date().toISOString();
+    await db("social_space_challenge_participation")
+      .where({ challenge_id: params.challengeId, subject_hash: subjectDidHash })
+      .update({
+        completed_at: nowIso,
+        evidence_action_log_id: evidence.id ?? null
+      });
+    if (challenge.cadence === "daily" || challenge.cadence === "weekly") {
+      await applyStreakCompletion({
+        spaceId: challenge.space_id,
+        subjectHash: subjectDidHash,
+        streakType: challenge.cadence === "daily" ? "daily_challenge" : "weekly_challenge",
+        completedAtIso: nowIso
+      });
+    }
+    await logAction({
+      subjectDidHash,
+      actionType: "challenge.complete",
+      decision: "COMPLETE",
+      policyId: gate.allowMeta?.policyId,
+      policyVersion: gate.allowMeta?.policyVersion
+    }).catch(() => undefined);
+    incCompleted("challenge_complete");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/challenges/:challengeId/end", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const params = z.object({ challengeId: z.string().uuid() }).parse(request.params ?? {});
+    const body = challengeEndSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const challenge = (await (await getDb())("social_space_challenges")
+      .where({ challenge_id: params.challengeId, status: "ACTIVE" })
+      .first()) as { challenge_id: string; space_id: string } | undefined;
+    if (!challenge) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Challenge not found"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "challenge.end",
+      actionType: "challenge_end",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: challenge.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply
+        .code(503)
+        .send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (await getDb())("social_space_challenges")
+      .where({ challenge_id: params.challengeId })
+      .update({ status: "ENDED", ended_at: new Date().toISOString() });
+    incCompleted("challenge_end");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/streaks", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = z.object({ subjectDid: z.string().min(3).optional() }).parse(request.query ?? {});
+    const viewerHash = query.subjectDid ? pseudonymizer.didToHash(query.subjectDid) : null;
+    const ownRows = viewerHash
+      ? ((await (await getDb())("social_space_streaks")
+          .where({ space_id: spaceId, subject_hash: viewerHash })
+          .select("streak_type", "current_count", "best_count", "last_completed_at")) as Array<{
+          streak_type: string;
+          current_count: number;
+          best_count: number;
+          last_completed_at: string | null;
+        }>)
+      : [];
+    const topRows = (await (await getDb())("social_space_streaks")
+      .where({ space_id: spaceId })
+      .orderBy("current_count", "desc")
+      .limit(config.LEADERBOARD_TOP_N)
+      .select("streak_type", "current_count", "best_count")) as Array<{
+      streak_type: string;
+      current_count: number;
+      best_count: number;
+    }>;
+    return reply.send({
+      space_id: spaceId,
+      you: ownRows,
+      top_streaks: topRows.map((row) => ({
+        streak_type: row.streak_type,
+        current_count: Number(row.current_count ?? 0),
+        best_count: Number(row.best_count ?? 0)
+      }))
+    });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/pulse", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = pulseQuerySchema.parse(request.query ?? {});
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    }
+    const subjectHash = query.subjectDid ? pseudonymizer.didToHash(query.subjectDid) : null;
+    if (subjectHash) {
+      const privacy = await getPrivacyStatus(subjectHash).catch(() => ({
+        restricted: false,
+        tombstoned: false
+      }));
+      if (privacy.tombstoned) {
+        return reply.send({ spaceId, cards: [] });
+      }
+    }
+    const preferences = await getPulsePreferences(spaceId, subjectHash);
+    const cards = await buildPulseCards({
+      spaceId,
+      subjectHash,
+      preferences
+    });
+    return reply.send({ spaceId, cards });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/pulse/preferences", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = pulseQuerySchema.parse(request.query ?? {});
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    }
+    const subjectHash = query.subjectDid ? pseudonymizer.didToHash(query.subjectDid) : null;
+    if (subjectHash) {
+      const privacy = await getPrivacyStatus(subjectHash).catch(() => ({
+        restricted: false,
+        tombstoned: false
+      }));
+      if (privacy.tombstoned) {
+        return reply.send({
+          spaceId,
+          preferences: toPulsePreferencesResponse({ ...defaultPulsePreferences, enabled: false })
+        });
+      }
+    }
+    const preferences = await getPulsePreferences(spaceId, subjectHash);
+    return reply.send({
+      spaceId,
+      preferences: toPulsePreferencesResponse(preferences)
+    });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/pulse/preferences", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = pulsePreferencesUpdateSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "presence.ping",
+      actionType: "presence_ping",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const existing = await getPulsePreferences(spaceId, subjectHash);
+    const next: PulsePreferences = {
+      enabled: body.enabled ?? existing.enabled,
+      notify_hangouts: body.notifyHangouts ?? existing.notify_hangouts,
+      notify_crews: body.notifyCrews ?? existing.notify_crews,
+      notify_challenges: body.notifyChallenges ?? existing.notify_challenges,
+      notify_rankings: body.notifyRankings ?? existing.notify_rankings,
+      notify_streaks: body.notifyStreaks ?? existing.notify_streaks
+    };
+    await upsertPulsePreferences(spaceId, subjectHash, next);
+    return reply.send({
+      decision: "ALLOW",
+      spaceId,
+      preferences: toPulsePreferencesResponse(next)
+    });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/rituals/active", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const now = new Date().toISOString();
+    const active = (await (await getDb())("social_space_rituals")
+      .where({ space_id: spaceId, status: "ACTIVE" })
+      .andWhere("ends_at", ">", now)
+      .orderBy("starts_at", "desc")
+      .select(
+        "ritual_id",
+        "ritual_type",
+        "title",
+        "description",
+        "duration_minutes",
+        "starts_at",
+        "ends_at"
+      )) as Array<Record<string, unknown>>;
+    const ritualIds = active.map((row) => String(row.ritual_id));
+    const participantRows =
+      ritualIds.length > 0
+        ? ((await (await getDb())("social_space_ritual_participants")
+            .whereIn("ritual_id", ritualIds)
+            .select("ritual_id", "completed_at")) as Array<{
+            ritual_id: string;
+            completed_at: string | null;
+          }>)
+        : [];
+    const byRitual = new Map<string, { participation_count: number; completion_count: number }>();
+    for (const row of participantRows) {
+      const bucket = byRitual.get(row.ritual_id) ?? { participation_count: 0, completion_count: 0 };
+      bucket.participation_count += 1;
+      if (row.completed_at) bucket.completion_count += 1;
+      byRitual.set(row.ritual_id, bucket);
+    }
+    return reply.send({
+      space_id: spaceId,
+      rituals: active.map((row) => ({
+        ...row,
+        ...(byRitual.get(String(row.ritual_id)) ?? {
+          participation_count: 0,
+          completion_count: 0
+        })
+      }))
+    });
+  });
+
+  app.post("/v1/social/ritual/create", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = ritualCreateSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "ritual.create",
+      actionType: "ritual_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate?.denied) {
+      // allowed via ritual.create policy
+    } else {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "ritual_create",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const ritualId = randomUUID();
+    const now = Date.now();
+    await (
+      await getDb()
+    )("social_space_rituals").insert({
+      ritual_id: ritualId,
+      space_id: body.spaceId,
+      ritual_type: "drop_in_challenge",
+      title: body.title,
+      description: body.description ?? null,
+      status: "ACTIVE",
+      duration_minutes: body.durationMinutes,
+      created_by_subject_hash: subjectDidHash,
+      starts_at: new Date(now).toISOString(),
+      ends_at: new Date(now + body.durationMinutes * 60_000).toISOString(),
+      created_at: new Date(now).toISOString()
+    });
+    incCompleted("ritual_create");
+    return reply.send({ decision: "ALLOW", ritualId });
+  });
+
+  app.post("/v1/social/ritual/participate", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = ritualParticipateSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "ritual.participate",
+      actionType: "ritual_participate",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const ritual = await (await getDb())("social_space_rituals")
+      .where({ ritual_id: body.ritualId, space_id: body.spaceId, status: "ACTIVE" })
+      .first();
+    if (!ritual) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Ritual not found"));
+    }
+    await (
+      await getDb()
+    )("social_space_ritual_participants")
+      .insert({
+        ritual_id: body.ritualId,
+        space_id: body.spaceId,
+        subject_hash: subjectDidHash,
+        participated_at: new Date().toISOString(),
+        completed_at: null,
+        completion_count: 0
+      })
+      .onConflict(["ritual_id", "subject_hash"])
+      .ignore();
+    incCompleted("ritual_participate");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/ritual/complete", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = ritualCompleteSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "ritual.complete",
+      actionType: "ritual_complete",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const db = await getDb();
+    const ritual = await db("social_space_rituals")
+      .where({ ritual_id: body.ritualId, space_id: body.spaceId, status: "ACTIVE" })
+      .first();
+    if (!ritual) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Ritual not found"));
+    }
+    const joined = await db("social_space_ritual_participants")
+      .where({ ritual_id: body.ritualId, subject_hash: subjectDidHash })
+      .first();
+    if (!joined) {
+      return reply
+        .code(409)
+        .send(makeErrorResponse("invalid_request", "Participate before complete"));
+    }
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const todayCount = await db("social_space_ritual_participants")
+      .where({ subject_hash: subjectDidHash, space_id: body.spaceId })
+      .whereNotNull("completed_at")
+      .andWhere("completed_at", ">=", todayStart.toISOString())
+      .count<{ count: string }>("ritual_id as count")
+      .first();
+    if (Number(todayCount?.count ?? 0) >= 3) {
+      return reply
+        .code(429)
+        .send(makeErrorResponse("invalid_request", "Daily ritual completion cap reached"));
+    }
+    if (joined.completed_at) {
+      return reply.send({ decision: "ALLOW", alreadyCompleted: true });
+    }
+    await db("social_space_ritual_participants")
+      .where({ ritual_id: body.ritualId, subject_hash: subjectDidHash })
+      .update({
+        completed_at: new Date().toISOString(),
+        completion_count: db.raw("LEAST(completion_count + 1, 1)")
+      });
+    await logAction({
+      subjectDidHash,
+      actionType: "ritual.complete",
+      decision: "COMPLETE",
+      policyId: gate.allowMeta?.policyId,
+      policyVersion: gate.allowMeta?.policyVersion
+    }).catch(() => undefined);
+    incCompleted("ritual_complete");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/ritual/end", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = ritualEndSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "ritual.end_session",
+      actionType: "ritual_end",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "ritual_end",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const updated = await (await getDb())("social_space_rituals")
+      .where({ ritual_id: body.ritualId, space_id: body.spaceId, status: "ACTIVE" })
+      .update({ status: "ENDED", closed_at: new Date().toISOString() });
+    if (!updated) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Ritual not found"));
+    }
+    incCompleted("ritual_end");
+    return reply.send({ decision: "ALLOW" });
   });
 
   app.get("/v1/social/feed", async (request, reply) => {
@@ -3061,13 +4804,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const id = randomUUID();
@@ -3116,13 +4857,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const packId = randomUUID();
     await (
@@ -3174,13 +4913,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: pack.space_id ? { space_id: String(pack.space_id) } : undefined
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await db("media_emoji_pack_assets")
       .insert({ pack_id: body.packId, asset_id: body.assetId })
@@ -3204,13 +4941,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (await getDb())("media_emoji_packs")
       .where({ id: body.packId, owner_subject_hash: subjectDidHash })
@@ -3252,13 +4987,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: body.spaceId ? { space_id: body.spaceId } : undefined
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const packId = randomUUID();
     await (
@@ -3310,13 +5043,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: pack.space_id ? { space_id: String(pack.space_id) } : undefined
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const assetId = randomUUID();
     await db("media_sound_assets").insert({
@@ -3350,13 +5081,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (await getDb())("media_soundpacks")
       .where({ id: body.packId, owner_subject_hash: subjectDidHash })
@@ -3398,13 +5127,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const db = await getDb();
     const now = new Date().toISOString();
@@ -3453,13 +5180,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (
       await getDb()
@@ -3506,13 +5231,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const inviteId = randomUUID();
     await (
@@ -3561,6 +5284,193 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
     });
   });
 
+  app.get("/v1/social/spaces/:spaceId/presence", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = spacePresenceQuerySchema.parse(request.query ?? {});
+    await pruneExpiredPresenceRows().catch(() => undefined);
+    const space = await getSpaceById(spaceId);
+    if (!space) {
+      return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    }
+    const cutoff = new Date(Date.now() - config.PRESENCE_PING_TTL_SECONDS * 1000).toISOString();
+    const counts = await getPresenceCounts(spaceId, cutoff);
+    let yourMode: string | null = null;
+    let yourCrewActiveCount = 0;
+    if (query.subjectDid) {
+      const subjectHash = pseudonymizer.didToHash(query.subjectDid);
+      const row = await (
+        await getDb()
+      )("presence_space_states as states")
+        .join("social_space_presence_pings as pings", function joinPresence() {
+          this.on("states.space_id", "=", "pings.space_id").andOn(
+            "states.subject_hash",
+            "=",
+            "pings.subject_hash"
+          );
+        })
+        .where("states.space_id", spaceId)
+        .andWhere("states.subject_hash", subjectHash)
+        .andWhere("pings.last_seen_at", ">=", cutoff)
+        .select("states.mode")
+        .first();
+      yourMode = row?.mode ? String(row.mode) : null;
+      const crewMembership = (await (
+        await getDb()
+      )("social_space_crew_members as members")
+        .join("social_space_crews as crews", "members.crew_id", "crews.crew_id")
+        .where({
+          "members.subject_hash": subjectHash,
+          "crews.space_id": spaceId
+        })
+        .whereNull("members.left_at")
+        .whereNull("crews.archived_at")
+        .select("members.crew_id")
+        .first()) as { crew_id?: string } | undefined;
+      if (crewMembership?.crew_id) {
+        const crewActive = await (
+          await getDb()
+        )("social_space_crew_members as members")
+          .join("social_space_presence_pings as pings", function joinCrewActive() {
+            this.on("members.subject_hash", "=", "pings.subject_hash");
+          })
+          .where({ "members.crew_id": crewMembership.crew_id })
+          .whereNull("members.left_at")
+          .andWhere("pings.space_id", spaceId)
+          .andWhere("pings.last_seen_at", ">=", cutoff)
+          .count<{ count: string }>("members.subject_hash as count")
+          .first();
+        yourCrewActiveCount = Number(crewActive?.count ?? 0);
+      }
+    }
+    return reply.send({
+      space_id: spaceId,
+      ttl_seconds: config.PRESENCE_PING_TTL_SECONDS,
+      counts,
+      you: { mode: yourMode, active: Boolean(yourMode) },
+      crew: {
+        active_count: yourCrewActiveCount
+      }
+    });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/presence/ping", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = presencePingSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (body.crewId) {
+      const crew = await getCrewById(body.crewId);
+      if (!crew || crew.space_id !== spaceId) {
+        return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+      }
+      if (!(await isCrewMember(body.crewId, subjectDidHash))) {
+        return reply
+          .code(403)
+          .send(makeErrorResponse("invalid_request", "Crew membership required"));
+      }
+    }
+    if (!checkPresencePingRateLimit(subjectDidHash, spaceId)) {
+      return reply.code(429).send(makeErrorResponse("invalid_request", "Presence ping rate limit"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "presence.ping",
+      actionType: "presence_ping",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const now = new Date().toISOString();
+    const db = await getDb();
+    await db("social_space_presence_pings")
+      .insert({ space_id: spaceId, subject_hash: subjectDidHash, last_seen_at: now })
+      .onConflict(["space_id", "subject_hash"])
+      .merge({ last_seen_at: now });
+    if (body.mode) {
+      await db("presence_space_states")
+        .insert({
+          space_id: spaceId,
+          subject_hash: subjectDidHash,
+          mode: body.mode,
+          updated_at: now
+        })
+        .onConflict(["space_id", "subject_hash"])
+        .merge({ mode: body.mode, updated_at: now });
+    }
+    await pruneExpiredPresenceRows().catch(() => undefined);
+    incCompleted("presence_ping");
+    return reply.send({
+      decision: "ALLOW",
+      active_until_seconds: config.PRESENCE_PING_TTL_SECONDS
+    });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/profile/visibility", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = profileVisibilitySchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "presence.ping",
+      actionType: "presence_ping",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (
+      await getDb()
+    )("social_space_profile_settings")
+      .insert({
+        space_id: spaceId,
+        subject_hash: subjectDidHash,
+        show_on_leaderboard: body.showOnLeaderboard,
+        show_on_presence: body.showOnPresence,
+        presence_label: body.presenceLabel ?? null,
+        updated_at: new Date().toISOString()
+      })
+      .onConflict(["space_id", "subject_hash"])
+      .merge({
+        show_on_leaderboard: body.showOnLeaderboard,
+        show_on_presence: body.showOnPresence,
+        presence_label: body.presenceLabel ?? null,
+        updated_at: new Date().toISOString()
+      });
+    return reply.send({ decision: "ALLOW" });
+  });
+
   app.post("/v1/social/sync/watch/create_session", async (request, reply) => {
     await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
     if (reply.sent) return;
@@ -3576,13 +5486,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const sessionId = randomUUID();
     const now = new Date().toISOString();
@@ -3634,13 +5542,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (
       await getDb()
@@ -3686,13 +5592,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const now = new Date().toISOString();
     const db = await getDb();
@@ -3738,13 +5642,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const space = await getSpaceById(body.spaceId);
@@ -3825,13 +5727,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (
@@ -3987,13 +5887,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     if (sessionAccess.session.host_subject_did_hash !== subjectDidHash) {
@@ -4023,6 +5921,410 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
     return reply.send({ decision: "ALLOW" });
   });
 
+  app.post("/v1/social/sync/huddle/create_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleCreateSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.huddle.create_session",
+      actionType: "huddle_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "huddle_create",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const now = new Date().toISOString();
+    const sessionId = randomUUID();
+    await (
+      await getDb()
+    ).transaction(async (trx) => {
+      await trx("sync_sessions").insert({
+        session_id: sessionId,
+        space_id: body.spaceId,
+        kind: "huddle",
+        host_subject_did_hash: subjectDidHash,
+        status: "ACTIVE",
+        created_at: now
+      });
+      await trx("sync_session_participants").insert({
+        session_id: sessionId,
+        subject_did_hash: subjectDidHash,
+        role: "host",
+        joined_at: now
+      });
+    });
+    incCompleted("huddle_create");
+    return reply.send({ decision: "ALLOW", sessionId, host_present: true, participant_count: 1 });
+  });
+
+  app.post("/v1/social/sync/huddle/join_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleJoinSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const sessionAccess = await ensureSyncSessionAccess({
+      sessionId: body.sessionId,
+      spaceId: body.spaceId,
+      expectedKind: "huddle"
+    });
+    if (!sessionAccess.session) {
+      return reply.code(404).send(sessionAccess.error);
+    }
+    if (sessionAccess.session.status !== "ACTIVE") {
+      return reply.code(409).send(makeErrorResponse("invalid_request", "Session already ended"));
+    }
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.huddle.join_session",
+      actionType: "huddle_join",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (
+      await getDb()
+    )("sync_session_participants")
+      .insert({
+        session_id: body.sessionId,
+        subject_did_hash: subjectDidHash,
+        role:
+          sessionAccess.session.host_subject_did_hash === subjectDidHash ? "host" : "participant",
+        joined_at: new Date().toISOString(),
+        left_at: null
+      })
+      .onConflict(["session_id", "subject_did_hash"])
+      .merge({ left_at: null, joined_at: new Date().toISOString() });
+    const participantCountRow = await (await getDb())("sync_session_participants")
+      .where({ session_id: body.sessionId })
+      .whereNull("left_at")
+      .count<{ count: string }>("session_id as count")
+      .first();
+    incCompleted("huddle_join");
+    return reply.send({
+      decision: "ALLOW",
+      participant_count: Number(participantCountRow?.count ?? 0),
+      host_present: true
+    });
+  });
+
+  app.post("/v1/social/sync/huddle/end_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleEndSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const sessionAccess = await ensureSyncSessionAccess({
+      sessionId: body.sessionId,
+      spaceId: body.spaceId,
+      expectedKind: "huddle"
+    });
+    if (!sessionAccess.session) {
+      return reply.code(404).send(sessionAccess.error);
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.huddle.end_session",
+      actionType: "huddle_end",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    let endedByModerator = false;
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "huddle_end",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+      endedByModerator = Boolean(gate && !gate.denied);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    if (!endedByModerator && sessionAccess.session.host_subject_did_hash !== subjectDidHash) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Only host can end session"));
+    }
+    const now = new Date().toISOString();
+    await (
+      await getDb()
+    ).transaction(async (trx) => {
+      await trx("sync_sessions")
+        .where({ session_id: body.sessionId, space_id: body.spaceId })
+        .update({ status: "ENDED", ended_at: now });
+      await trx("sync_session_participants")
+        .where({ session_id: body.sessionId })
+        .whereNull("left_at")
+        .update({ left_at: now });
+      await trx("sync_session_permissions").where({ session_id: body.sessionId }).del();
+      await trx("sync_session_reports").insert({
+        report_id: randomUUID(),
+        session_id: body.sessionId,
+        reporter_subject_did_hash: subjectDidHash,
+        reason_code: endedByModerator ? "moderation_kill_switch" : body.reasonCode,
+        created_at: now
+      });
+    });
+    incCompleted("huddle_end");
+    return reply.send({
+      decision: "ALLOW",
+      ended_by: endedByModerator ? "moderator" : "host",
+      moderation_kill_switch: endedByModerator
+    });
+  });
+
+  app.post("/v1/social/sync/hangout/create_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleCreateSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.hangout.create_session",
+      actionType: "hangout_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "hangout_create",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const now = new Date().toISOString();
+    const sessionId = randomUUID();
+    await (
+      await getDb()
+    ).transaction(async (trx) => {
+      await trx("sync_sessions").insert({
+        session_id: sessionId,
+        space_id: body.spaceId,
+        kind: "huddle",
+        host_subject_did_hash: subjectDidHash,
+        status: "ACTIVE",
+        created_at: now
+      });
+      await trx("sync_session_participants").insert({
+        session_id: sessionId,
+        subject_did_hash: subjectDidHash,
+        role: "host",
+        joined_at: now
+      });
+    });
+    incCompleted("hangout_create");
+    return reply.send({ decision: "ALLOW", sessionId, host_present: true, participant_count: 1 });
+  });
+
+  app.post("/v1/social/sync/hangout/join_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleJoinSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const sessionAccess = await ensureSyncSessionAccess({
+      sessionId: body.sessionId,
+      spaceId: body.spaceId,
+      expectedKind: "huddle"
+    });
+    if (!sessionAccess.session) {
+      return reply.code(404).send(sessionAccess.error);
+    }
+    if (sessionAccess.session.status !== "ACTIVE") {
+      return reply.code(409).send(makeErrorResponse("invalid_request", "Session already ended"));
+    }
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.hangout.join_session",
+      actionType: "hangout_join",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (
+      await getDb()
+    )("sync_session_participants")
+      .insert({
+        session_id: body.sessionId,
+        subject_did_hash: subjectDidHash,
+        role:
+          sessionAccess.session.host_subject_did_hash === subjectDidHash ? "host" : "participant",
+        joined_at: new Date().toISOString(),
+        left_at: null
+      })
+      .onConflict(["session_id", "subject_did_hash"])
+      .merge({ left_at: null, joined_at: new Date().toISOString() });
+    const participantCountRow = await (await getDb())("sync_session_participants")
+      .where({ session_id: body.sessionId })
+      .whereNull("left_at")
+      .count<{ count: string }>("session_id as count")
+      .first();
+    incCompleted("hangout_join");
+    return reply.send({
+      decision: "ALLOW",
+      participant_count: Number(participantCountRow?.count ?? 0),
+      host_present: true
+    });
+  });
+
+  app.post("/v1/social/sync/hangout/end_session", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = huddleEndSessionSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const sessionAccess = await ensureSyncSessionAccess({
+      sessionId: body.sessionId,
+      spaceId: body.spaceId,
+      expectedKind: "huddle"
+    });
+    if (!sessionAccess.session) {
+      return reply.code(404).send(sessionAccess.error);
+    }
+    let gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "sync.hangout.end_session",
+      actionType: "hangout_end",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    let endedByModerator = false;
+    if (gate?.denied) {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.space.moderate",
+        actionType: "hangout_end",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+      endedByModerator = Boolean(gate && !gate.denied);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    if (!endedByModerator && sessionAccess.session.host_subject_did_hash !== subjectDidHash) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", "Only host can end session"));
+    }
+    const now = new Date().toISOString();
+    await (
+      await getDb()
+    ).transaction(async (trx) => {
+      await trx("sync_sessions")
+        .where({ session_id: body.sessionId, space_id: body.spaceId })
+        .update({ status: "ENDED", ended_at: now });
+      await trx("sync_session_participants")
+        .where({ session_id: body.sessionId })
+        .whereNull("left_at")
+        .update({ left_at: now });
+      await trx("sync_session_permissions").where({ session_id: body.sessionId }).del();
+      await trx("sync_session_reports").insert({
+        report_id: randomUUID(),
+        session_id: body.sessionId,
+        reporter_subject_did_hash: subjectDidHash,
+        reason_code: endedByModerator ? "moderation_kill_switch" : body.reasonCode,
+        created_at: now
+      });
+    });
+    incCompleted("hangout_end");
+    return reply.send({
+      decision: "ALLOW",
+      ended_by: endedByModerator ? "moderator" : "host",
+      moderation_kill_switch: endedByModerator
+    });
+  });
+
   app.post("/v1/social/sync/listen/create_session", async (request, reply) => {
     await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
     if (reply.sent) return;
@@ -4038,13 +6340,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
@@ -4109,13 +6409,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (
@@ -4257,13 +6555,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     if (sessionAccess.session.host_subject_did_hash !== subjectDidHash) {
@@ -4315,13 +6611,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const reportId = randomUUID();
@@ -4380,13 +6674,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate) {
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
     const now = new Date().toISOString();
@@ -4571,13 +6863,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const now = new Date().toISOString();
     const reportId = randomUUID();
@@ -4636,13 +6926,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const db = await getDb();
     const now = new Date().toISOString();
@@ -4674,13 +6962,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     const reportId = randomUUID();
     const now = new Date().toISOString();
@@ -4724,13 +7010,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       context: { space_id: body.spaceId }
     }).catch(() => null);
     if (!gate)
-      return reply
-        .code(503)
-        .send(
-          makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
-            devMode: config.DEV_MODE
-          })
-        );
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
     if (gate.denied) return reply.code(403).send(gate.denied);
     await (await getDb())("social_space_moderation_cases")
       .where({ case_id: body.caseId, space_id: body.spaceId })

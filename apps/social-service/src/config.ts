@@ -63,6 +63,19 @@ const envSchema = z.object({
   ),
   SYNC_SESSION_EVENT_BURST_MULTIPLIER: z.preprocess(toNumber(3), z.number().int().min(1).max(10)),
   SYNC_SESSION_EVENT_RETENTION_DAYS: z.preprocess(toNumber(14), z.number().int().min(1).max(180)),
+  PRESENCE_PING_TTL_SECONDS: z.preprocess(toNumber(600), z.number().int().min(300).max(900)),
+  PRESENCE_PING_RATE_WINDOW_SECONDS: z.preprocess(toNumber(20), z.number().int().min(5).max(120)),
+  PRESENCE_PING_RATE_MAX_PER_WINDOW: z.preprocess(toNumber(10), z.number().int().min(1).max(60)),
+  LEADERBOARD_TOP_N: z.preprocess(toNumber(10), z.number().int().min(3).max(50)),
+  PULSE_CHALLENGE_ENDING_SOON_SECONDS: z.preprocess(
+    toNumber(2 * 60 * 60),
+    z
+      .number()
+      .int()
+      .min(300)
+      .max(24 * 60 * 60)
+  ),
+  PULSE_RANK_NEAR_GAP: z.preprocess(toNumber(2), z.number().int().min(1).max(20)),
   ANCHOR_AUTH_SECRET: z.preprocess(emptyToUndefined, z.string().min(16).optional()),
   ALLOW_INSECURE_DEV_AUTH: z.preprocess((value) => value === "true", z.boolean()).default(false),
   ALLOW_LEGACY_SERVICE_JWT_SECRET: z

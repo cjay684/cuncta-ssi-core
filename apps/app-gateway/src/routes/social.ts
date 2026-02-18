@@ -102,7 +102,9 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
       "cuncta.presence.mode_access": "Presence mode access capability",
       "cuncta.sync.scroll_host": "Scroll host capability",
       "cuncta.sync.listen_host": "Listen host capability",
-      "cuncta.sync.session_participant": "Sync session participant capability"
+      "cuncta.sync.session_participant": "Sync session participant capability",
+      "cuncta.sync.huddle_host": "Hangout host capability",
+      "cuncta.social.ritual_creator": "Ritual creator capability"
     };
     return reply.send({
       ...payload,
@@ -672,6 +674,218 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
     });
     return sendProxyResponse(reply, response);
   });
+  app.get("/v1/social/spaces/:spaceId/presence", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/presence`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/presence/ping", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/presence/ping`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/profile/visibility", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/profile/visibility`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/leaderboard", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/leaderboard`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/rankings", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/rankings`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/streaks", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/streaks`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/pulse", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/pulse`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/pulse/preferences", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/pulse/preferences`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/pulse/preferences", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/pulse/preferences`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/crews", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/crews`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/crews", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/crews`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/crews/:crewId/join", async (request, reply) => {
+    const params = request.params as { crewId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/crews/${encodeURIComponent(params.crewId)}/join`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/crews/:crewId/invite", async (request, reply) => {
+    const params = request.params as { crewId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/crews/${encodeURIComponent(params.crewId)}/invite`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/crews/:crewId/leave", async (request, reply) => {
+    const params = request.params as { crewId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/crews/${encodeURIComponent(params.crewId)}/leave`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/crews/:crewId/presence", async (request, reply) => {
+    const params = request.params as { crewId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/crews/${encodeURIComponent(params.crewId)}/presence`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/challenges", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/challenges`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/challenges", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/challenges`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/challenges/:challengeId/join", async (request, reply) => {
+    const params = request.params as { challengeId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/challenges/${encodeURIComponent(params.challengeId)}/join`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/challenges/:challengeId/complete", async (request, reply) => {
+    const params = request.params as { challengeId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/challenges/${encodeURIComponent(params.challengeId)}/complete`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/rituals/active", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/rituals/active`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/ritual/create", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/ritual/create",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/ritual/participate", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/ritual/participate",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/ritual/complete", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/ritual/complete",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/ritual/end", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/ritual/end",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
   app.post("/v1/social/sync/watch/create_session", async (request, reply) => {
     const response = await proxyToSocial(context, {
       method: "POST",
@@ -756,6 +970,54 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
     const response = await proxyToSocial(context, {
       method: "POST",
       path: "/v1/social/sync/scroll/end_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/huddle/create_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/huddle/create_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/hangout/create_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/hangout/create_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/huddle/join_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/huddle/join_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/hangout/join_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/hangout/join_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/huddle/end_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/huddle/end_session",
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/sync/hangout/end_session", async (request, reply) => {
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: "/v1/social/sync/hangout/end_session",
       body: request.body ?? {}
     });
     return sendProxyResponse(reply, response);

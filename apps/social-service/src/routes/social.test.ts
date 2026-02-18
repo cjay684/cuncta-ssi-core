@@ -773,3 +773,929 @@ test("scroll sync_event enforces permission expiry", async () => {
   await app.close();
   globalThis.fetch = originalFetch;
 });
+
+test("presence ping denies restricted subject", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: true, tombstoned: false });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:presence-restricted";
+  const subjectHash = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  }).didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `presence-deny-${spaceId.slice(0, 8)}`,
+    display_name: "Presence Deny",
+    description: "presence deny test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships")
+    .insert({
+      space_id: spaceId,
+      subject_did_hash: subjectHash,
+      status: "ACTIVE",
+      joined_at: now
+    })
+    .onConflict(["space_id", "subject_did_hash"])
+    .merge({ status: "ACTIVE", joined_at: now });
+  const denied = await app.inject({
+    method: "POST",
+    url: `/v1/social/spaces/${spaceId}/presence/ping`,
+    payload: {
+      subjectDid,
+      mode: "active",
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-presence-ping-deny",
+      audience: "cuncta.action:presence.ping"
+    }
+  });
+  assert.equal(denied.statusCode, 403);
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("presence strip returns counts and no subject hashes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => makeJsonResponse({}, 404)) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `presence-view-${spaceId.slice(0, 8)}`,
+    display_name: "Presence View",
+    description: "presence view test",
+    created_by_subject_did_hash: "subject-hash",
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("presence_space_states").insert([
+    { space_id: spaceId, subject_hash: "hash-a", mode: "active", updated_at: now },
+    { space_id: spaceId, subject_hash: "hash-b", mode: "quiet", updated_at: now }
+  ]);
+  await db("social_space_presence_pings").insert([
+    { space_id: spaceId, subject_hash: "hash-a", last_seen_at: now },
+    { space_id: spaceId, subject_hash: "hash-b", last_seen_at: now }
+  ]);
+  const response = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/presence`
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as {
+    counts?: { quiet?: number; active?: number; immersive?: number };
+    states?: unknown[];
+    participants?: unknown[];
+  };
+  assert.equal(payload.counts?.active, 1);
+  assert.equal(payload.counts?.quiet, 1);
+  assert.equal("states" in payload, false);
+  assert.equal("participants" in payload, false);
+  await db("social_space_presence_pings").where({ space_id: spaceId }).del();
+  await db("presence_space_states").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("huddle create and join are policy-gated", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.sync.huddle_host" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "DENY", reasons: ["missing_huddle_host"] });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:huddle-host";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `huddle-deny-${spaceId.slice(0, 8)}`,
+    display_name: "Huddle Deny",
+    description: "huddle deny test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const denied = await app.inject({
+    method: "POST",
+    url: "/v1/social/sync/huddle/create_session",
+    payload: {
+      subjectDid,
+      spaceId,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-huddle-create",
+      audience: "cuncta.action:sync.huddle.create_session"
+    }
+  });
+  assert.equal(denied.statusCode, 403);
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("ritual lifecycle completes once and logs bounded completion", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      if (url.includes("ritual.create")) {
+        return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.poster" }] });
+      }
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:ritual-subject";
+  const subjectHash = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  }).didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `ritual-life-${spaceId.slice(0, 8)}`,
+    display_name: "Ritual Life",
+    description: "ritual lifecycle test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const created = await app.inject({
+    method: "POST",
+    url: "/v1/social/ritual/create",
+    payload: {
+      subjectDid,
+      spaceId,
+      title: "10-minute drop",
+      description: "post now",
+      durationMinutes: 10,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-ritual-create",
+      audience: "cuncta.action:ritual.create"
+    }
+  });
+  assert.equal(created.statusCode, 200);
+  const ritualId = (created.json() as { ritualId: string }).ritualId;
+  const joined = await app.inject({
+    method: "POST",
+    url: "/v1/social/ritual/participate",
+    payload: {
+      subjectDid,
+      ritualId,
+      spaceId,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-ritual-participate",
+      audience: "cuncta.action:ritual.participate"
+    }
+  });
+  assert.equal(joined.statusCode, 200);
+  const completed = await app.inject({
+    method: "POST",
+    url: "/v1/social/ritual/complete",
+    payload: {
+      subjectDid,
+      ritualId,
+      spaceId,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-ritual-complete",
+      audience: "cuncta.action:ritual.complete"
+    }
+  });
+  assert.equal(completed.statusCode, 200);
+  const completedAgain = await app.inject({
+    method: "POST",
+    url: "/v1/social/ritual/complete",
+    payload: {
+      subjectDid,
+      ritualId,
+      spaceId,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-ritual-complete-2",
+      audience: "cuncta.action:ritual.complete"
+    }
+  });
+  assert.equal(completedAgain.statusCode, 200);
+  const logged = await db("social_action_log")
+    .where({ subject_did_hash: subjectHash, action_type: "ritual.complete", decision: "COMPLETE" })
+    .count<{ count: string }>("subject_did_hash as count")
+    .first();
+  assert.equal(Number(logged?.count ?? 0), 1);
+  await db("social_space_ritual_participants").where({ ritual_id: ritualId }).del();
+  await db("social_space_rituals").where({ ritual_id: ritualId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("leaderboard excludes tombstoned and respects opt-in visibility", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      const hash = new URL(url).searchParams.get("subjectDidHash");
+      if (hash === "hash-tombstone") {
+        return makeJsonResponse({ restricted: false, tombstoned: true });
+      }
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `leaderboard-${spaceId.slice(0, 8)}`,
+    display_name: "Leaderboard Space",
+    description: "leaderboard test",
+    created_by_subject_did_hash: "hash-visible",
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_action_log").insert([
+    {
+      subject_did_hash: "hash-visible",
+      action_type: "social.post.create",
+      decision: "COMPLETE",
+      created_at: now
+    },
+    {
+      subject_did_hash: "hash-tombstone",
+      action_type: "social.post.create",
+      decision: "COMPLETE",
+      created_at: now
+    }
+  ]);
+  await db("social_profiles").insert({
+    profile_id: randomUUID(),
+    subject_did_hash: "hash-visible",
+    handle_hash: "hh-visible",
+    handle: "visible",
+    display_name: "Visible User",
+    created_at: now,
+    updated_at: now
+  });
+  await db("social_space_profile_settings").insert({
+    space_id: spaceId,
+    subject_hash: "hash-visible",
+    show_on_leaderboard: true,
+    show_on_presence: false,
+    presence_label: "Visible User",
+    updated_at: now
+  });
+  const response = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/leaderboard?window=7d`
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as {
+    top_contributors: Array<{ identity?: { displayName?: string } }>;
+  };
+  assert.ok(payload.top_contributors.length >= 1);
+  assert.equal(
+    payload.top_contributors.some((entry) => entry.identity?.displayName === "Visible User"),
+    true
+  );
+  await db("social_space_profile_settings").where({ space_id: spaceId }).del();
+  await db("social_profiles").where({ subject_did_hash: "hash-visible" }).del();
+  await db("social_action_log")
+    .whereIn("subject_did_hash", ["hash-visible", "hash-tombstone"])
+    .where({ action_type: "social.post.create", decision: "COMPLETE" })
+    .del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("hangout alias routes are policy-gated", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.sync.huddle_host" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "DENY", reasons: ["missing_hangout_host"] });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:hangout-host";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `hangout-deny-${spaceId.slice(0, 8)}`,
+    display_name: "Hangout Deny",
+    description: "hangout deny test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const denied = await app.inject({
+    method: "POST",
+    url: "/v1/social/sync/hangout/create_session",
+    payload: {
+      subjectDid,
+      spaceId,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-hangout-create",
+      audience: "cuncta.action:sync.hangout.create_session"
+    }
+  });
+  assert.equal(denied.statusCode, 403);
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("crew presence returns counts only", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => makeJsonResponse({}, 404)) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const spaceId = randomUUID();
+  const crewId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `crew-presence-${spaceId.slice(0, 8)}`,
+    display_name: "Crew Presence",
+    description: "crew presence test",
+    created_by_subject_did_hash: "subject-hash",
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_crews").insert({
+    crew_id: crewId,
+    space_id: spaceId,
+    name: "Alpha Crew",
+    created_by_subject_hash: "subject-hash",
+    created_at: now
+  });
+  await db("social_space_crew_members").insert([
+    { crew_id: crewId, subject_hash: "hash-a", role: "captain", joined_at: now },
+    { crew_id: crewId, subject_hash: "hash-b", role: "member", joined_at: now }
+  ]);
+  await db("social_space_presence_pings").insert([
+    { space_id: spaceId, subject_hash: "hash-a", last_seen_at: now },
+    { space_id: spaceId, subject_hash: "hash-b", last_seen_at: now }
+  ]);
+  const response = await app.inject({
+    method: "GET",
+    url: `/v1/social/crews/${crewId}/presence`
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as { active_count?: number; members?: unknown[] };
+  assert.equal(payload.active_count, 2);
+  assert.equal("members" in payload, false);
+  await db("social_space_presence_pings").where({ space_id: spaceId }).del();
+  await db("social_space_crew_members").where({ crew_id: crewId }).del();
+  await db("social_space_crews").where({ crew_id: crewId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("challenge completion increments daily streak after verified evidence", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:challenge-member";
+  const subjectHash = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  }).didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const challengeId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `challenge-${spaceId.slice(0, 8)}`,
+    display_name: "Challenge Space",
+    description: "challenge streak test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_space_challenges").insert({
+    challenge_id: challengeId,
+    space_id: spaceId,
+    cadence: "daily",
+    title: "Daily drop",
+    starts_at: now,
+    ends_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    created_by_subject_hash: subjectHash,
+    status: "ACTIVE",
+    created_at: now
+  });
+  await db("social_space_challenge_participation").insert({
+    challenge_id: challengeId,
+    subject_hash: subjectHash,
+    joined_at: now
+  });
+  await db("social_action_log").insert({
+    subject_did_hash: subjectHash,
+    action_type: "social.post.create",
+    decision: "COMPLETE",
+    created_at: now
+  });
+  const completed = await app.inject({
+    method: "POST",
+    url: `/v1/social/challenges/${challengeId}/complete`,
+    payload: {
+      subjectDid,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-challenge-complete",
+      audience: "cuncta.action:challenge.complete"
+    }
+  });
+  assert.equal(completed.statusCode, 200);
+  const streak = await db("social_space_streaks")
+    .where({ space_id: spaceId, subject_hash: subjectHash, streak_type: "daily_challenge" })
+    .first();
+  assert.equal(Number(streak?.current_count ?? 0), 1);
+  await db("social_space_streaks").where({ space_id: spaceId, subject_hash: subjectHash }).del();
+  await db("social_space_challenge_participation").where({ challenge_id: challengeId }).del();
+  await db("social_space_challenges").where({ challenge_id: challengeId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_action_log").where({ subject_did_hash: subjectHash }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("tombstone purge removes crew memberships and streak rows", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: true });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:tombstone-crew-streak";
+  const subjectHash = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  }).didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const crewId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `tombstone-space-${spaceId.slice(0, 8)}`,
+    display_name: "Tombstone Space",
+    description: "tombstone test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_space_crews").insert({
+    crew_id: crewId,
+    space_id: spaceId,
+    name: "Crew",
+    created_by_subject_hash: subjectHash,
+    created_at: now
+  });
+  await db("social_space_crew_members").insert({
+    crew_id: crewId,
+    subject_hash: subjectHash,
+    role: "captain",
+    joined_at: now
+  });
+  await db("social_space_streaks").insert({
+    space_id: spaceId,
+    subject_hash: subjectHash,
+    streak_type: "daily_challenge",
+    current_count: 2,
+    best_count: 2,
+    last_completed_at: now,
+    updated_at: now
+  });
+  await db("social_space_pulse_preferences").insert({
+    space_id: spaceId,
+    subject_hash: subjectHash,
+    enabled: true,
+    notify_hangouts: true,
+    notify_crews: true,
+    notify_challenges: true,
+    notify_rankings: true,
+    notify_streaks: true,
+    updated_at: now
+  });
+  const denied = await app.inject({
+    method: "POST",
+    url: "/v1/social/post",
+    payload: {
+      subjectDid,
+      content: "trigger purge",
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-purge-crew-streak",
+      audience: "cuncta.action:social.post.create"
+    }
+  });
+  assert.equal(denied.statusCode, 403);
+  const memberRows = await db("social_space_crew_members")
+    .where({ crew_id: crewId, subject_hash: subjectHash })
+    .select("subject_hash");
+  const streakRows = await db("social_space_streaks")
+    .where({ space_id: spaceId, subject_hash: subjectHash })
+    .select("subject_hash");
+  const pulsePrefRows = await db("social_space_pulse_preferences")
+    .where({ space_id: spaceId, subject_hash: subjectHash })
+    .select("subject_hash");
+  assert.equal(memberRows.length, 0);
+  assert.equal(streakRows.length, 0);
+  assert.equal(pulsePrefRows.length, 0);
+  await db("social_space_crews").where({ crew_id: crewId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("pulse returns crew, hangout, challenge-ending, and streak-risk cards", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:pulse-main";
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const peerHash = pseudo.didToHash("did:hedera:testnet:pulse-peer");
+  const spaceId = randomUUID();
+  const crewId = randomUUID();
+  const challengeId = randomUUID();
+  const sessionId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `pulse-space-${spaceId.slice(0, 8)}`,
+    display_name: "Pulse Space",
+    description: "pulse test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert([
+    { space_id: spaceId, subject_did_hash: subjectHash, status: "ACTIVE", joined_at: now },
+    { space_id: spaceId, subject_did_hash: peerHash, status: "ACTIVE", joined_at: now }
+  ]);
+  await db("social_space_crews").insert({
+    crew_id: crewId,
+    space_id: spaceId,
+    name: "Pulse Crew",
+    created_by_subject_hash: subjectHash,
+    created_at: now
+  });
+  await db("social_space_crew_members").insert([
+    { crew_id: crewId, subject_hash: subjectHash, role: "captain", joined_at: now },
+    { crew_id: crewId, subject_hash: peerHash, role: "member", joined_at: now }
+  ]);
+  await db("social_space_presence_pings").insert([
+    { space_id: spaceId, subject_hash: subjectHash, last_seen_at: now },
+    { space_id: spaceId, subject_hash: peerHash, last_seen_at: now }
+  ]);
+  await db("sync_sessions").insert({
+    session_id: sessionId,
+    space_id: spaceId,
+    kind: "huddle",
+    host_subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    created_at: now
+  });
+  await db("social_space_challenges").insert({
+    challenge_id: challengeId,
+    space_id: spaceId,
+    cadence: "daily",
+    title: "Soon ending",
+    starts_at: now,
+    ends_at: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+    created_by_subject_hash: subjectHash,
+    status: "ACTIVE",
+    created_at: now
+  });
+  await db("social_space_streaks").insert({
+    space_id: spaceId,
+    subject_hash: subjectHash,
+    streak_type: "daily_challenge",
+    current_count: 2,
+    best_count: 2,
+    last_completed_at: now,
+    updated_at: now
+  });
+  const response = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/pulse?subjectDid=${encodeURIComponent(subjectDid)}`
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as { cards?: Array<{ type?: string }> };
+  const types = new Set((payload.cards ?? []).map((entry) => String(entry.type ?? "")));
+  assert.equal(types.has("crew_active"), true);
+  assert.equal(types.has("hangout_live"), true);
+  assert.equal(types.has("challenge_ending"), true);
+  assert.equal(types.has("streak_risk"), true);
+  assert.equal(JSON.stringify(payload).includes(subjectHash), false);
+  await db("social_space_streaks").where({ space_id: spaceId }).del();
+  await db("social_space_challenges").where({ challenge_id: challengeId }).del();
+  await db("sync_sessions").where({ session_id: sessionId }).del();
+  await db("social_space_presence_pings").where({ space_id: spaceId }).del();
+  await db("social_space_crew_members").where({ crew_id: crewId }).del();
+  await db("social_space_crews").where({ crew_id: crewId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("pulse preferences toggles hide categories", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.presence.mode_access" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:pulse-pref";
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const crewId = randomUUID();
+  const sessionId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `pulse-pref-${spaceId.slice(0, 8)}`,
+    display_name: "Pulse Pref Space",
+    description: "pulse pref test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_space_crews").insert({
+    crew_id: crewId,
+    space_id: spaceId,
+    name: "Crew Pref",
+    created_by_subject_hash: subjectHash,
+    created_at: now
+  });
+  await db("social_space_crew_members").insert({
+    crew_id: crewId,
+    subject_hash: subjectHash,
+    role: "captain",
+    joined_at: now
+  });
+  await db("social_space_presence_pings").insert({
+    space_id: spaceId,
+    subject_hash: subjectHash,
+    last_seen_at: now
+  });
+  await db("sync_sessions").insert({
+    session_id: sessionId,
+    space_id: spaceId,
+    kind: "huddle",
+    host_subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    created_at: now
+  });
+  const updated = await app.inject({
+    method: "POST",
+    url: `/v1/social/spaces/${spaceId}/pulse/preferences`,
+    payload: {
+      subjectDid,
+      notifyCrews: false,
+      notifyHangouts: false,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-pulse-pref",
+      audience: "cuncta.action:presence.ping"
+    }
+  });
+  assert.equal(updated.statusCode, 200);
+  const pulse = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/pulse?subjectDid=${encodeURIComponent(subjectDid)}`
+  });
+  assert.equal(pulse.statusCode, 200);
+  const pulsePayload = pulse.json() as { cards?: Array<{ type?: string }> };
+  const types = new Set((pulsePayload.cards ?? []).map((entry) => String(entry.type ?? "")));
+  assert.equal(types.has("crew_active"), false);
+  assert.equal(types.has("hangout_live"), false);
+  const prefs = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/pulse/preferences?subjectDid=${encodeURIComponent(subjectDid)}`
+  });
+  assert.equal(prefs.statusCode, 200);
+  const prefsPayload = prefs.json() as {
+    preferences?: { notifyCrews?: boolean; notifyHangouts?: boolean };
+  };
+  assert.equal(prefsPayload.preferences?.notifyCrews, false);
+  assert.equal(prefsPayload.preferences?.notifyHangouts, false);
+  await db("sync_sessions").where({ session_id: sessionId }).del();
+  await db("social_space_presence_pings").where({ space_id: spaceId }).del();
+  await db("social_space_crew_members").where({ crew_id: crewId }).del();
+  await db("social_space_crews").where({ crew_id: crewId }).del();
+  await db("social_space_pulse_preferences").where({ space_id: spaceId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("pulse returns empty cards for tombstoned subject", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/internal/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: true });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const subjectDid = "did:hedera:testnet:pulse-tombstone";
+  const subjectHash = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  }).didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `pulse-tomb-${spaceId.slice(0, 8)}`,
+    display_name: "Pulse Tombstone",
+    description: "pulse tombstone test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const response = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/pulse?subjectDid=${encodeURIComponent(subjectDid)}`
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as { cards?: unknown[] };
+  assert.equal((payload.cards ?? []).length, 0);
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});

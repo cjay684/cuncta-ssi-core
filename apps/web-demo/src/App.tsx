@@ -90,6 +90,60 @@ type SpaceGovernanceResponse = {
   pinning?: { join?: boolean; post?: boolean; moderate?: boolean };
 };
 
+type SpacePresenceStrip = {
+  counts: { quiet: number; active: number; immersive: number };
+  you?: { mode: string | null; active: boolean };
+  crew?: { active_count?: number };
+};
+
+type SpaceRitualEntry = {
+  ritual_id: string;
+  title: string;
+  description?: string;
+  duration_minutes: number;
+  starts_at: string;
+  ends_at: string;
+  participation_count: number;
+  completion_count: number;
+};
+
+type SpaceCrewEntry = {
+  crew_id: string;
+  name: string;
+  member_count: number;
+};
+
+type PulseCard = {
+  type: "crew_active" | "hangout_live" | "challenge_ending" | "streak_risk" | "rank_up";
+  title: string;
+  value: string | number;
+  cta: string;
+  explain: string;
+  route:
+    | "open_crews"
+    | "join_hangout"
+    | "open_challenges"
+    | "complete_challenge"
+    | "open_rankings"
+    | "compose_post";
+  sessionId?: string;
+  challengeId?: string;
+};
+
+type PulseSummary = {
+  spaceId: string;
+  cards: PulseCard[];
+};
+
+type PulsePreferences = {
+  enabled: boolean;
+  notifyHangouts: boolean;
+  notifyCrews: boolean;
+  notifyChallenges: boolean;
+  notifyRankings: boolean;
+  notifyStreaks: boolean;
+};
+
 type FeedMode = "signal" | "flow";
 type FlowTrustLens = "verified_only" | "trusted_creator" | "space_members";
 type PostExplainResponse = {
@@ -280,6 +334,8 @@ const socialCapabilityDescriptions: Record<string, string> = {
   "cuncta.social.space.steward": "Steward capability with elevated social trust in a space.",
   "cuncta.sync.scroll_host": "Capability for hosting synchronized scroll groups in a space.",
   "cuncta.sync.listen_host": "Capability for hosting synchronized listen groups in a space.",
+  "cuncta.sync.huddle_host": "Capability for hosting lightweight hangout control sessions.",
+  "cuncta.social.ritual_creator": "Capability for creating recurring space challenges.",
   "cuncta.sync.session_participant":
     "Optional capability for participating in synchronized sessions."
 };
@@ -388,6 +444,22 @@ export default function App() {
     Array<{ case_id: string; report_id: string; status: "OPEN" | "ACK" | "RESOLVED" }>
   >([]);
   const [spaceTrustHint, setSpaceTrustHint] = useState<string>("");
+  const [spacePresenceStrip, setSpacePresenceStrip] = useState<SpacePresenceStrip | null>(null);
+  const [spaceLeaderboard, setSpaceLeaderboard] = useState<Array<Record<string, unknown>>>([]);
+  const [spaceTopStreaks, setSpaceTopStreaks] = useState<Array<Record<string, unknown>>>([]);
+  const [spaceCrews, setSpaceCrews] = useState<SpaceCrewEntry[]>([]);
+  const [spaceRituals, setSpaceRituals] = useState<SpaceRitualEntry[]>([]);
+  const [pulseSummary, setPulseSummary] = useState<PulseSummary | null>(null);
+  const [pulsePreferences, setPulsePreferences] = useState<PulsePreferences | null>(null);
+  const [showPulsePanel, setShowPulsePanel] = useState(false);
+  const [pulseExplainOpen, setPulseExplainOpen] = useState<Record<string, boolean>>({});
+  const [spaceRitualTitle, setSpaceRitualTitle] = useState("10-minute drop");
+  const [spaceRitualDescription, setSpaceRitualDescription] = useState(
+    "Drop in with one contribution now."
+  );
+  const [spaceHuddleSessionId, setSpaceHuddleSessionId] = useState("");
+  const [spaceHuddleParticipants, setSpaceHuddleParticipants] = useState<number>(0);
+  const [spaceShowOnLeaderboard, setSpaceShowOnLeaderboard] = useState(false);
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -409,6 +481,7 @@ export default function App() {
   const [syncHint, setSyncHint] = useState("");
   const [listenState, setListenState] = useState<string>("");
   const [presenceState, setPresenceState] = useState<string>("");
+  const hasPulseCards = (pulseSummary?.cards?.length ?? 0) > 0;
 
   const holderJwk = useMemo(() => {
     if (!identity) return null;
@@ -1293,10 +1366,20 @@ export default function App() {
         throw new Error(await rulesResponse.text());
       }
       setSelectedSpaceId(spaceId);
+      setEntSpaceId(spaceId);
+      setShowPulsePanel(false);
+      setPulseExplainOpen({});
       setSpaceDetail((await detailResponse.json()) as SpaceDetailResponse);
       setSpaceRules((await rulesResponse.json()) as SpaceRulesPreview);
       await loadActiveSpaceFeed(spaceId);
       await loadSpaceGovernance(spaceId);
+      await loadPresenceStrip(spaceId);
+      await loadSpaceLeaderboard(spaceId);
+      await loadSpaceTopStreaks(spaceId);
+      await loadSpaceCrews(spaceId);
+      await loadSpaceRituals(spaceId);
+      await loadPulse(spaceId);
+      await loadPulsePreferences(spaceId);
       if (canModerateInSpace && identity) {
         await loadModerationCases(spaceId);
         await loadSpaceModerationAudit(spaceId);
@@ -1448,6 +1531,354 @@ export default function App() {
       throw new Error(await response.text());
     }
     setSpaceAnalytics(JSON.stringify(await response.json(), null, 2));
+  };
+
+  const loadPresenceStrip = async (spaceId: string) => {
+    const url = new URL(
+      `/v1/social/spaces/${encodeURIComponent(spaceId)}/presence`,
+      services.appGateway
+    );
+    if (identity?.did) {
+      url.searchParams.set("subjectDid", identity.did);
+    }
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as SpacePresenceStrip;
+    setSpacePresenceStrip(payload);
+  };
+
+  const loadPulse = async (spaceId: string) => {
+    const url = new URL(
+      `/v1/social/spaces/${encodeURIComponent(spaceId)}/pulse`,
+      services.appGateway
+    );
+    if (identity?.did) {
+      url.searchParams.set("subjectDid", identity.did);
+    }
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as PulseSummary;
+    setPulseSummary(payload);
+  };
+
+  const loadPulsePreferences = async (spaceId: string) => {
+    const url = new URL(
+      `/v1/social/spaces/${encodeURIComponent(spaceId)}/pulse/preferences`,
+      services.appGateway
+    );
+    if (identity?.did) {
+      url.searchParams.set("subjectDid", identity.did);
+    }
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { preferences?: PulsePreferences };
+    setPulsePreferences(payload.preferences ?? null);
+  };
+
+  const updatePulsePreference = async (
+    spaceId: string,
+    patch: Partial<Omit<PulsePreferences, "enabled">> & { enabled?: boolean }
+  ) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("presence.ping", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/pulse/preferences`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          ...patch,
+          ...proof
+        })
+      }
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { preferences?: PulsePreferences };
+    setPulsePreferences(payload.preferences ?? null);
+    await loadPulse(spaceId);
+  };
+
+  const togglePulseExplain = (cardType: PulseCard["type"]) => {
+    setPulseExplainOpen((prev) => ({ ...prev, [cardType]: !prev[cardType] }));
+  };
+
+  const runPulseCta = async (spaceId: string, card: PulseCard) => {
+    if (card.route === "open_crews") {
+      await loadSpaceCrews(spaceId);
+      return;
+    }
+    if (card.route === "join_hangout") {
+      if (card.sessionId) {
+        await joinHuddleSession(spaceId, card.sessionId);
+      }
+      return;
+    }
+    if (card.route === "open_challenges" || card.route === "complete_challenge") {
+      await loadSpaceRituals(spaceId);
+      return;
+    }
+    if (card.route === "open_rankings") {
+      await Promise.all([loadSpaceLeaderboard(spaceId), loadSpaceTopStreaks(spaceId)]);
+      return;
+    }
+    if (card.route === "compose_post") {
+      await createSpacePost(spaceId);
+    }
+  };
+
+  const pingPresence = async (
+    spaceId: string,
+    mode: "quiet" | "active" | "immersive" = "active"
+  ) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("presence.ping", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/presence/ping`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          mode,
+          ...proof
+        })
+      }
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    await Promise.all([loadPresenceStrip(spaceId), loadPulse(spaceId)]);
+  };
+
+  const updateSpaceVisibility = async (spaceId: string, showOnLeaderboard: boolean) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("presence.ping", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/profile/visibility`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          subjectDid: identity.did,
+          showOnLeaderboard,
+          showOnPresence: false,
+          ...proof
+        })
+      }
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    setSpaceShowOnLeaderboard(showOnLeaderboard);
+    await loadSpaceLeaderboard(spaceId);
+  };
+
+  const loadSpaceLeaderboard = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/rankings?type=contributors`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { rows?: Array<Record<string, unknown>> };
+    setSpaceLeaderboard(payload.rows ?? []);
+  };
+
+  const loadSpaceTopStreaks = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/rankings?type=streaks`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { rows?: Array<Record<string, unknown>> };
+    setSpaceTopStreaks(payload.rows ?? []);
+  };
+
+  const loadSpaceCrews = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/crews`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { crews?: SpaceCrewEntry[] };
+    setSpaceCrews(payload.crews ?? []);
+  };
+
+  const loadSpaceRituals = async (spaceId: string) => {
+    const response = await fetch(
+      `${services.appGateway}/v1/social/spaces/${encodeURIComponent(spaceId)}/rituals/active`
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { rituals?: SpaceRitualEntry[] };
+    setSpaceRituals(payload.rituals ?? []);
+  };
+
+  const createRitual = async (spaceId: string) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("ritual.create", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/ritual/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        spaceId,
+        title: spaceRitualTitle,
+        description: spaceRitualDescription,
+        durationMinutes: 10,
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    await Promise.all([loadSpaceRituals(spaceId), loadPulse(spaceId)]);
+  };
+
+  const participateRitual = async (spaceId: string, ritualId: string) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("ritual.participate", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/ritual/participate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        ritualId,
+        spaceId,
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    await Promise.all([loadSpaceRituals(spaceId), loadPulse(spaceId)]);
+  };
+
+  const completeRitual = async (spaceId: string, ritualId: string) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("ritual.complete", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/ritual/complete`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        ritualId,
+        spaceId,
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    await Promise.all([
+      loadSpaceRituals(spaceId),
+      loadSpaceLeaderboard(spaceId),
+      loadSpaceTopStreaks(spaceId),
+      loadPulse(spaceId)
+    ]);
+  };
+
+  const createHuddleSession = async (spaceId: string) => {
+    if (!identity) return;
+    const req = await fetchSocialRequirements("sync.hangout.create_session", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/sync/hangout/create_session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        spaceId,
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { sessionId?: string; participant_count?: number };
+    setSpaceHuddleSessionId(String(payload.sessionId ?? ""));
+    setSpaceHuddleParticipants(Number(payload.participant_count ?? 0));
+    await loadPulse(spaceId);
+  };
+
+  const joinHuddleSession = async (spaceId: string, sessionId: string) => {
+    if (!identity || !sessionId) return;
+    const req = await fetchSocialRequirements("sync.hangout.join_session", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/sync/hangout/join_session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        sessionId,
+        spaceId,
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as { participant_count?: number };
+    setSpaceHuddleParticipants(Number(payload.participant_count ?? 0));
+    await loadPulse(spaceId);
+  };
+
+  const endHuddleSession = async (spaceId: string, sessionId: string) => {
+    if (!identity || !sessionId) return;
+    const req = await fetchSocialRequirements("sync.hangout.end_session", spaceId);
+    if (!req) return;
+    const proof = await buildSocialPresentationPayload(req);
+    if (!proof) return;
+    const response = await fetch(`${services.appGateway}/v1/social/sync/hangout/end_session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        subjectDid: identity.did,
+        sessionId,
+        spaceId,
+        reasonCode: "manual_end",
+        ...proof
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    setSpaceHuddleSessionId("");
+    setSpaceHuddleParticipants(0);
+    await loadPulse(spaceId);
   };
 
   const resolveModerationCase = async (spaceId: string, caseId: string) => {
@@ -2376,6 +2807,222 @@ export default function App() {
                 Space analytics
               </button>
             </div>
+            <details className="card stack" open>
+              <summary>
+                <strong>Presence strip</strong>
+              </summary>
+              <div className="row">
+                <span className="badge">quiet {spacePresenceStrip?.counts?.quiet ?? 0}</span>
+                <span className="badge">active {spacePresenceStrip?.counts?.active ?? 0}</span>
+                <span className="badge">
+                  immersive {spacePresenceStrip?.counts?.immersive ?? 0}
+                </span>
+                <span className="badge badge-trust">
+                  you: {spacePresenceStrip?.you?.mode ?? "inactive"}
+                </span>
+                <button
+                  className="btn secondary"
+                  onClick={() => pingPresence(spaceDetail.space.space_id, "active")}
+                  disabled={!identity}
+                >
+                  Ping active
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() => loadPresenceStrip(spaceDetail.space.space_id)}
+                >
+                  Refresh
+                </button>
+              </div>
+            </details>
+            <details className="card stack" open>
+              <summary>
+                <strong>Hangout</strong>
+              </summary>
+              <div className="muted">
+                Voice control-plane only (no audio stream yet). <strong>?</strong> If start/join is
+                blocked, requirements or membership are missing.
+              </div>
+              <div className="row">
+                <span className="badge">session: {spaceHuddleSessionId ? "active" : "none"}</span>
+                <span className="badge">participants: {spaceHuddleParticipants}</span>
+                <button
+                  className="btn secondary"
+                  onClick={() => createHuddleSession(spaceDetail.space.space_id)}
+                  disabled={!identity}
+                >
+                  Start Hangout
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() =>
+                    joinHuddleSession(spaceDetail.space.space_id, spaceHuddleSessionId)
+                  }
+                  disabled={!identity || !spaceHuddleSessionId}
+                >
+                  Join Hangout
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() => endHuddleSession(spaceDetail.space.space_id, spaceHuddleSessionId)}
+                  disabled={!identity || !spaceHuddleSessionId}
+                >
+                  End Hangout
+                </button>
+              </div>
+            </details>
+            <details className="card stack" open>
+              <summary>
+                <strong>Crews</strong>
+              </summary>
+              <div className="muted">
+                Your crew is active: {spacePresenceStrip?.crew?.active_count ?? 0}
+              </div>
+              <button
+                className="btn secondary"
+                onClick={() => loadSpaceCrews(spaceDetail.space.space_id)}
+              >
+                Refresh crews
+              </button>
+              {spaceCrews.length === 0 && <div className="muted">No crews yet.</div>}
+              {spaceCrews.slice(0, 5).map((crew) => (
+                <div key={crew.crew_id} className="row">
+                  <span className="badge">{crew.name}</span>
+                  <span className="muted">members {crew.member_count}</span>
+                </div>
+              ))}
+            </details>
+            <details className="card stack" open>
+              <summary>
+                <strong>Challenges</strong>
+              </summary>
+              <div className="muted">
+                <strong>?</strong> Challenges unlock after requirements pass; only verified
+                completion contributes.
+              </div>
+              <label className="stack">
+                <span className="muted">Challenge title</span>
+                <input
+                  value={spaceRitualTitle}
+                  onChange={(event) => setSpaceRitualTitle(event.target.value)}
+                />
+              </label>
+              <label className="stack">
+                <span className="muted">Prompt</span>
+                <input
+                  value={spaceRitualDescription}
+                  onChange={(event) => setSpaceRitualDescription(event.target.value)}
+                />
+              </label>
+              <div className="row">
+                <button
+                  className="btn secondary"
+                  onClick={() => createRitual(spaceDetail.space.space_id)}
+                  disabled={!identity}
+                >
+                  Create challenge
+                </button>
+                <button
+                  className="btn secondary"
+                  onClick={() => loadSpaceRituals(spaceDetail.space.space_id)}
+                >
+                  Refresh challenges
+                </button>
+              </div>
+              {spaceRituals.length === 0 && <div className="muted">No active challenge.</div>}
+              {spaceRituals.slice(0, 2).map((ritual) => (
+                <div key={ritual.ritual_id} className="row">
+                  <span className="badge">{ritual.title}</span>
+                  <span className="muted">
+                    participants {ritual.participation_count} / complete {ritual.completion_count}
+                  </span>
+                  <button
+                    className="btn secondary"
+                    onClick={() => participateRitual(spaceDetail.space.space_id, ritual.ritual_id)}
+                    disabled={!identity}
+                  >
+                    Join
+                  </button>
+                  <button
+                    className="btn secondary"
+                    onClick={() => completeRitual(spaceDetail.space.space_id, ritual.ritual_id)}
+                    disabled={!identity}
+                  >
+                    Complete
+                  </button>
+                </div>
+              ))}
+            </details>
+            <details className="card stack" open>
+              <summary>
+                <strong>Top Contributors</strong>
+              </summary>
+              <div className="muted">
+                <strong>?</strong> Ranked by verified contributions, not likes.
+              </div>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={spaceShowOnLeaderboard}
+                  onChange={(event) =>
+                    updateSpaceVisibility(spaceDetail.space.space_id, event.target.checked)
+                  }
+                />
+                <span>Show my persona in this space rankings</span>
+              </label>
+              <button
+                className="btn secondary"
+                onClick={() => loadSpaceLeaderboard(spaceDetail.space.space_id)}
+              >
+                Refresh rankings
+              </button>
+              {spaceLeaderboard.length === 0 && <div className="muted">No contributors yet.</div>}
+              {spaceLeaderboard.slice(0, 8).map((entry, index) => {
+                const identityBlock = (entry.identity as Record<string, unknown> | undefined) ?? {};
+                const signals = (entry.signals as Record<string, unknown> | undefined) ?? {};
+                return (
+                  <div key={`leader-${index}`} className="row">
+                    <span className="badge">#{index + 1}</span>
+                    <span>
+                      {String(
+                        identityBlock.displayName ??
+                          (identityBlock.anonymous ? "Anonymous" : "Anon")
+                      )}
+                    </span>
+                    <span className="muted">
+                      score {String(entry.score ?? 0)} | post {String(signals.post_success ?? 0)} |
+                      reply {String(signals.reply_success ?? 0)} | challenge{" "}
+                      {String(signals.ritual_complete ?? 0)}
+                    </span>
+                  </div>
+                );
+              })}
+            </details>
+            <details className="card stack" open>
+              <summary>
+                <strong>Top Streaks</strong>
+              </summary>
+              <div className="muted">
+                <strong>?</strong> Streaks increment only after verified challenge completion.
+              </div>
+              <button
+                className="btn secondary"
+                onClick={() => loadSpaceTopStreaks(spaceDetail.space.space_id)}
+              >
+                Refresh streaks
+              </button>
+              {spaceTopStreaks.length === 0 && <div className="muted">No streaks yet.</div>}
+              {spaceTopStreaks.slice(0, 8).map((entry, index) => (
+                <div key={`streak-${index}`} className="row">
+                  <span className="badge">#{index + 1}</span>
+                  <span>{String(entry.streak_type ?? "challenge")}</span>
+                  <span className="muted">
+                    current {String(entry.current_count ?? 0)} | best{" "}
+                    {String(entry.best_count ?? 0)}
+                  </span>
+                </div>
+              ))}
+            </details>
             <div className="card stack">
               <strong>Space discovery mode</strong>
               <div className="row">
@@ -2741,7 +3388,7 @@ export default function App() {
       </aside>
 
       <button
-        className="command-orb"
+        className={`command-orb ${hasPulseCards ? "has-pulse" : ""}`}
         aria-label="Open command launcher"
         onClick={() => setShowCommandOrb((prev) => !prev)}
       >
@@ -2764,6 +3411,20 @@ export default function App() {
           </button>
           <button className="btn secondary" onClick={loadSpaces}>
             Spaces
+          </button>
+          <button
+            className="btn secondary"
+            onClick={async () => {
+              if (!selectedSpaceId) return;
+              await Promise.all([
+                loadPulse(selectedSpaceId),
+                loadPulsePreferences(selectedSpaceId)
+              ]);
+              setShowPulsePanel((prev) => !prev);
+            }}
+            disabled={!selectedSpaceId}
+          >
+            Pulse
           </button>
           <button className="btn secondary" onClick={runDsrExport} disabled={!identity}>
             Open privacy panel actions
@@ -2895,6 +3556,97 @@ export default function App() {
                 disabled={!entSpaceId}
               >
                 Presence: view state
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.hangout.create_session",
+                    "/v1/social/sync/hangout/create_session",
+                    { spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    if (payload?.sessionId) setSpaceHuddleSessionId(String(payload.sessionId));
+                    if (payload?.participant_count) {
+                      setSpaceHuddleParticipants(Number(payload.participant_count));
+                    }
+                  })
+                }
+                disabled={!identity || !entSpaceId}
+              >
+                Hangout: start
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.hangout.join_session",
+                    "/v1/social/sync/hangout/join_session",
+                    { sessionId: spaceHuddleSessionId, spaceId: entSpaceId },
+                    { spaceId: entSpaceId }
+                  ).then((payload) => {
+                    if (payload?.participant_count) {
+                      setSpaceHuddleParticipants(Number(payload.participant_count));
+                    }
+                  })
+                }
+                disabled={!identity || !entSpaceId || !spaceHuddleSessionId}
+              >
+                Hangout: join
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "sync.hangout.end_session",
+                    "/v1/social/sync/hangout/end_session",
+                    {
+                      sessionId: spaceHuddleSessionId,
+                      spaceId: entSpaceId,
+                      reasonCode: "manual_end"
+                    },
+                    { spaceId: entSpaceId }
+                  ).then(() => {
+                    setSpaceHuddleSessionId("");
+                    setSpaceHuddleParticipants(0);
+                  })
+                }
+                disabled={!identity || !entSpaceId || !spaceHuddleSessionId}
+              >
+                Hangout: end
+              </button>
+            </div>
+            <div className="row">
+              <button
+                className="btn secondary"
+                onClick={() =>
+                  runEntertainmentAction(
+                    "ritual.create",
+                    "/v1/social/ritual/create",
+                    {
+                      spaceId: entSpaceId,
+                      title: "10-minute drop",
+                      description: "Drop in now",
+                      durationMinutes: 10
+                    },
+                    { spaceId: entSpaceId }
+                  ).then(() => loadSpaceRituals(entSpaceId))
+                }
+                disabled={!identity || !entSpaceId}
+              >
+                Challenge: create
+              </button>
+              <button
+                className="btn secondary"
+                onClick={() => {
+                  if (!entSpaceId) return;
+                  loadSpaceLeaderboard(entSpaceId);
+                }}
+                disabled={!entSpaceId}
+              >
+                Rankings: refresh
               </button>
             </div>
             <div className="row">
@@ -3078,6 +3830,111 @@ export default function App() {
             {listenState && <pre>{listenState}</pre>}
             {presenceState && <pre>{presenceState}</pre>}
           </div>
+        </div>
+      )}
+      {showPulsePanel && selectedSpaceId && (
+        <div className="pulse-panel card stack">
+          <div className="row">
+            <strong>Pulse</strong>
+            <button className="btn secondary" onClick={() => setShowPulsePanel(false)}>
+              Close
+            </button>
+          </div>
+          {pulsePreferences && (
+            <div className="row">
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.enabled}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, { enabled: event.target.checked })
+                  }
+                />
+                <span>Pulse enabled</span>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.notifyCrews}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, { notifyCrews: event.target.checked })
+                  }
+                />
+                <span>Crews</span>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.notifyHangouts}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, { notifyHangouts: event.target.checked })
+                  }
+                />
+                <span>Hangouts</span>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.notifyChallenges}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, {
+                      notifyChallenges: event.target.checked
+                    })
+                  }
+                />
+                <span>Challenges</span>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.notifyStreaks}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, { notifyStreaks: event.target.checked })
+                  }
+                />
+                <span>Streaks</span>
+              </label>
+              <label className="row checkbox">
+                <input
+                  type="checkbox"
+                  checked={pulsePreferences.notifyRankings}
+                  onChange={(event) =>
+                    updatePulsePreference(selectedSpaceId, {
+                      notifyRankings: event.target.checked
+                    })
+                  }
+                />
+                <span>Rankings</span>
+              </label>
+            </div>
+          )}
+          {(pulseSummary?.cards?.length ?? 0) === 0 && (
+            <div className="muted">No pulse cards right now for this space.</div>
+          )}
+          {(pulseSummary?.cards ?? []).map((card) => (
+            <div key={card.type} className="pulse-card">
+              <div className="row">
+                <strong>{card.title}</strong>
+                <button
+                  className="post-explain-icon pulse-explain-icon"
+                  aria-label={`Explain ${card.type}`}
+                  title="Explain"
+                  onClick={() => togglePulseExplain(card.type)}
+                >
+                  ?
+                </button>
+              </div>
+              <div className="muted">{String(card.value)}</div>
+              {pulseExplainOpen[card.type] && <div className="muted">{card.explain}</div>}
+              <button
+                className="btn secondary"
+                onClick={() => runPulseCta(selectedSpaceId, card)}
+                disabled={!selectedSpaceId}
+              >
+                {card.cta}
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
