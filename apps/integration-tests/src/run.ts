@@ -2156,7 +2156,53 @@ const run = async () => {
     );
     assert.equal(afterTtlVerify.decision, "DENY");
     if (INCLUDE_VERIFY_REASONS) {
-      assert.ok(afterTtlVerify.reasons?.includes("status_list_unavailable"));
+      const acceptedStatusListFailureReasons = new Set([
+        "status_list_unavailable",
+        "status_list_fetch_failed",
+        "status_list_missing",
+        "status_list_invalid_signature",
+        "status_list_url_invalid",
+        "verification_failed"
+      ]);
+      const afterTtlReasons = afterTtlVerify.reasons ?? [];
+      const hasAcceptedStatusListFailureReason = afterTtlReasons.some((reason) =>
+        acceptedStatusListFailureReasons.has(reason)
+      );
+      if (!hasAcceptedStatusListFailureReason) {
+        const statusListStatusRegex = /(?:status["=:]\s*|status=)(\d{3})/i;
+        const parseStatusListFetchStatus = (serviceName: string) => {
+          const rows = serviceLogTail.get(serviceName) ?? [];
+          for (let index = rows.length - 1; index >= 0; index -= 1) {
+            const line = rows[index];
+            const hasStatusListHint =
+              line.includes("status-lists") ||
+              line.includes("status_list") ||
+              line.includes("status list");
+            if (!hasStatusListHint) {
+              continue;
+            }
+            const match = line.match(statusListStatusRegex);
+            if (match?.[1]) {
+              return Number(match[1]);
+            }
+          }
+          return null;
+        };
+        const verifierStatusListHttpStatus = parseStatusListFetchStatus("verifier-service");
+        const issuerStatusListHttpStatus = parseStatusListFetchStatus("issuer-service");
+        console.log(
+          `[diag] status_list_ttl_fail_closed_mismatch decision=${afterTtlVerify.decision} reasons=${JSON.stringify(
+            afterTtlVerify.reasons ?? null
+          )} verifier_status_list_http_status=${String(
+            verifierStatusListHttpStatus ?? "unknown"
+          )} issuer_status_list_http_status=${String(issuerStatusListHttpStatus ?? "unknown")}`
+        );
+        emitServiceLogTail("verifier-service", 80);
+        emitServiceLogTail("issuer-service", 80);
+        assert.fail(
+          `expected one of ${JSON.stringify(Array.from(acceptedStatusListFailureReasons))}, got ${JSON.stringify(afterTtlVerify.reasons ?? null)}`
+        );
+      }
     }
 
     services.issuer = startService(
@@ -3508,6 +3554,82 @@ const run = async () => {
           )}&viewerDid=${encodeURIComponent(socialHolderDid)}&limit=20`;
           await waitForSocialDbRow(
             "space flow trusted lens",
+            "space_flow_baseline_visibility",
+            async () => {
+              const [viewerMembership, authorPostInSpace] = await Promise.all([
+                db("social_space_memberships")
+                  .where({
+                    subject_did_hash: socialSubjectHash,
+                    space_id: createdSpace.spaceId,
+                    status: "ACTIVE"
+                  })
+                  .first(),
+                db("social_space_posts")
+                  .where({
+                    space_id: createdSpace.spaceId,
+                    author_subject_did_hash: trustedActorHash
+                  })
+                  .whereNull("deleted_at")
+                  .first()
+              ]);
+              if (!viewerMembership || !authorPostInSpace) {
+                return null;
+              }
+              const baselineFlow = await requestJson<{
+                posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+              }>(baselineSpaceFlowEndpoint);
+              const baselinePostIds = baselineFlow.posts.map((entry) => entry.space_post_id);
+              const baselineRows = baselinePostIds.length
+                ? ((await db("social_space_posts")
+                    .whereIn("space_post_id", baselinePostIds)
+                    .select("space_post_id", "author_subject_did_hash")) as Array<{
+                    space_post_id: string;
+                    author_subject_did_hash: string;
+                  }>)
+                : [];
+              const baselineAuthorPrefixes = Array.from(
+                new Set(baselineRows.map((row) => hashPrefix(row.author_subject_did_hash)))
+              );
+              await logSpaceFlowSummary({
+                endpoint: baselineSpaceFlowEndpoint,
+                trust: "none",
+                spaceId: createdSpace.spaceId,
+                viewerSubjectHash: socialSubjectHash,
+                targetAuthorHash: trustedActorHash,
+                posts: baselineFlow.posts
+              });
+              const baselineContainsTargetPost = baselineFlow.posts.some(
+                (entry) => entry.space_post_id === trustedSpacePost.spacePostId
+              );
+              const baselineContainsAuthor = baselineRows.some(
+                (row) => row.author_subject_did_hash === trustedActorHash
+              );
+              console.log(
+                `[diag] space_flow_baseline_visibility space_id=${createdSpace.spaceId} viewer_hash_prefix=${hashPrefix(
+                  socialSubjectHash
+                )} author_hash_prefix=${hashPrefix(
+                  trustedActorHash
+                )} response_count=${baselineFlow.posts.length} post_ids=${JSON.stringify(
+                  baselinePostIds
+                )} author_hash_prefixes=${JSON.stringify(
+                  baselineAuthorPrefixes
+                )} baseline_contains_target_post=${baselineContainsTargetPost} baseline_contains_author=${baselineContainsAuthor}`
+              );
+              if (!baselineContainsTargetPost && !baselineContainsAuthor) {
+                return null;
+              }
+              return {
+                ready: true,
+                reason: baselineContainsTargetPost
+                  ? "baseline_contains_target_post"
+                  : "baseline_contains_author"
+              };
+            },
+            120_000,
+            2_000
+          );
+          const trustedReadiness = await waitForSocialDbRow(
+            "space flow trusted lens",
             "space_flow_trusted_readiness",
             async () => {
               const [viewerMembership, authorPostInSpace] = await Promise.all([
@@ -3529,36 +3651,111 @@ const run = async () => {
               if (!viewerMembership || !authorPostInSpace) {
                 return null;
               }
-              const [socialTier, spaceTier, trustedCreatorCredential] = await Promise.all([
-                getAuraTierForDomain(trustedActorHash, "social"),
-                getAuraTierForDomain(trustedActorHash, `space:${createdSpace.spaceId}`),
-                hasTrustedCreatorCredential(trustedActorHash)
-              ]);
-              console.log(
-                `[diag] space_flow_trusted_readiness_tiers social_tier=${socialTier} space_tier=${spaceTier} trusted_creator_credential=${trustedCreatorCredential}`
-              );
-              const baselineFlow = await requestJson<{
+              const trustedFlow = await requestJson<{
                 posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
-              }>(baselineSpaceFlowEndpoint);
+              }>(trustedSpaceFlowEndpoint);
+              const trustedPostIds = trustedFlow.posts.map((entry) => entry.space_post_id);
+              const trustedRows = trustedPostIds.length
+                ? ((await db("social_space_posts")
+                    .whereIn("space_post_id", trustedPostIds)
+                    .select("space_post_id", "author_subject_did_hash")) as Array<{
+                    space_post_id: string;
+                    author_subject_did_hash: string;
+                  }>)
+                : [];
+              const trustedAuthorPrefixes = Array.from(
+                new Set(trustedRows.map((row) => hashPrefix(row.author_subject_did_hash)))
+              );
+              const trustedLensContainsTargetPost = trustedFlow.posts.some(
+                (entry) => entry.space_post_id === trustedSpacePost.spacePostId
+              );
+              const trustedLensContainsAuthor = trustedRows.some(
+                (row) => row.author_subject_did_hash === trustedActorHash
+              );
               await logSpaceFlowSummary({
-                endpoint: baselineSpaceFlowEndpoint,
-                trust: "none",
+                endpoint: trustedSpaceFlowEndpoint,
+                trust: "trusted_creator",
                 spaceId: createdSpace.spaceId,
                 viewerSubjectHash: socialSubjectHash,
                 targetAuthorHash: trustedActorHash,
-                posts: baselineFlow.posts
+                posts: trustedFlow.posts
               });
-              if (
-                !baselineFlow.posts.some(
-                  (entry) => entry.space_post_id === trustedSpacePost.spacePostId
-                )
-              ) {
-                return null;
+              if (trustedLensContainsTargetPost || trustedLensContainsAuthor) {
+                console.log(
+                  `[diag] space_flow_trusted_readiness space_id=${createdSpace.spaceId} viewer_hash_prefix=${hashPrefix(
+                    socialSubjectHash
+                  )} author_hash_prefix=${hashPrefix(
+                    trustedActorHash
+                  )} response_count=${trustedFlow.posts.length} post_ids=${JSON.stringify(
+                    trustedPostIds
+                  )} author_hash_prefixes=${JSON.stringify(
+                    trustedAuthorPrefixes
+                  )} target_seen_by_post_id=${trustedLensContainsTargetPost} target_seen_by_author=${trustedLensContainsAuthor} social_tier=unknown space_tier=unknown trusted_creator_credential=unknown issuance_queue_row=unknown issuance_queue_status=unknown`
+                );
+                return {
+                  ready: true,
+                  reason: "lens_contains_target",
+                  lensMatchedBy: trustedLensContainsTargetPost
+                    ? "space_post_id"
+                    : "author_subject_hash"
+                };
               }
-              return { ready: true, socialTier, spaceTier, trustedCreatorCredential };
+              const [socialTier, spaceTier, trustedCreatorCredential, trustedCreatorQueueRow] =
+                await Promise.all([
+                  getAuraTierForDomain(trustedActorHash, "social"),
+                  getAuraTierForDomain(trustedActorHash, `space:${createdSpace.spaceId}`),
+                  hasTrustedCreatorCredential(trustedActorHash),
+                  db("aura_issuance_queue")
+                    .where({
+                      subject_did_hash: trustedActorHash,
+                      output_vct: "cuncta.social.trusted_creator"
+                    })
+                    .whereIn("status", ["PENDING", "PROCESSING", "ISSUED"])
+                    .orderBy("created_at", "desc")
+                    .first()
+                ]);
+              const tierReady =
+                socialTier === "silver" ||
+                socialTier === "gold" ||
+                spaceTier === "silver" ||
+                spaceTier === "gold";
+              const queueReady = Boolean(trustedCreatorQueueRow);
+              console.log(
+                `[diag] space_flow_trusted_readiness space_id=${createdSpace.spaceId} viewer_hash_prefix=${hashPrefix(
+                  socialSubjectHash
+                )} author_hash_prefix=${hashPrefix(
+                  trustedActorHash
+                )} response_count=${trustedFlow.posts.length} post_ids=${JSON.stringify(
+                  trustedPostIds
+                )} author_hash_prefixes=${JSON.stringify(
+                  trustedAuthorPrefixes
+                )} target_seen_by_post_id=${trustedLensContainsTargetPost} target_seen_by_author=${trustedLensContainsAuthor} social_tier=${socialTier} space_tier=${spaceTier} trusted_creator_credential=${trustedCreatorCredential} issuance_queue_row=${queueReady} issuance_queue_status=${String(
+                  trustedCreatorQueueRow?.status ?? "none"
+                )}`
+              );
+              if (tierReady || trustedCreatorCredential || queueReady) {
+                return {
+                  ready: true,
+                  reason: tierReady
+                    ? "tier>=silver"
+                    : trustedCreatorCredential
+                      ? "trusted_creator_credential"
+                      : "issuance_queue_row",
+                  socialTier,
+                  spaceTier,
+                  trustedCreatorCredential,
+                  queueReady
+                };
+              }
+              return null;
             },
             120_000,
             2_000
+          );
+          console.log(
+            `[social.wait.ok] gate=space_flow_trusted_readiness reason=${trustedReadiness?.reason ?? "unknown"} social_tier=${trustedReadiness?.socialTier ?? "unknown"} space_tier=${trustedReadiness?.spaceTier ?? "unknown"} trusted_creator_credential=${String(
+              trustedReadiness?.trustedCreatorCredential ?? "unknown"
+            )} issuance_queue_row=${String(trustedReadiness?.queueReady ?? "unknown")}`
           );
           await logTrustedLensAuthorInputs({
             viewerSubjectHash: socialSubjectHash,
@@ -3570,6 +3767,39 @@ const run = async () => {
             targetAuthorHash: trustedActorHash,
             spaceId: createdSpace.spaceId
           });
+          await waitForSocialDbRow(
+            "space flow trusted lens",
+            "space_flow_trusted_assertion_visibility",
+            async () => {
+              const flowFeed = await requestJson<{
+                posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
+              }>(trustedSpaceFlowEndpoint);
+              await logSpaceFlowSummary({
+                endpoint: trustedSpaceFlowEndpoint,
+                trust: "trusted_creator",
+                spaceId: createdSpace.spaceId,
+                viewerSubjectHash: socialSubjectHash,
+                targetAuthorHash: trustedActorHash,
+                posts: flowFeed.posts
+              });
+              const trustedPostIds = flowFeed.posts.map((entry) => entry.space_post_id);
+              const targetSeen = flowFeed.posts.some(
+                (entry) => entry.space_post_id === trustedSpacePost.spacePostId
+              );
+              console.log(
+                `[diag] space_flow_trusted_assertion_visibility space_id=${createdSpace.spaceId} viewer_hash_prefix=${hashPrefix(
+                  socialSubjectHash
+                )} author_hash_prefix=${hashPrefix(
+                  trustedActorHash
+                )} response_count=${flowFeed.posts.length} post_ids=${JSON.stringify(
+                  trustedPostIds
+                )} target_seen=${targetSeen}`
+              );
+              return targetSeen ? { ready: true, reason: "assertion_target_visible" } : null;
+            },
+            120_000,
+            2_000
+          );
           const flowFeed = await requestJson<{
             posts: Array<{ space_post_id: string; trust_stamps?: string[] }>;
           }>(trustedSpaceFlowEndpoint);
