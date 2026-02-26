@@ -16,7 +16,9 @@ const b64url = (input: string | Buffer) => Buffer.from(input).toString("base64ur
 const makeSignedBundle = (registry: SurfaceRegistry) => {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const publicJwk = publicKey.export({ format: "jwk" }) as Record<string, unknown>;
-  const publicKeyEnv = b64url(JSON.stringify({ ...publicJwk, alg: "EdDSA", kid: "surface-registry-test-1" }));
+  const publicKeyEnv = b64url(
+    JSON.stringify({ ...publicJwk, alg: "EdDSA", kid: "surface-registry-test-1" })
+  );
 
   const protectedHeader = {
     alg: "EdDSA",
@@ -52,14 +54,19 @@ const run = async () => {
       {
         id: "app-gateway",
         publiclyDeployable: true,
-        routes: [{ method: "GET", path: "/healthz", surface: "public", probe: { path: "/healthz" } }]
+        routes: [
+          { method: "GET", path: "/healthz", surface: "public", probe: { path: "/healthz" } }
+        ]
       }
     ]
   };
 
   {
     const { bundle, publicKeyEnv } = makeSignedBundle(registry);
-    const loaded = await verifySurfaceRegistryBundle({ bundle, publicKeyJwkBase64url: publicKeyEnv });
+    const loaded = await verifySurfaceRegistryBundle({
+      bundle,
+      publicKeyJwkBase64url: publicKeyEnv
+    });
     assert.deepEqual(loaded, registry);
   }
 
@@ -69,11 +76,15 @@ const run = async () => {
       ...bundle,
       registry: {
         ...bundle.registry,
-        services: [...bundle.registry.services, { id: "issuer-service", routes: [] }]
+        services: [
+          ...bundle.registry.services,
+          { id: "issuer-service", publiclyDeployable: false, routes: [] }
+        ]
       }
     };
     await assert.rejects(
-      async () => verifySurfaceRegistryBundle({ bundle: tampered as any, publicKeyJwkBase64url: publicKeyEnv }),
+      async () =>
+        verifySurfaceRegistryBundle({ bundle: tampered, publicKeyJwkBase64url: publicKeyEnv }),
       (e: unknown) => e instanceof Error && e.message === "surface_registry_integrity_failed"
     );
   }
@@ -93,7 +104,8 @@ const run = async () => {
       }
     };
     await assert.rejects(
-      async () => verifySurfaceRegistryBundle({ bundle: invalidSig as any, publicKeyJwkBase64url: publicKeyEnv }),
+      async () =>
+        verifySurfaceRegistryBundle({ bundle: invalidSig, publicKeyJwkBase64url: publicKeyEnv }),
       (e: unknown) => e instanceof Error && e.message === "surface_registry_integrity_failed"
     );
   }
@@ -136,8 +148,6 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  // eslint-disable-next-line no-console
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

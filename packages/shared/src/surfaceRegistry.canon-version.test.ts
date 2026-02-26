@@ -41,26 +41,35 @@ const run = async () => {
   // Intentionally build with odd key insertion order so that:
   // - canonicalizeJson() is stable
   // - JSON.stringify() differs (used by test 3 to simulate canonicalization drift)
-  const svc0 = {
+  const svc0: SurfaceRegistry["services"][number] = {
     id: "app-gateway",
     publiclyDeployable: true,
     routes: [{ method: "GET", path: "/healthz", surface: "public", probe: { path: "/healthz" } }]
   };
-  const registryAny: any = {};
-  registryAny.services = [svc0];
-  registryAny.schemaVersion = 1;
-  const registry = registryAny as SurfaceRegistry;
+  const registryWithOrder = {} as Pick<SurfaceRegistry, "services" | "schemaVersion">;
+  registryWithOrder.services = [svc0];
+  registryWithOrder.schemaVersion = 1;
+  const registry = registryWithOrder as SurfaceRegistry;
 
   // 1) Valid bundle with canon=1 loads.
   {
-    const { bundle, publicKeyEnv } = makeSignedBundle({ registry, canon: SURFACE_REGISTRY_CANON_VERSION });
-    const loaded = await verifySurfaceRegistryBundle({ bundle, publicKeyJwkBase64url: publicKeyEnv });
+    const { bundle, publicKeyEnv } = makeSignedBundle({
+      registry,
+      canon: SURFACE_REGISTRY_CANON_VERSION
+    });
+    const loaded = await verifySurfaceRegistryBundle({
+      bundle,
+      publicKeyJwkBase64url: publicKeyEnv
+    });
     assert.deepEqual(loaded, registry);
   }
 
   // 2) Bundle with canon=2 fails when local CANON_VERSION=1.
   {
-    const { bundle, publicKeyEnv } = makeSignedBundle({ registry, canon: SURFACE_REGISTRY_CANON_VERSION + 1 });
+    const { bundle, publicKeyEnv } = makeSignedBundle({
+      registry,
+      canon: SURFACE_REGISTRY_CANON_VERSION + 1
+    });
     await assert.rejects(
       async () => verifySurfaceRegistryBundle({ bundle, publicKeyJwkBase64url: publicKeyEnv }),
       (e: unknown) =>
@@ -71,7 +80,10 @@ const run = async () => {
   // 3) Changing canonicalization without bumping version must fail verification.
   // Simulated by verifying with a different canonicalizer than the signer used.
   {
-    const { bundle, publicKeyEnv } = makeSignedBundle({ registry, canon: SURFACE_REGISTRY_CANON_VERSION });
+    const { bundle, publicKeyEnv } = makeSignedBundle({
+      registry,
+      canon: SURFACE_REGISTRY_CANON_VERSION
+    });
     await assert.rejects(
       async () =>
         verifySurfaceRegistryBundle({
@@ -85,8 +97,6 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  // eslint-disable-next-line no-console
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-
