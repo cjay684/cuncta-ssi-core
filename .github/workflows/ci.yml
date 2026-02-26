@@ -191,9 +191,11 @@ jobs:
         run: pnpm audit --audit-level high
 
       - name: Generate SBOM (CycloneDX)
+        continue-on-error: true
         run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json --spec-version 1.5
 
       - name: Upload SBOM artifact
+        continue-on-error: true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: sbom-cyclonedx
