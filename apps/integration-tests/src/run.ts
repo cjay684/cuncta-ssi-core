@@ -3646,35 +3646,44 @@ const run = async () => {
     const marketplaceOutputVct = String(marketplaceRule.output_vct ?? "").trim();
     assert.ok(marketplaceOutputVct.length > 0, "marketplace aura rule missing output_vct");
 
-    // Deterministic CI stabilization: seed a minimal diverse signal set before claim polling.
+    // Deterministic CI stabilization: seed a diverse signal set that satisfies silver-tier minima.
     // Claim eligibility is computed from aura_signals, so this removes queue visibility races.
-    const counterpartyA = pseudonymizer.didToHash(`did:example:counterparty:a:${testRunId}`);
-    const counterpartyB = pseudonymizer.didToHash(`did:example:counterparty:b:${testRunId}`);
+    const scoreCfg = (marketplaceRuleLogic.score ?? {}) as Record<string, unknown>;
+    const diversityCfg = (marketplaceRuleLogic.diversity ?? {}) as Record<string, unknown>;
+    const minSilverScoreRaw = scoreCfg.min_silver;
+    const minSilverDiversityRaw = diversityCfg.min_for_silver;
+    const minSilverScore =
+      typeof minSilverScoreRaw === "number" && Number.isFinite(minSilverScoreRaw) && minSilverScoreRaw > 0
+        ? Math.floor(minSilverScoreRaw)
+        : 1;
+    const minSilverDiversity =
+      typeof minSilverDiversityRaw === "number" &&
+      Number.isFinite(minSilverDiversityRaw) &&
+      minSilverDiversityRaw > 0
+        ? Math.floor(minSilverDiversityRaw)
+        : 1;
+    // Keep at least 4 counterparties so anti-collusion top2 ratio checks have room.
+    const fallbackSignalCount = Math.max(minSilverScore, minSilverDiversity, 4);
     const fallbackSignalAt = new Date().toISOString();
-    const fallbackSignals: Array<{ event_hash: string; counterparty_did_hash: string }> = [
-      {
-        event_hash: hashCanonicalJson({
-          signal: marketplaceSignalName,
-          domain: "marketplace",
-          subjectDidHash: subjectHash,
-          counterpartyDidHash: counterpartyA,
-          createdAt: fallbackSignalAt,
-          nonce: `fallback-a-${testRunId}`
-        }),
-        counterparty_did_hash: counterpartyA
-      },
-      {
-        event_hash: hashCanonicalJson({
-          signal: marketplaceSignalName,
-          domain: "marketplace",
-          subjectDidHash: subjectHash,
-          counterpartyDidHash: counterpartyB,
-          createdAt: fallbackSignalAt,
-          nonce: `fallback-b-${testRunId}`
-        }),
-        counterparty_did_hash: counterpartyB
+    const fallbackSignals: Array<{ event_hash: string; counterparty_did_hash: string }> = Array.from(
+      { length: fallbackSignalCount },
+      (_, idx) => {
+        const counterpartyDidHash = pseudonymizer.didToHash(
+          `did:example:counterparty:${idx}:${testRunId}`
+        );
+        return {
+          event_hash: hashCanonicalJson({
+            signal: marketplaceSignalName,
+            domain: "marketplace",
+            subjectDidHash: subjectHash,
+            counterpartyDidHash,
+            createdAt: fallbackSignalAt,
+            nonce: `fallback-${idx}-${testRunId}`
+          }),
+          counterparty_did_hash: counterpartyDidHash
+        };
       }
-    ];
+    );
     for (const signalRow of fallbackSignals) {
       await db("aura_signals")
         .insert({
