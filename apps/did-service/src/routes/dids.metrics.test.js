@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { metrics } from "../metrics.ts";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 const getMetricValue = (rendered, name) => {
   const regex = new RegExp(`^${name}[^\\n]*\\s+(\\d+)$`, "m");
@@ -68,4 +71,28 @@ await run("resolve error increments poll + last_error", async () => {
     }
     throw error;
   }
+});
+
+await run("service auth missing fails closed (no silent allow)", async () => {
+  const script = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../test/auth-misconfig.failclosed.mjs"
+  );
+  const result = spawnSync(process.execPath, ["--loader", "ts-node/esm", script], {
+    env: { ...process.env },
+    encoding: "utf-8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+await run("service auth missing can be allowed only with explicit insecure dev flag", async () => {
+  const script = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../test/auth-misconfig.insecure-ok.mjs"
+  );
+  const result = spawnSync(process.execPath, ["--loader", "ts-node/esm", script], {
+    env: { ...process.env },
+    encoding: "utf-8"
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });
