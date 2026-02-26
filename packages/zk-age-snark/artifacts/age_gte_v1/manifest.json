@@ -1,0 +1,14 @@
+{
+  "wasm": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.wasm",
+    "sha256_hex": "d10bbb57835d24505fbb703ed6509bc0bf1b497fd4e54ac87e18183c5d8c5dec"
+  },
+  "zkey": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.zkey",
+    "sha256_hex": "79591e7b7aa0c81ed38361856432f22c2f7d7f19348cd742625e6ab315fc347e"
+  },
+  "vk": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.verification_key.json",
+    "sha256_hex": "49509fe929e42fb14fdc17473d6db1c9c7f3f916c82967f86e20858892d76cdc"
+  }
+}

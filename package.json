@@ -1,0 +1,63 @@
+{
+  "name": "cuncta-ssi-core",
+  "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "migrate": "node --loader ts-node/esm scripts/migrate.ts",
+    "dev": "pnpm migrate && cross-env AUTO_MIGRATE=false concurrently -k -n did,issuer,verifier,policy \"pnpm -C apps/did-service dev\" \"pnpm -C apps/issuer-service dev\" \"pnpm -C apps/verifier-service dev\" \"pnpm -C apps/policy-service dev\"",
+    "dev:did": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/did-service dev",
+    "dev:issuer": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/issuer-service dev",
+    "dev:verifier": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/verifier-service dev",
+    "dev:policy": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/policy-service dev",
+    "dev:social": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/social-service dev",
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test:unit": "pnpm -r --workspace-concurrency=1 test",
+    "test:unit:coverage": "node scripts/run-coverage.mjs",
+    "coverage:report": "c8 report --reporter=text --reporter=lcov --reporter=html",
+    "test:integration": "cross-env RUN_TESTNET_INTEGRATION=1 pnpm -C apps/integration-tests test:integration",
+    "test:contract:e2e": "pnpm -C apps/contract-e2e test:contract",
+    "test:contract:guards": "pnpm -C apps/contract-e2e test:guards",
+    "verify:all": "node scripts/verify-all.mjs",
+    "verify:testnet": "pnpm test:integration",
+    "typecheck": "pnpm -r typecheck",
+    "check:mainnet-ready": "node --loader ts-node/esm scripts/mainnet-readiness-check.ts",
+    "smoke:staging": "tsx scripts/staging-smoke.ts",
+    "audit": "pnpm audit --audit-level high"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.1.0",
+    "c8": "^10.1.3",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "eslint": "^9.39.2",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.5.2",
+    "prettier": "^3.6.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0"
+  },
+  "dependencies": {
+    "@hiero-did-sdk/registrar": "^0.1.8",
+    "@hiero-did-sdk/resolver": "^0.1.8",
+    "jose": "^6.1.3"
+  },
+  "lint-staged": {
+    "*.{js,ts,tsx,md,json,yml,yaml}": [
+      "prettier --write"
+    ],
+    "*.{js,ts,tsx}": [
+      "eslint --max-warnings=0",
+      "node scripts/typecheck-staged.mjs"
+    ]
+  }
+}

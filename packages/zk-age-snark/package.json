@@ -1,0 +1,25 @@
+{
+  "name": "@cuncta/zk-age-snark",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "pnpm -w exec tsx packages/zk-age-snark/src/selftest.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "artifacts:build": "node src/artifacts/build.mjs",
+    "bench:prove": "tsx src/bench/benchProve.ts"
+  },
+  "dependencies": {
+    "@cuncta/zk-commitments-bn254": "workspace:*",
+    "@cuncta/zk-proof-groth16-bn254": "workspace:*",
+    "circom2": "^0.2.19",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.6"
+  }
+}
+

@@ -1,0 +1,299 @@
+:root {
+  color-scheme: light;
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    sans-serif;
+  background: #f7f7f8;
+  color: #1f2429;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.page {
+  max-width: 980px;
+  margin: 32px auto;
+  padding: 0 24px 48px;
+  position: relative;
+}
+
+.theme-day {
+  color-scheme: light;
+}
+
+.theme-night {
+  color-scheme: dark;
+  background: #0f172a;
+  color: #e5e7eb;
+}
+
+.theme-night .banner {
+  background: #111827;
+  border-color: #1f2937;
+}
+
+.theme-night .card {
+  background: #111827;
+  border-color: #1f2937;
+  box-shadow: none;
+}
+
+.theme-night .btn.secondary {
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+.theme-night .muted {
+  color: #9ca3af;
+}
+
+.theme-night .pulse-card {
+  border-color: #1f2937;
+  background: #0f172a;
+}
+
+.theme-night input,
+.theme-night textarea,
+.theme-night select {
+  background: #0b1220;
+  border-color: #374151;
+  color: #e5e7eb;
+}
+
+.banner {
+  background: #f0f4ff;
+  border: 1px solid #d6e1ff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e2e4e8;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.checklist {
+  position: sticky;
+  bottom: 24px;
+}
+
+.checkbox {
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #2d6cdf;
+  color: #fff;
+}
+
+.btn.secondary {
+  background: #eef1f6;
+  color: #2f3741;
+}
+
+.btn.danger {
+  background: #d64545;
+}
+
+.muted {
+  color: #5a6470;
+  font-size: 14px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: #eef1f6;
+  color: #2f3741;
+}
+
+.badge-member {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.badge-poster {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.badge-moderator {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.badge-trust {
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.badge-allow {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.badge-deny {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+input,
+textarea,
+select {
+  border: 1px solid #d6dae0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  width: 100%;
+}
+
+pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 12px;
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.command-orb {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  background: #2d6cdf;
+  color: #fff;
+  box-shadow: 0 8px 20px rgba(45, 108, 223, 0.35);
+}
+
+.command-orb.has-pulse::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
+}
+
+.command-orb-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  width: min(320px, calc(100vw - 48px));
+  z-index: 10;
+}
+
+.pulse-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 92px;
+  width: min(420px, calc(100vw - 48px));
+  max-height: 70vh;
+  overflow: auto;
+  z-index: 12;
+  animation: pulse-panel-slide 180ms ease-out;
+}
+
+.pulse-card {
+  border: 1px solid #e2e4e8;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pulse-explain-icon {
+  position: static;
+  margin-left: auto;
+}
+
+@keyframes pulse-panel-slide {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.spaces-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.space-card {
+  text-align: left;
+  border: 1px solid #e2e4e8;
+  background: transparent;
+  cursor: pointer;
+}
+
+.space-card.active {
+  border-color: #2d6cdf;
+}
+
+.post-card {
+  position: relative;
+  padding-top: 28px;
+}
+
+.post-explain-icon {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid #d6dae0;
+  background: transparent;
+  color: #5a6470;
+  font-size: 12px;
+  cursor: pointer;
+}

@@ -1,0 +1,20 @@
+{
+  "name": "@cuncta/policy-profiles",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "node ../../scripts/no-tests.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cuncta/shared": "workspace:*",
+    "zod": "^4.3.6"
+  }
+}
+

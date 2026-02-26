@@ -1,0 +1,17 @@
+[
+  {
+    "action": "dating.enter",
+    "requirements": [
+      {
+        "vct": "cuncta.age_over_18",
+        "claims": {
+          "age_over_18": true
+        }
+      }
+    ]
+  },
+  {
+    "action": "marketplace.list.high_value",
+    "requirements": [{ "vct": "cuncta.kyc" }, { "vct": "cuncta.reputation" }]
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "profile_id": "default",
+  "description": "Baseline profile (strict by default, production fail-closed).",
+  "flags": {
+    "enforceOriginAudience": true,
+    "failClosedDependencies": true,
+    "statusListStrict": true
+  },
+  "overlay": {
+    "binding": { "require": true, "mode": "kb-jwt" },
+    "requirements": {}
+  }
+}
+

@@ -1,0 +1,88 @@
+import path from "node:path";
+import { loadConfig, assertSoftwareKeysAllowed } from "./core/config.js";
+import { createFileVault } from "./core/vault/fileVault.js";
+import { getCredential } from "./core/vault/records.js";
+import { createGatewayClient } from "./core/gateway/client.js";
+import {
+  buildKbJwtBinding,
+  buildSdJwtPresentation,
+  buildVerifyRequest
+} from "./core/presentation/index.js";
+import { createSoftwareKeyManager } from "./core/keys/softwareKeyManager.js";
+
+const main = async () => {
+  const config = loadConfig();
+  assertSoftwareKeysAllowed(config);
+  const vault = createFileVault({
+    baseDir: path.resolve(process.cwd(), "apps", "mobile-wallet"),
+    keyMaterial: config.WALLET_VAULT_KEY
+  });
+  await vault.init();
+
+  const credentialId = process.env.WALLET_CREDENTIAL_ID;
+  if (!credentialId) {
+    throw new Error("WALLET_CREDENTIAL_ID is required");
+  }
+
+  const credential = await getCredential(vault, credentialId);
+  if (!credential) {
+    throw new Error("credential_not_found");
+  }
+
+  const gateway = createGatewayClient(config.APP_GATEWAY_BASE_URL);
+  const capabilities = await gateway.getCapabilities();
+  if (capabilities.network !== config.HEDERA_NETWORK) {
+    throw new Error("network_mismatch");
+  }
+
+  const action = process.env.WALLET_VERIFY_ACTION ?? "marketplace.list_item";
+  const requirements = await gateway.getRequirements({ action, deviceId: config.deviceId });
+  const requirement = requirements.requirements[0];
+  if (!requirement) {
+    throw new Error("requirements_missing");
+  }
+
+  const sdJwtPresentation = await buildSdJwtPresentation({
+    sdJwt: credential.sdJwt,
+    disclosures: requirement.disclosures
+  });
+
+  const expiresAtMs = Date.parse(requirements.challenge.expires_at);
+  const secondsUntilExpiry = Math.max(0, Math.floor((expiresAtMs - Date.now()) / 1000));
+  const ttlSeconds = Math.max(1, Math.min(120, secondsUntilExpiry));
+  const didRecord = (await vault.getState()).didRecord;
+  if (!didRecord?.holderKeyRef?.id) {
+    throw new Error("holder_key_missing");
+  }
+  const keyManager = createSoftwareKeyManager({ config, vault });
+
+  const kbJwt = await buildKbJwtBinding({
+    keyManager,
+    holderKeyRef: didRecord.holderKeyRef,
+    audience: requirements.challenge.audience,
+    nonce: requirements.challenge.nonce,
+    expiresInSeconds: ttlSeconds,
+    sdJwtPresentation
+  });
+
+  const verifyPayload = buildVerifyRequest({
+    sdJwtPresentation,
+    kbJwt,
+    nonce: requirements.challenge.nonce,
+    audience: requirements.challenge.audience
+  });
+
+  const result = await gateway.verifyPresentation({
+    action,
+    presentation: verifyPayload.presentation,
+    nonce: verifyPayload.nonce,
+    audience: verifyPayload.audience
+  });
+
+  console.log(`[wallet] verify_result=${result.decision}`);
+};
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});

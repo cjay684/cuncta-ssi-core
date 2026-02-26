@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.pnpm-store/
+.env
+.env.*
+!.env.example
+pnpm-lock.yaml
+**/data/*.json
+.vscode/settings.json

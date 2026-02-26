@@ -1,0 +1,8 @@
+{
+  "ignorePathRegex": [
+    "dist/",
+    "node_modules/"
+  ],
+  "ignoreMatchRegex": []
+}
+

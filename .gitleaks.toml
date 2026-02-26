@@ -1,0 +1,8 @@
+[allowlist]
+description = "Placeholders and test strings (keep minimal)"
+regexes = [
+  "REPLACE_ME",
+  "0\\.0\\.0000000",
+  "change-me",
+  "\"\\.\\.\\.\""
+]
