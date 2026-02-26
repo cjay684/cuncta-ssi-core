@@ -1,0 +1,64 @@
+openapi: 3.0.3
+info:
+  title: CUNCTA DID Service
+  version: 1.0.0-testnet
+servers:
+  - url: http://localhost:3001
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+  /metrics:
+    get:
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Metrics text
+  /v1/dids/resolve/{did}:
+    get:
+      summary: Resolve a DID
+      parameters:
+        - name: did
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DID document (if visible)
+  /v1/dids/create/request:
+    post:
+      summary: Create DID request (service JWT required)
+      security:
+        - serviceJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Create request
+  /v1/dids/create/submit:
+    post:
+      summary: Create DID submit (service JWT required)
+      security:
+        - serviceJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Submit response
+components:
+  securitySchemes:
+    serviceJwt:
+      type: http
+      scheme: bearer

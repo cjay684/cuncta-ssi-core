@@ -1,0 +1,19 @@
+{
+  "name": "@cuncta/shared",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "tsx src/pseudonymizer.test.ts && tsx src/serviceAuth.test.ts && tsx src/hederaFailure.test.ts && tsx src/oid/oid4vp.test.ts && tsx src/surfaceRegistry.test.ts && tsx src/surfaceRegistry.signature.test.ts && tsx src/surfaceRegistry.canon-version.test.ts && tsx src/surfaceRegistry.bundle-determinism.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "jose": "^6.1.3",
+    "zod": "^4.3.6"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "registry": {
+    "registry_id": "default",
+    "created_at": "2026-02-23T00:18:00.792Z",
+    "issuers": [
+      {
+        "did": "did:example:issuer",
+        "marks": ["accredited"],
+        "name": "Example Issuer"
+      }
+    ],
+    "verifiers": [
+      {
+        "did": "did:example:verifier",
+        "marks": ["accredited"],
+        "origin": "https://rp.example",
+        "name": "Example Verifier"
+      }
+    ]
+  },
+  "signature_jws": "eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJyZWdpc3RyeV9pZCI6ImRlZmF1bHQiLCJoYXNoIjoiMTAzY2JjZjhlNTMzZTZkMmQ2NGVlMDk3NDg3Njc1NTc2NWI5MjIxNDdjNjFkNzMyOWY4ODdmODg0YmIyYzk1ZCIsImlhdCI6MTc3MTgwNTg4MH0.VuGZXwwYQz93RPbK3NXIrelQgidiyZu2kqBpHuwxsmWESPVT7qeCDup7hjh4HcBKWV0Ze85xFiMWbqwvMnyDCw",
+  "verify_jwk": {
+    "crv": "Ed25519",
+    "x": "M1Lq1ycdLqIBLshhY-4R7klV20AulCIFa8H_BVkhWg0",
+    "kty": "OKP"
+  }
+}
+

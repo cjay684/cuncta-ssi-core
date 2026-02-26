@@ -1,0 +1,33 @@
+{
+  "name": "@cuncta/mobile-wallet",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/app.ts",
+    "wipe": "tsx src/wipe.ts",
+    "credential:import": "tsx src/credential-import.ts",
+    "credential:list": "tsx src/credential-list.ts",
+    "verify": "tsx src/verify.ts",
+    "verify:smoke": "tsx src/verify-smoke.ts",
+    "verify:selective": "tsx src/verify-selective.ts",
+    "test": "tsx src/test/sprint1.test.ts && tsx src/test/sprint2.test.ts && tsx src/test/sprint3.test.ts",
+    "test:capabilities": "node --loader ts-node/esm src/integration/capabilities.check.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cuncta/sdjwt": "workspace:*",
+    "@cuncta/wallet-keystore": "workspace:*",
+    "@hashgraph/sdk": "^2.80.0",
+    "@hiero-did-sdk/messages": "^0.1.8",
+    "@noble/ed25519": "^3.0.0",
+    "@noble/hashes": "^2.0.1",
+    "dotenv": "^17.2.3",
+    "multiformats": "^13.4.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
+  }
+}

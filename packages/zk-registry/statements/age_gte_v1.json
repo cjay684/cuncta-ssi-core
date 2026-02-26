@@ -1,0 +1,67 @@
+{
+  "statement_id": "age_gte_v1",
+  "version": "1.0.0",
+  "proof_system": "groth16_bn254",
+  "circuit_id": "age_gte_v1_bn254",
+  "proving_key_ref": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.zkey",
+    "sha256_hex": "79591e7b7aa0c81ed38361856432f22c2f7d7f19348cd742625e6ab315fc347e"
+  },
+  "verifying_key_ref": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.verification_key.json",
+    "sha256_hex": "49509fe929e42fb14fdc17473d6db1c9c7f3f916c82967f86e20858892d76cdc"
+  },
+  "wasm_ref": {
+    "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.wasm",
+    "sha256_hex": "d10bbb57835d24505fbb703ed6509bc0bf1b497fd4e54ac87e18183c5d8c5dec"
+  },
+  "public_inputs_schema": {
+    "type": "object",
+    "properties": {
+      "dob_commitment": { "type": "string", "description": "Poseidon(birthdate_days, rand)" },
+      "min_age": { "type": "integer" },
+      "current_day": { "type": "integer" },
+      "nonce_hash": { "type": "string" },
+      "audience_hash": { "type": "string" },
+      "request_hash": { "type": "string" }
+    },
+    "required": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"]
+  },
+  "public_inputs_order": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"],
+  "required_bindings": ["nonce", "audience", "request_hash"],
+  "credential": {
+    "credential_config_id": "age_credential_v1",
+    "vct": "age_credential_v1",
+    "format": "dc+sd-jwt",
+    "required_disclosures": ["dob_commitment", "commitment_scheme_version"]
+  },
+  "credential_requirements": {
+    "required_commitment_fields": ["dob_commitment", "commitment_scheme_version"],
+    "commitment_scheme_versions_allowed": ["poseidon_v1_bn254_ds1"]
+  },
+  "zk_context_requirements": { "current_day": { "required": true } },
+  "issuer_contract": {
+    "allowed_claims": ["dob_commitment", "commitment_scheme_version"],
+    "required_claims": ["dob_commitment", "commitment_scheme_version"]
+  },
+  "verifier_contract": {
+    "required_public_inputs": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"],
+    "binding_public_inputs": { "nonce": "nonce_hash", "audience": "audience_hash", "request_hash": "request_hash" },
+    "param_constraints": [{ "param": "min_age", "public_input": "min_age", "op": "eq" }],
+    "context_constraints": [{ "context_key": "current_day", "public_input": "current_day", "op": "eq" }]
+  },
+  "wallet_contract": {
+    "witness_builder_id": "witness:age_v1_bn254",
+    "commitment_builder_id": "poseidon_v1_bn254_ds1",
+    "witness_inputs_schema": {
+      "birthdate_days": { "type": "integer" },
+      "rand": { "type": "string", "description": "BN254 field element as decimal string" }
+    }
+  },
+  "attestation_level": "self_asserted",
+  "issuance": { "enabled": true },
+  "privacy_notes": "Proves age>=min_age without revealing DOB; proof is bound to nonce/audience/request_hash via public inputs. Commitment is disclosed; DOB+rand remain on device.",
+  "setup_provenance": "dev_beacon",
+  "deprecated": false
+}
+

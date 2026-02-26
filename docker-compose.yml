@@ -1,0 +1,20 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cuncta}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cuncta}
+      POSTGRES_DB: ${POSTGRES_DB:-cuncta_ssi}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cuncta_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cuncta -d cuncta_ssi"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  cuncta_pg_data:
