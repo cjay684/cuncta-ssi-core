@@ -2026,6 +2026,8 @@ const run = async () => {
     // Also force a non-production env so issuer config fail-closed checks don't pick up
     // unrelated developer NODE_ENV values during this in-process import path.
     process.env.NODE_ENV = "development";
+    // issuer-service config expects ISSUER_BASE_URL; align in-process worker import env with spawned service config.
+    process.env.ISSUER_BASE_URL = process.env.ISSUER_BASE_URL ?? ISSUER_SERVICE_BASE_URL;
     process.env.POLICY_SIGNING_JWK = policySigningJwk;
     process.env.POLICY_SIGNING_BOOTSTRAP = "true";
     process.env.OID4VCI_TOKEN_SIGNING_JWK = "";
