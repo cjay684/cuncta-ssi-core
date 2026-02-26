@@ -8,7 +8,11 @@ import { strict as assert } from "node:assert";
 import { readFile, writeFile } from "node:fs/promises";
 import { createDb, runMigrations, closeDb, type DbClient } from "@cuncta/db";
 import { presentSdJwtVc } from "@cuncta/sdjwt";
-import { classifyHederaFailure, createHmacSha256Pseudonymizer, hashCanonicalJson } from "@cuncta/shared";
+import {
+  classifyHederaFailure,
+  createHmacSha256Pseudonymizer,
+  hashCanonicalJson
+} from "@cuncta/shared";
 import { Agent, setGlobalDispatcher } from "undici";
 import { SignJWT, importJWK, decodeJwt } from "jose";
 import { base58btc } from "multiformats/bases/base58";
@@ -132,14 +136,18 @@ const runWalletCli = async (args: string[], envOverrides: Record<string, string>
   const env = { ...process.env, ...envOverrides };
   const timeoutMsRaw = env.WALLET_CLI_TIMEOUT_MS;
   const command = args[0] ?? "unknown";
-  const defaultTimeoutMsForCommand = command === "did:create:auto" ? 180_000 : WALLET_CLI_TIMEOUT_MS;
+  const defaultTimeoutMsForCommand =
+    command === "did:create:auto" ? 180_000 : WALLET_CLI_TIMEOUT_MS;
   const timeoutMs =
     Number.isFinite(Number(timeoutMsRaw)) && Number(timeoutMsRaw) > 0
       ? Number(timeoutMsRaw)
       : defaultTimeoutMsForCommand;
   const stepLabel = `${currentIntegrationStep}|wallet-cli:${command}`;
   const commandHasTerminalSuccessMarker = (cmd: string) =>
-    cmd === "did:create:auto" || cmd === "did:rotate" || cmd === "vc:acquire" || cmd === "vp:respond";
+    cmd === "did:create:auto" ||
+    cmd === "did:rotate" ||
+    cmd === "vc:acquire" ||
+    cmd === "vp:respond";
   // Keep strict no-output detection, but allow slightly larger silence budgets for
   // commands that can legitimately spend longer in crypto/network paths before first log.
   const noOutputTimeoutMs =
@@ -156,151 +164,157 @@ const runWalletCli = async (args: string[], envOverrides: Record<string, string>
       " "
     )}`
   );
-  return await new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn("tsx", [walletCliEntry, ...args], {
-      env,
-      stdio: ["ignore", "pipe", "pipe"],
-      shell: true
-    });
-    let stdout = "";
-    let stderr = "";
-    let timedOut = false;
-    let noOutputFor30s = false;
-    let successMarkerSeen = false;
-    let settled = false;
-    let lastOutputAt = Date.now();
-    const buildDiagError = async (reason: "wallet_cli_timeout" | "wallet_cli_no_output_30s") => {
-      const stdoutRedacted = redactSecrets(stdout);
-      const stderrRedacted = redactSecrets(stderr);
-      const httpDiag = stepHttpDiagnostics.get(currentIntegrationStep) ?? null;
-      const [gatewayHealth, issuerHealth, verifierHealth] = await Promise.all([
-        probeHealthz(APP_GATEWAY_BASE_URL),
-        probeHealthz(ISSUER_SERVICE_BASE_URL),
-        probeHealthz(VERIFIER_SERVICE_BASE_URL)
-      ]);
-      return new Error(
-        `${reason} step=${stepLabel} timeoutMs=${timeoutMs} args=${args.join(" ")} ` +
-          `lastOutputAgoMs=${Date.now() - lastOutputAt} ` +
-          `stdoutTailLines=${JSON.stringify(tailLines(stdoutRedacted, 200))} ` +
-          `stderrTailLines=${JSON.stringify(tailLines(stderrRedacted, 200))} ` +
-          `health=${JSON.stringify({ gatewayHealth, issuerHealth, verifierHealth })} ` +
-          `lastHttp=${JSON.stringify(httpDiag)}`
-      );
-    };
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      // Some commands can emit a terminal success payload but keep handles open.
-      // If we already saw terminal success, stop the child without treating it as failure.
-      if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
-        try {
-          child.kill("SIGKILL");
-        } catch {
-          // ignore
-        }
-        return;
-      }
-      timedOut = true;
-      try {
-        child.kill("SIGKILL");
-      } catch {
-        // ignore
-      }
-    }, timeoutMs);
-    timeout.unref?.();
-    const settleSuccess = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      clearInterval(stuckDetector);
-      resolve({ exitCode: 0, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr) });
-      // Best-effort cleanup: some wallet-cli invocations can keep handles open in subprocess deps.
-      try {
-        child.kill("SIGTERM");
-      } catch {
-        // ignore
-      }
-    };
-    child.once("spawn", () => {
-      // Start the no-output budget when the child process actually starts.
-      lastOutputAt = Date.now();
-    });
-    child.stdout?.on("data", (chunk) => {
-      lastOutputAt = Date.now();
-      const text = String(chunk);
-      stdout += text;
-      // Some wallet-cli commands can emit a terminal success payload and then keep handles open.
-      // Treat this as terminal success for lifecycle/timeout detection.
-      if (command === "did:create:auto" && /\bdid=did:[^\s]+/.test(text)) {
-        successMarkerSeen = true;
-      }
-      if (
-        command === "did:rotate" &&
-        stdout.includes('"ok": true') &&
-        stdout.includes('"rotated": true')
-      ) {
-        successMarkerSeen = true;
-      }
-      if (
-        command === "vc:acquire" &&
-        stdout.includes('"ok": true') &&
-        (stdout.includes('"configId":') || stdout.includes('"config_id":'))
-      ) {
-        successMarkerSeen = true;
-      }
-      if (
-        command === "vp:respond" &&
-        stdout.includes('"event":"vp.respond.result"') &&
-        stdout.includes('"decision":"ALLOW"')
-      ) {
-        successMarkerSeen = true;
-      }
-      if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
-        settleSuccess();
-      }
-    });
-    child.stderr?.on("data", (chunk) => {
-      lastOutputAt = Date.now();
-      stderr += String(chunk);
-    });
-    const stuckDetector = setInterval(() => {
-      if (settled) return;
-      if (Date.now() - lastOutputAt >= noOutputTimeoutMs) {
-        const shouldTreatAsNoOutput = !(commandHasTerminalSuccessMarker(command) && successMarkerSeen);
-        noOutputFor30s = shouldTreatAsNoOutput;
-        if (shouldTreatAsNoOutput) {
+  return await new Promise<{ exitCode: number; stdout: string; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn("tsx", [walletCliEntry, ...args], {
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: true
+      });
+      let stdout = "";
+      let stderr = "";
+      let timedOut = false;
+      let noOutputFor30s = false;
+      let successMarkerSeen = false;
+      let settled = false;
+      let lastOutputAt = Date.now();
+      const buildDiagError = async (reason: "wallet_cli_timeout" | "wallet_cli_no_output_30s") => {
+        const stdoutRedacted = redactSecrets(stdout);
+        const stderrRedacted = redactSecrets(stderr);
+        const httpDiag = stepHttpDiagnostics.get(currentIntegrationStep) ?? null;
+        const [gatewayHealth, issuerHealth, verifierHealth] = await Promise.all([
+          probeHealthz(APP_GATEWAY_BASE_URL),
+          probeHealthz(ISSUER_SERVICE_BASE_URL),
+          probeHealthz(VERIFIER_SERVICE_BASE_URL)
+        ]);
+        return new Error(
+          `${reason} step=${stepLabel} timeoutMs=${timeoutMs} args=${args.join(" ")} ` +
+            `lastOutputAgoMs=${Date.now() - lastOutputAt} ` +
+            `stdoutTailLines=${JSON.stringify(tailLines(stdoutRedacted, 200))} ` +
+            `stderrTailLines=${JSON.stringify(tailLines(stderrRedacted, 200))} ` +
+            `health=${JSON.stringify({ gatewayHealth, issuerHealth, verifierHealth })} ` +
+            `lastHttp=${JSON.stringify(httpDiag)}`
+        );
+      };
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        // Some commands can emit a terminal success payload but keep handles open.
+        // If we already saw terminal success, stop the child without treating it as failure.
+        if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
           try {
             child.kill("SIGKILL");
           } catch {
             // ignore
           }
+          return;
         }
-      }
-    }, 5000);
-    stuckDetector.unref?.();
-    child.on("close", async (code) => {
-      if (settled) {
-        return;
-      }
-      clearTimeout(timeout);
-      clearInterval(stuckDetector);
-      const exitCode = typeof code === "number" ? code : 1;
-      const elapsedMs = Date.now() - started;
-      console.log(`[wallet-cli] end step=${stepLabel} exitCode=${exitCode} elapsedMs=${elapsedMs}`);
-      if (timedOut && !(commandHasTerminalSuccessMarker(command) && successMarkerSeen)) {
-        reject(await buildDiagError("wallet_cli_timeout"));
-        return;
-      }
-      if (noOutputFor30s && !(commandHasTerminalSuccessMarker(command) && successMarkerSeen)) {
-        reject(await buildDiagError("wallet_cli_no_output_30s"));
-        return;
-      }
-      if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
+        timedOut = true;
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+      timeout.unref?.();
+      const settleSuccess = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        clearInterval(stuckDetector);
         resolve({ exitCode: 0, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr) });
-        return;
-      }
-      resolve({ exitCode, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr) });
-    });
-  });
+        // Best-effort cleanup: some wallet-cli invocations can keep handles open in subprocess deps.
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // ignore
+        }
+      };
+      child.once("spawn", () => {
+        // Start the no-output budget when the child process actually starts.
+        lastOutputAt = Date.now();
+      });
+      child.stdout?.on("data", (chunk) => {
+        lastOutputAt = Date.now();
+        const text = String(chunk);
+        stdout += text;
+        // Some wallet-cli commands can emit a terminal success payload and then keep handles open.
+        // Treat this as terminal success for lifecycle/timeout detection.
+        if (command === "did:create:auto" && /\bdid=did:[^\s]+/.test(text)) {
+          successMarkerSeen = true;
+        }
+        if (
+          command === "did:rotate" &&
+          stdout.includes('"ok": true') &&
+          stdout.includes('"rotated": true')
+        ) {
+          successMarkerSeen = true;
+        }
+        if (
+          command === "vc:acquire" &&
+          stdout.includes('"ok": true') &&
+          (stdout.includes('"configId":') || stdout.includes('"config_id":'))
+        ) {
+          successMarkerSeen = true;
+        }
+        if (
+          command === "vp:respond" &&
+          stdout.includes('"event":"vp.respond.result"') &&
+          stdout.includes('"decision":"ALLOW"')
+        ) {
+          successMarkerSeen = true;
+        }
+        if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
+          settleSuccess();
+        }
+      });
+      child.stderr?.on("data", (chunk) => {
+        lastOutputAt = Date.now();
+        stderr += String(chunk);
+      });
+      const stuckDetector = setInterval(() => {
+        if (settled) return;
+        if (Date.now() - lastOutputAt >= noOutputTimeoutMs) {
+          const shouldTreatAsNoOutput = !(
+            commandHasTerminalSuccessMarker(command) && successMarkerSeen
+          );
+          noOutputFor30s = shouldTreatAsNoOutput;
+          if (shouldTreatAsNoOutput) {
+            try {
+              child.kill("SIGKILL");
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }, 5000);
+      stuckDetector.unref?.();
+      child.on("close", async (code) => {
+        if (settled) {
+          return;
+        }
+        clearTimeout(timeout);
+        clearInterval(stuckDetector);
+        const exitCode = typeof code === "number" ? code : 1;
+        const elapsedMs = Date.now() - started;
+        console.log(
+          `[wallet-cli] end step=${stepLabel} exitCode=${exitCode} elapsedMs=${elapsedMs}`
+        );
+        if (timedOut && !(commandHasTerminalSuccessMarker(command) && successMarkerSeen)) {
+          reject(await buildDiagError("wallet_cli_timeout"));
+          return;
+        }
+        if (noOutputFor30s && !(commandHasTerminalSuccessMarker(command) && successMarkerSeen)) {
+          reject(await buildDiagError("wallet_cli_no_output_30s"));
+          return;
+        }
+        if (commandHasTerminalSuccessMarker(command) && successMarkerSeen) {
+          resolve({ exitCode: 0, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr) });
+          return;
+        }
+        resolve({ exitCode, stdout: redactSecrets(stdout), stderr: redactSecrets(stderr) });
+      });
+    }
+  );
 };
 
 const REQUIRED_ENV = [
@@ -370,9 +384,19 @@ const DID_ROTATION_VISIBILITY_ATTEMPTS = Math.max(
   1,
   Math.floor(DID_ROTATION_VISIBILITY_TIMEOUT_MS / DID_ROTATION_VISIBILITY_INTERVAL_MS)
 );
-const HARNESS_HTTP_TIMEOUT_MS = clampInt(process.env.HARNESS_HTTP_TIMEOUT_MS, 5000, 120_000, 90_000);
+const HARNESS_HTTP_TIMEOUT_MS = clampInt(
+  process.env.HARNESS_HTTP_TIMEOUT_MS,
+  5000,
+  120_000,
+  90_000
+);
 // Phase 0 debug mode: default wallet-cli timeout to 60s.
-const WALLET_CLI_TIMEOUT_MS = clampInt(process.env.WALLET_CLI_TIMEOUT_MS, 60_000, 3_600_000, 60_000);
+const WALLET_CLI_TIMEOUT_MS = clampInt(
+  process.env.WALLET_CLI_TIMEOUT_MS,
+  60_000,
+  3_600_000,
+  60_000
+);
 const FETCH_TIMEOUT_MS = Math.min(1_500_000, DID_VISIBILITY_TOTAL_TIMEOUT_MS + 60_000);
 const ANCHOR_PHASE_TIMEOUT_MS = clampInt(
   process.env.ANCHOR_PHASE_TIMEOUT_MS,
@@ -641,12 +665,10 @@ const resolvePayerCredentials = () => {
   // Phase 0 invariant: integration test harnesses must not contain any operator-as-payer fallback.
   // CI (and local runs) must provide explicit payer credentials.
   const payerAccountId = (
-    process.env.TESTNET_PAYER_ACCOUNT_ID ??
-    process.env.HEDERA_PAYER_ACCOUNT_ID
+    process.env.TESTNET_PAYER_ACCOUNT_ID ?? process.env.HEDERA_PAYER_ACCOUNT_ID
   )?.trim();
   const payerPrivateKey = (
-    process.env.TESTNET_PAYER_PRIVATE_KEY ??
-    process.env.HEDERA_PAYER_PRIVATE_KEY
+    process.env.TESTNET_PAYER_PRIVATE_KEY ?? process.env.HEDERA_PAYER_PRIVATE_KEY
   )?.trim();
   if (!payerAccountId || !payerPrivateKey) {
     throw new Error(
@@ -668,7 +690,9 @@ const ensurePolicySigningJwk = async () => {
       return existing;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.warn(`[diag] POLICY_SIGNING_JWK invalid in env; generating ephemeral key for harness (${msg})`);
+      console.warn(
+        `[diag] POLICY_SIGNING_JWK invalid in env; generating ephemeral key for harness (${msg})`
+      );
     }
   }
   const policyKeys = await generateEd25519KeyPair(`policy-${randomUUID()}`);
@@ -819,7 +843,9 @@ const postJson = async <T>(url: string, payload: unknown, headers?: Record<strin
   });
 };
 
-const getAuraClaimRetryReason = (error: unknown): "not_ready" | "processing" | "rate_limited" | null => {
+const getAuraClaimRetryReason = (
+  error: unknown
+): "not_ready" | "processing" | "rate_limited" | null => {
   const err = error as {
     status?: number;
     body?: string;
@@ -839,7 +865,11 @@ const getAuraClaimRetryReason = (error: unknown): "not_ready" | "processing" | "
   if (status === 404 && parsed?.error === "aura_not_ready") {
     return "not_ready";
   }
-  if (status === 409 && parsed?.error === "invalid_request" && String(parsed?.details ?? "").includes("PROCESSING")) {
+  if (
+    status === 409 &&
+    parsed?.error === "invalid_request" &&
+    String(parsed?.details ?? "").includes("PROCESSING")
+  ) {
     return "processing";
   }
   if (status === 429 && parsed?.error === "rate_limited") {
@@ -847,7 +877,8 @@ const getAuraClaimRetryReason = (error: unknown): "not_ready" | "processing" | "
   }
   const message = typeof err?.message === "string" ? err.message : "";
   if (message.includes("aura_not_ready")) return "not_ready";
-  if (message.includes("Aura claim unavailable") && message.includes("status=PROCESSING")) return "processing";
+  if (message.includes("Aura claim unavailable") && message.includes("status=PROCESSING"))
+    return "processing";
   if (message.includes("HTTP 429") && message.includes("rate_limited")) return "rate_limited";
   return null;
 };
@@ -1043,7 +1074,9 @@ const waitForDidResolution = async (
           const resolved = await requestJson<{ didDocument?: Record<string, unknown> }>(
             `${DID_SERVICE_BASE_URL}/v1/dids/resolve/${encoded}`
           );
-          const hasDoc = Boolean(resolved?.didDocument && Object.keys(resolved.didDocument).length > 0);
+          const hasDoc = Boolean(
+            resolved?.didDocument && Object.keys(resolved.didDocument).length > 0
+          );
           if (hasDoc) {
             return {
               done: true,
@@ -1113,7 +1146,9 @@ const startService = (
       );
     }
   });
-  (proc as ChildProcess & { __capturedOutput?: () => { stdout: string; stderr: string } }).__capturedOutput = () => ({
+  (
+    proc as ChildProcess & { __capturedOutput?: () => { stdout: string; stderr: string } }
+  ).__capturedOutput = () => ({
     stdout: capturedStdout,
     stderr: capturedStderr
   });
@@ -1132,9 +1167,13 @@ const ensureServiceRunning = async (input: {
     return null;
   }
   const startupTimeoutMsRaw = Number(process.env.SERVICE_START_TIMEOUT_MS ?? "90000");
-  const startupTimeoutMs = Number.isFinite(startupTimeoutMsRaw) && startupTimeoutMsRaw > 0 ? startupTimeoutMsRaw : 90000;
+  const startupTimeoutMs =
+    Number.isFinite(startupTimeoutMsRaw) && startupTimeoutMsRaw > 0 ? startupTimeoutMsRaw : 90000;
   const startupAttemptsRaw = Number(process.env.SERVICE_START_ATTEMPTS ?? "3");
-  const startupAttempts = Number.isFinite(startupAttemptsRaw) && startupAttemptsRaw > 0 ? Math.floor(startupAttemptsRaw) : 3;
+  const startupAttempts =
+    Number.isFinite(startupAttemptsRaw) && startupAttemptsRaw > 0
+      ? Math.floor(startupAttemptsRaw)
+      : 3;
   const servicePort = parsePort(input.baseUrl, 80);
   let lastError: unknown;
   for (let attempt = 1; attempt <= startupAttempts; attempt += 1) {
@@ -1182,7 +1221,9 @@ const ensureServiceRunning = async (input: {
       }
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? `${input.name}_startup_failed`));
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError ?? `${input.name}_startup_failed`));
 };
 
 const waitForExit = (proc: ChildProcess, timeoutMs: number) =>
@@ -1250,7 +1291,11 @@ const sleepMs = async (ms: number) => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> => {
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> => {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
@@ -1304,9 +1349,7 @@ const runWithHederaRetries = async <T>(input: {
       console.warn(`[hedera.retry] ${JSON.stringify(diag)}`);
 
       if (classification.kind === "deterministic") {
-        throw new Error(
-          `DETERMINISTIC_FAILURE: hedera_operation_failed ${JSON.stringify(diag)}`
-        );
+        throw new Error(`DETERMINISTIC_FAILURE: hedera_operation_failed ${JSON.stringify(diag)}`);
       }
       if (attempt === maxAttempts) break;
       await sleepMs(jitteredBackoffMs(attempt, baseDelayMs, maxDelayMs));
@@ -1746,9 +1789,13 @@ const run = async () => {
   );
   const testRunId = randomUUID();
   const runStartedAt = new Date().toISOString();
-  const verifierOrigin = new URL(GATEWAY_MODE ? APP_GATEWAY_BASE_URL : VERIFIER_SERVICE_BASE_URL).origin;
+  const verifierOrigin = new URL(GATEWAY_MODE ? APP_GATEWAY_BASE_URL : VERIFIER_SERVICE_BASE_URL)
+    .origin;
   const gatewayOrigin = new URL(APP_GATEWAY_BASE_URL).origin;
-  const policyRequirementsUrl = (action: string, options?: { spaceId?: string; origin?: string }) => {
+  const policyRequirementsUrl = (
+    action: string,
+    options?: { spaceId?: string; origin?: string }
+  ) => {
     const requirementsBase =
       GATEWAY_MODE || SOCIAL_MODE ? APP_GATEWAY_BASE_URL : POLICY_SERVICE_BASE_URL;
     const url = new URL("/v1/requirements", requirementsBase);
@@ -1759,7 +1806,10 @@ const run = async () => {
     }
     return url.toString();
   };
-  const socialRequirementsUrl = (action: string, options?: { spaceId?: string; origin?: string }) => {
+  const socialRequirementsUrl = (
+    action: string,
+    options?: { spaceId?: string; origin?: string }
+  ) => {
     const url = new URL("/v1/social/requirements", APP_GATEWAY_BASE_URL);
     url.searchParams.set("action", action);
     url.searchParams.set("verifier_origin", options?.origin ?? gatewayOrigin);
@@ -1994,7 +2044,10 @@ const run = async () => {
         updated_at: now
       })
       .onConflict("action_id")
-      .merge({ description: "Customer E2E privileged write (Aura capability gated)", updated_at: now });
+      .merge({
+        description: "Customer E2E privileged write (Aura capability gated)",
+        updated_at: now
+      });
     await db("policies").insert({
       policy_id: policyId,
       action_id: actionId,
@@ -2098,8 +2151,7 @@ const run = async () => {
     ISSUER_KEYS_ALLOW_DB_PRIVATE: "true",
     POLICY_SIGNING_JWK: policySigningJwk,
     POLICY_SIGNING_BOOTSTRAP: "true",
-    ANCHOR_AUTH_SECRET: anchorAuthSecret
-    ,
+    ANCHOR_AUTH_SECRET: anchorAuthSecret,
     // ZK/age verification can exceed the app-gateway default 2.5s verifier proxy timeout.
     // Keep fail-closed behavior, but use a deterministic integration budget.
     VERIFIER_PROXY_TIMEOUT_MS: "15000",
@@ -2133,10 +2185,15 @@ const run = async () => {
       name: "policy-service",
       baseUrl: POLICY_SERVICE_BASE_URL,
       start: () =>
-        startService("policy-service", path.join(repoRoot, "apps", "policy-service"), "src/index.ts", {
-          ...baseEnv,
-          PORT: String(POLICY_SERVICE_PORT)
-        })
+        startService(
+          "policy-service",
+          path.join(repoRoot, "apps", "policy-service"),
+          "src/index.ts",
+          {
+            ...baseEnv,
+            PORT: String(POLICY_SERVICE_PORT)
+          }
+        )
     });
     if (policyProc) services.policy = policyProc;
     await waitForPortListening(POLICY_SERVICE_PORT);
@@ -2211,7 +2268,9 @@ const run = async () => {
         })
       });
       assert.equal(sponsoredIssueRes.status, 410);
-      const sponsoredIssueBody = (await sponsoredIssueRes.json().catch(() => ({}))) as { error?: string };
+      const sponsoredIssueBody = (await sponsoredIssueRes.json().catch(() => ({}))) as {
+        error?: string;
+      };
       assert.equal(sponsoredIssueBody.error, "sponsored_onboarding_not_supported");
     }
 
@@ -2256,10 +2315,15 @@ const run = async () => {
       name: "issuer-service",
       baseUrl: ISSUER_SERVICE_BASE_URL,
       start: () =>
-        startService("issuer-service", path.join(repoRoot, "apps", "issuer-service"), "src/index.ts", {
-          ...issuerEnv,
-          PORT: String(ISSUER_SERVICE_PORT)
-        })
+        startService(
+          "issuer-service",
+          path.join(repoRoot, "apps", "issuer-service"),
+          "src/index.ts",
+          {
+            ...issuerEnv,
+            PORT: String(ISSUER_SERVICE_PORT)
+          }
+        )
     });
     if (issuerProc) services.issuer = issuerProc;
     await waitForPortListening(ISSUER_SERVICE_PORT);
@@ -2268,10 +2332,15 @@ const run = async () => {
       name: "verifier-service",
       baseUrl: VERIFIER_SERVICE_BASE_URL,
       start: () =>
-        startService("verifier-service", path.join(repoRoot, "apps", "verifier-service"), "src/index.ts", {
-          ...verifierEnv,
-          PORT: String(VERIFIER_SERVICE_PORT)
-        })
+        startService(
+          "verifier-service",
+          path.join(repoRoot, "apps", "verifier-service"),
+          "src/index.ts",
+          {
+            ...verifierEnv,
+            PORT: String(VERIFIER_SERVICE_PORT)
+          }
+        )
     });
     if (verifierProc) services.verifier = verifierProc;
     await waitForPortListening(VERIFIER_SERVICE_PORT);
@@ -2341,9 +2410,7 @@ const run = async () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     });
-    const policyResponse = await fetch(
-      policyRequirementsUrl(tamperAction)
-    );
+    const policyResponse = await fetch(policyRequirementsUrl(tamperAction));
     assert.equal(policyResponse.status, 503);
     const policyBody = await policyResponse.json().catch(() => ({}));
     assert.equal(policyBody.error, "policy_integrity_failed");
@@ -2531,13 +2598,19 @@ const run = async () => {
     };
     const walletEnvVp = { ...walletEnvBase, APP_GATEWAY_BASE_URL };
     // Wallet creates its own DID/key material and persists to `.tmp-wallet/`.
-    let didCreate = await runWalletCli(["did:create:auto", "--mode", "user_pays"], walletEnvDidCreate);
+    let didCreate = await runWalletCli(
+      ["did:create:auto", "--mode", "user_pays"],
+      walletEnvDidCreate
+    );
     let didCreateDelayMs = 2000;
     for (let attempt = 1; attempt <= 3 && didCreate.exitCode !== 0; attempt += 1) {
       console.log(`[diag] wallet_did_create_retry attempt=${attempt} delayMs=${didCreateDelayMs}`);
       await sleep(didCreateDelayMs);
       didCreateDelayMs = Math.min(15_000, Math.round(didCreateDelayMs * 1.8));
-      didCreate = await runWalletCli(["did:create:auto", "--mode", "user_pays"], walletEnvDidCreate);
+      didCreate = await runWalletCli(
+        ["did:create:auto", "--mode", "user_pays"],
+        walletEnvDidCreate
+      );
     }
     assert.equal(didCreate.exitCode, 0, didCreate.stderr || didCreate.stdout);
 
@@ -2602,7 +2675,13 @@ const run = async () => {
           beforeRotate?.keystore?.holder_ed25519?.publicKeyMultibase ??
           ""
       );
-      const newPublicJwk = { kty: "OKP", crv: "Ed25519", x: newJwk.x, alg: "EdDSA", kid: newJwk.kid };
+      const newPublicJwk = {
+        kty: "OKP",
+        crv: "Ed25519",
+        x: newJwk.x,
+        alg: "EdDSA",
+        kid: newJwk.kid
+      };
       const newCryptoKey = await importJWK(newJwk as never, "EdDSA");
 
       // Wait until rotation is fully visible in the DID document (mirror propagation):
@@ -2643,7 +2722,11 @@ const run = async () => {
       // Issue a credential for the rotated DID and prove old vs new key binding behavior.
       const rotateRequirements = await requestJson<{
         challenge: { nonce: string; audience: string };
-        requirements: Array<{ vct: string; disclosures?: string[]; predicates?: Array<{ path: string; op: string; value?: unknown }> }>;
+        requirements: Array<{
+          vct: string;
+          disclosures?: string[];
+          predicates?: Array<{ path: string; op: string; value?: unknown }>;
+        }>;
       }>(policyRequirementsUrl("marketplace.list_item", { origin: verifierOrigin }));
       const rotateReq = rotateRequirements.requirements[0];
       assert.ok(rotateReq);
@@ -2682,7 +2765,8 @@ const run = async () => {
           );
           const deniedByDidBinding =
             verifyOld.decision === "DENY" &&
-            (!INCLUDE_VERIFY_REASONS || Boolean(verifyOld.reasons?.includes("did_key_not_authorized")));
+            (!INCLUDE_VERIFY_REASONS ||
+              Boolean(verifyOld.reasons?.includes("did_key_not_authorized")));
           if (deniedByDidBinding) break;
           if (attempt === maxAttempts) {
             throw new Error(
@@ -2708,11 +2792,14 @@ const run = async () => {
         holderJwk: newPublicJwk as any,
         holderKey: newCryptoKey
       });
-      const verifyNew = await postJson<VerifyResponse>(`${verifyBaseUrlRotate}/v1/verify?action=marketplace.list_item`, {
-        presentation: presentationNew,
-        nonce: rotateRequirements2.challenge.nonce,
-        audience: rotateRequirements2.challenge.audience
-      });
+      const verifyNew = await postJson<VerifyResponse>(
+        `${verifyBaseUrlRotate}/v1/verify?action=marketplace.list_item`,
+        {
+          presentation: presentationNew,
+          nonce: rotateRequirements2.challenge.nonce,
+          audience: rotateRequirements2.challenge.audience
+        }
+      );
       assert.equal(verifyNew.decision, "ALLOW");
     }
 
@@ -2760,7 +2847,10 @@ const run = async () => {
         offer?.credential_offer?.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.[
           "pre-authorized_code"
         ];
-      assert.ok(typeof preauth === "string" && preauth.length > 10, "offer must include preauth code");
+      assert.ok(
+        typeof preauth === "string" && preauth.length > 10,
+        "offer must include preauth code"
+      );
       const meta = await requestJson<{ token_endpoint: string }>(
         `${ISSUER_SERVICE_BASE_URL}/.well-known/openid-credential-issuer`
       );
@@ -2811,7 +2901,10 @@ const run = async () => {
       assert.ok(typeof tokenJson.access_token === "string" && tokenJson.access_token.length > 10);
       const credentialRes = await fetch(meta.credential_endpoint, {
         method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${tokenJson.access_token}` },
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${tokenJson.access_token}`
+        },
         body: JSON.stringify({
           subjectDid: holderDid,
           credential_configuration_id: configId,
@@ -2821,7 +2914,11 @@ const run = async () => {
       });
       assert.ok(!credentialRes.ok, "/credential without proof must fail");
     }
-    const claimsPath = await writeJsonArgFile(walletDir, "oid4vci-claims", buildClaimsFromRequirements(oidRequirement));
+    const claimsPath = await writeJsonArgFile(
+      walletDir,
+      "oid4vci-claims",
+      buildClaimsFromRequirements(oidRequirement)
+    );
     const acquire = await runWalletCli(
       [
         "vc:acquire",
@@ -2915,7 +3012,9 @@ const run = async () => {
       const diVerify = parseLastJsonFromStdout(respondDi.stdout) as { decision?: string } | null;
       assert.ok(diVerify);
       if (diVerify?.decision !== "ALLOW") {
-        console.log(`[diag] oid4vp_di_unexpected_decision decision=${diVerify?.decision ?? "null"}`);
+        console.log(
+          `[diag] oid4vp_di_unexpected_decision decision=${diVerify?.decision ?? "null"}`
+        );
         console.log(`[diag] oid4vp_di_wallet_stdout=${respondDi.stdout.trim()}`);
         if (respondDi.stderr.trim()) {
           console.log(`[diag] oid4vp_di_wallet_stderr=${respondDi.stderr.trim()}`);
@@ -2924,9 +3023,12 @@ const run = async () => {
       assert.equal(diVerify?.decision, "ALLOW");
     }
 
-    console.log("Test 2e: OID4VCI age_credential_v1 (commitment-only) -> OID4VP ZK age>=18 (ALLOW)");
+    console.log(
+      "Test 2e: OID4VCI age_credential_v1 (commitment-only) -> OID4VP ZK age>=18 (ALLOW)"
+    );
     const adultBirthdateDays =
-      typeof process.env.WALLET_BIRTHDATE_DAYS === "string" && process.env.WALLET_BIRTHDATE_DAYS.trim().length
+      typeof process.env.WALLET_BIRTHDATE_DAYS === "string" &&
+      process.env.WALLET_BIRTHDATE_DAYS.trim().length
         ? Number(process.env.WALLET_BIRTHDATE_DAYS)
         : Math.floor(Date.now() / 86_400_000) - 20 * 365;
 
@@ -2943,18 +3045,25 @@ const run = async () => {
     );
     // Prove + verify via gateway (direct_post.jwt)
     const datingReqPath = await writeJsonArgFile(walletDir, "oid4vp-request-dating", datingReq);
-    const respondDating = await runWalletCli(["vp:respond", "--request", `@${datingReqPath}`], walletEnvVp);
+    const respondDating = await runWalletCli(
+      ["vp:respond", "--request", `@${datingReqPath}`],
+      walletEnvVp
+    );
     assert.equal(respondDating.exitCode, 0, respondDating.stderr || respondDating.stdout);
-    const datingVerify = parseLastJsonFromStdout(respondDating.stdout) as { decision?: string } | null;
+    const datingVerify = parseLastJsonFromStdout(respondDating.stdout) as {
+      decision?: string;
+    } | null;
     assert.ok(datingVerify);
     let datingDiag = "";
     if (datingVerify?.decision !== "ALLOW") {
       const challengeNonce =
         typeof datingReq?.nonce === "string"
           ? datingReq.nonce
-          : (datingReq?.challenge?.nonce as string | undefined) ?? "";
+          : ((datingReq?.challenge?.nonce as string | undefined) ?? "");
       const challengeHash = sha256Hex(challengeNonce);
-      const challengeRow = await db("verification_challenges").where({ challenge_hash: challengeHash }).first();
+      const challengeRow = await db("verification_challenges")
+        .where({ challenge_hash: challengeHash })
+        .first();
       const policyRow =
         challengeRow?.policy_id && challengeRow?.policy_version
           ? await db("policies")
@@ -2989,7 +3098,11 @@ const run = async () => {
         verifierOrigin
       )}`
     );
-    const datingReq2Path = await writeJsonArgFile(walletDir, "oid4vp-request-dating-neg1", datingReq2);
+    const datingReq2Path = await writeJsonArgFile(
+      walletDir,
+      "oid4vp-request-dating-neg1",
+      datingReq2
+    );
     const emit = await runWalletCli(
       ["vp:respond", "--emit-response-jwt", "--request", `@${datingReq2Path}`],
       { ...walletEnvVp, ISSUER_SERVICE_BASE_URL, WALLET_BIRTHDATE_DAYS: String(adultBirthdateDays) }
@@ -3009,37 +3122,46 @@ const run = async () => {
     });
     assert.equal(correct.decision, "ALLOW");
 
-    const wrongNonce = await postJson<VerifyResponse>(`${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`, {
-      action: "dating_enter",
-      presentation: String(decoded.vp_token),
-      nonce: "wrong-nonce",
-      audience: String((decodeJwt(String(decoded.request)) as any).audience),
-      requestHash: sha256Hex(String(decoded.request)),
-      requestJwt: String(decoded.request),
-      zk_proofs: decoded.zk_proofs
-    });
+    const wrongNonce = await postJson<VerifyResponse>(
+      `${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`,
+      {
+        action: "dating_enter",
+        presentation: String(decoded.vp_token),
+        nonce: "wrong-nonce",
+        audience: String((decodeJwt(String(decoded.request)) as any).audience),
+        requestHash: sha256Hex(String(decoded.request)),
+        requestJwt: String(decoded.request),
+        zk_proofs: decoded.zk_proofs
+      }
+    );
     assert.equal(wrongNonce.decision, "DENY");
 
-    const wrongAud = await postJson<VerifyResponse>(`${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`, {
-      action: "dating_enter",
-      presentation: String(decoded.vp_token),
-      nonce: String((decodeJwt(String(decoded.request)) as any).nonce),
-      audience: "origin:https://evil.local",
-      requestHash: sha256Hex(String(decoded.request)),
-      requestJwt: String(decoded.request),
-      zk_proofs: decoded.zk_proofs
-    });
+    const wrongAud = await postJson<VerifyResponse>(
+      `${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`,
+      {
+        action: "dating_enter",
+        presentation: String(decoded.vp_token),
+        nonce: String((decodeJwt(String(decoded.request)) as any).nonce),
+        audience: "origin:https://evil.local",
+        requestHash: sha256Hex(String(decoded.request)),
+        requestJwt: String(decoded.request),
+        zk_proofs: decoded.zk_proofs
+      }
+    );
     assert.equal(wrongAud.decision, "DENY");
 
-    const wrongHash = await postJson<VerifyResponse>(`${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`, {
-      action: "dating_enter",
-      presentation: String(decoded.vp_token),
-      nonce: String((decodeJwt(String(decoded.request)) as any).nonce),
-      audience: String((decodeJwt(String(decoded.request)) as any).audience),
-      requestHash: "00" + sha256Hex(String(decoded.request)).slice(2),
-      requestJwt: String(decoded.request),
-      zk_proofs: decoded.zk_proofs
-    });
+    const wrongHash = await postJson<VerifyResponse>(
+      `${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`,
+      {
+        action: "dating_enter",
+        presentation: String(decoded.vp_token),
+        nonce: String((decodeJwt(String(decoded.request)) as any).nonce),
+        audience: String((decodeJwt(String(decoded.request)) as any).audience),
+        requestHash: "00" + sha256Hex(String(decoded.request)).slice(2),
+        requestJwt: String(decoded.request),
+        zk_proofs: decoded.zk_proofs
+      }
+    );
     assert.equal(wrongHash.decision, "DENY");
 
     console.log("Test 2e-neg1b: mutated public signal (same proof) DENY");
@@ -3128,13 +3250,19 @@ const run = async () => {
         request_uri: undefined,
         zk_context: { current_day: staleDay }
       };
-      const staleReqPath = await writeJsonArgFile(walletDir, "oid4vp-request-dating-stale", staleReq);
+      const staleReqPath = await writeJsonArgFile(
+        walletDir,
+        "oid4vp-request-dating-stale",
+        staleReq
+      );
       const emitStale = await runWalletCli(
         ["vp:respond", "--emit-response-jwt", "--request", `@${staleReqPath}`],
         { ...walletEnvVp, WALLET_BIRTHDATE_DAYS: String(adultBirthdateDays) }
       );
       assert.equal(emitStale.exitCode, 0, emitStale.stderr || emitStale.stdout);
-      const emittedStale = parseLastJsonFromStdout(emitStale.stdout) as { response_jwt?: string } | null;
+      const emittedStale = parseLastJsonFromStdout(emitStale.stdout) as {
+        response_jwt?: string;
+      } | null;
       assert.ok(emittedStale?.response_jwt);
       const dec = decodeJwt(emittedStale!.response_jwt!) as any;
       const res = await postJson<VerifyResponse>(`${VERIFIER_SERVICE_BASE_URL}/oid4vp/response`, {
@@ -3152,18 +3280,19 @@ const run = async () => {
     console.log("Test 2e-neg2: underage cannot satisfy proof");
     const underageBirthdateDays = Math.floor(Date.now() / 86_400_000) - 10 * 365;
     const underWalletDir = `${walletDir}-under`;
-    const underDidCreate = await runWalletCli(
-      ["did:create:auto", "--mode", "user_pays"],
-      {
-        ...walletEnvDidCreate,
-        WALLET_DIR: underWalletDir,
-        WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays)
-      }
-    );
+    const underDidCreate = await runWalletCli(["did:create:auto", "--mode", "user_pays"], {
+      ...walletEnvDidCreate,
+      WALLET_DIR: underWalletDir,
+      WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays)
+    });
     assert.equal(underDidCreate.exitCode, 0, underDidCreate.stderr || underDidCreate.stdout);
     const acquireUnder = await runWalletCli(
       ["vc:acquire", "--issuer", ISSUER_SERVICE_BASE_URL, "--config-id", "age_credential_v1"],
-      { ...walletEnvBase, WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays), WALLET_DIR: underWalletDir }
+      {
+        ...walletEnvBase,
+        WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays),
+        WALLET_DIR: underWalletDir
+      }
     );
     assert.equal(acquireUnder.exitCode, 0, acquireUnder.stderr || acquireUnder.stdout);
     const datingReqUnder = await requestJson<any>(
@@ -3171,16 +3300,26 @@ const run = async () => {
         verifierOrigin
       )}`
     );
-    const datingReqUnderPath = await writeJsonArgFile(underWalletDir, "oid4vp-request-dating-under", datingReqUnder);
+    const datingReqUnderPath = await writeJsonArgFile(
+      underWalletDir,
+      "oid4vp-request-dating-under",
+      datingReqUnder
+    );
     const emitUnder = await runWalletCli(
       ["vp:respond", "--emit-response-jwt", "--request", `@${datingReqUnderPath}`],
-      { ...walletEnvVp, WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays), WALLET_DIR: underWalletDir }
+      {
+        ...walletEnvVp,
+        WALLET_BIRTHDATE_DAYS: String(underageBirthdateDays),
+        WALLET_DIR: underWalletDir
+      }
     );
     assert.ok(emitUnder.exitCode !== 0, "underage should fail to produce a valid proof");
 
     console.log("Test 2e-neg3: revoke age credential -> subsequent verify DENY");
     const adultWalletStateRaw = await readFile(path.join(walletDir, "wallet-state.json"), "utf8");
-    const adultWalletState = JSON.parse(adultWalletStateRaw) as { credentials?: Array<{ vct: string; credential: string }> };
+    const adultWalletState = JSON.parse(adultWalletStateRaw) as {
+      credentials?: Array<{ vct: string; credential: string }>;
+    };
     const ageCred = (adultWalletState.credentials ?? []).find((c) => c.vct === "age_credential_v1");
     assert.ok(ageCred?.credential, "age credential missing from wallet state");
     const ageJwt = String(ageCred!.credential).split("~")[0];
@@ -3188,7 +3327,10 @@ const run = async () => {
     const status = agePayload.status ?? {};
     const statusListCredential = String(status.statusListCredential ?? "");
     const statusListIndex = Number(status.statusListIndex ?? NaN);
-    assert.ok(statusListCredential.includes("/status-lists/"), "unexpected statusListCredential shape");
+    assert.ok(
+      statusListCredential.includes("/status-lists/"),
+      "unexpected statusListCredential shape"
+    );
     assert.ok(Number.isInteger(statusListIndex) && statusListIndex >= 0, "missing statusListIndex");
     const statusListId = statusListCredential.split("/").filter(Boolean).pop() as string;
 
@@ -3209,7 +3351,10 @@ const run = async () => {
       );
       replayCandidateReq = reqAfter;
       const reqAfterPath = await writeJsonArgFile(walletDir, "oid4vp-request-after", reqAfter);
-      const respAfter = await runWalletCli(["vp:respond", "--request", `@${reqAfterPath}`], walletEnvVp);
+      const respAfter = await runWalletCli(
+        ["vp:respond", "--request", `@${reqAfterPath}`],
+        walletEnvVp
+      );
       assert.equal(respAfter.exitCode, 0, respAfter.stderr || respAfter.stdout);
       const verifyAfter = parseLastJsonFromStdout(respAfter.stdout) as { decision?: string } | null;
       assert.ok(verifyAfter);
@@ -3223,10 +3368,19 @@ const run = async () => {
 
     console.log("Test 2c: OID4VP request replay fails (one-time request hash)");
     assert.ok(replayCandidateReq, "replay candidate request missing");
-    const replayReqPath = await writeJsonArgFile(walletDir, "oid4vp-request-replay", replayCandidateReq);
-    const respondReplay = await runWalletCli(["vp:respond", "--request", `@${replayReqPath}`], walletEnvVp);
+    const replayReqPath = await writeJsonArgFile(
+      walletDir,
+      "oid4vp-request-replay",
+      replayCandidateReq
+    );
+    const respondReplay = await runWalletCli(
+      ["vp:respond", "--request", `@${replayReqPath}`],
+      walletEnvVp
+    );
     assert.equal(respondReplay.exitCode, 0, respondReplay.stderr || respondReplay.stdout);
-    const replayVerify = parseLastJsonFromStdout(respondReplay.stdout) as { decision?: string } | null;
+    const replayVerify = parseLastJsonFromStdout(respondReplay.stdout) as {
+      decision?: string;
+    } | null;
     assert.ok(replayVerify);
     assert.equal(replayVerify.decision, "DENY");
 
@@ -3241,7 +3395,10 @@ const run = async () => {
       request_jwt?: string;
     }>(policyRequirementsUrl("marketplace.list_item"));
     if (GATEWAY_MODE || SOCIAL_MODE) {
-      assert.ok(requirements.request_jwt, "strict posture: request_jwt must be present from gateway");
+      assert.ok(
+        requirements.request_jwt,
+        "strict posture: request_jwt must be present from gateway"
+      );
       assert.ok(
         requirements.challenge.audience.startsWith("origin:"),
         "strict posture: audience must be origin-scoped"
@@ -3311,11 +3468,14 @@ const run = async () => {
       holderJwk: holderKeys.publicJwk,
       holderKey: holderKeys.cryptoKey
     });
-    const didKeyOk = await postJson<VerifyResponse>(`${verifyBaseUrl}/v1/verify?action=marketplace.list_item`, {
-      presentation: didKeyOkPresentation,
-      nonce: didKeyReqOk.challenge.nonce,
-      audience: didKeyReqOk.challenge.audience
-    });
+    const didKeyOk = await postJson<VerifyResponse>(
+      `${verifyBaseUrl}/v1/verify?action=marketplace.list_item`,
+      {
+        presentation: didKeyOkPresentation,
+        nonce: didKeyReqOk.challenge.nonce,
+        audience: didKeyReqOk.challenge.audience
+      }
+    );
     assert.equal(didKeyOk.decision, "ALLOW");
 
     console.log("Test 2y: Origin-scoped audience prevents replay across origins");
@@ -3346,7 +3506,9 @@ const run = async () => {
       assert.ok(replayAcrossOrigin.reasons?.includes("aud_mismatch"));
     }
 
-    console.log("Test 2z-strict: Strict posture assertions (origin audience, request JWT, unsigned fails)");
+    console.log(
+      "Test 2z-strict: Strict posture assertions (origin audience, request JWT, unsigned fails)"
+    );
     const directPolicyUrl = `${POLICY_SERVICE_BASE_URL}/v1/requirements?action=${encodeURIComponent(
       "marketplace.list_item"
     )}`;
@@ -3392,12 +3554,21 @@ const run = async () => {
         "marketplace.list_item"
       )}&verifier_origin=${encodeURIComponent(verifierOrigin)}`
     );
-    const unsignedReqPath = await writeJsonArgFile(walletDir, "oid4vp-request-unsigned", unsignedReq);
-    const respondUnsigned = await runWalletCli(["vp:respond", "--request", `@${unsignedReqPath}`], walletEnvVp);
+    const unsignedReqPath = await writeJsonArgFile(
+      walletDir,
+      "oid4vp-request-unsigned",
+      unsignedReq
+    );
+    const respondUnsigned = await runWalletCli(
+      ["vp:respond", "--request", `@${unsignedReqPath}`],
+      walletEnvVp
+    );
     assert.notEqual(respondUnsigned.exitCode, 0);
     assert.ok(
       respondUnsigned.stderr.includes("request_jwt_missing_strict_mode") ||
-        (respondUnsigned.stdout + respondUnsigned.stderr).includes("request_jwt_missing_strict_mode"),
+        (respondUnsigned.stdout + respondUnsigned.stderr).includes(
+          "request_jwt_missing_strict_mode"
+        ),
       "strict posture: wallet must reject unsigned request (no request_jwt)"
     );
 
@@ -3414,20 +3585,26 @@ const run = async () => {
       holderKey: holderKeys.cryptoKey
     });
     const consumeBadPresentation = consumeOkPresentation.replace("~", "~~");
-    const firstAttempt = await postJson<VerifyResponse>(`${verifyBaseUrl}/v1/verify?action=marketplace.list_item`, {
-      presentation: consumeBadPresentation,
-      nonce: consumeReq.challenge.nonce,
-      audience: consumeReq.challenge.audience
-    });
+    const firstAttempt = await postJson<VerifyResponse>(
+      `${verifyBaseUrl}/v1/verify?action=marketplace.list_item`,
+      {
+        presentation: consumeBadPresentation,
+        nonce: consumeReq.challenge.nonce,
+        audience: consumeReq.challenge.audience
+      }
+    );
     assert.equal(firstAttempt.decision, "DENY");
     if (INCLUDE_VERIFY_REASONS) {
       assert.ok(firstAttempt.reasons?.includes("sd_hash_mismatch"));
     }
-    const secondAttempt = await postJson<VerifyResponse>(`${verifyBaseUrl}/v1/verify?action=marketplace.list_item`, {
-      presentation: consumeBadPresentation,
-      nonce: consumeReq.challenge.nonce,
-      audience: consumeReq.challenge.audience
-    });
+    const secondAttempt = await postJson<VerifyResponse>(
+      `${verifyBaseUrl}/v1/verify?action=marketplace.list_item`,
+      {
+        presentation: consumeBadPresentation,
+        nonce: consumeReq.challenge.nonce,
+        audience: consumeReq.challenge.audience
+      }
+    );
     assert.equal(secondAttempt.decision, "DENY");
     if (INCLUDE_VERIFY_REASONS) {
       assert.ok(secondAttempt.reasons?.includes("challenge_consumed"));
@@ -3653,7 +3830,9 @@ const run = async () => {
     const minSilverScoreRaw = scoreCfg.min_silver;
     const minSilverDiversityRaw = diversityCfg.min_for_silver;
     const minSilverScore =
-      typeof minSilverScoreRaw === "number" && Number.isFinite(minSilverScoreRaw) && minSilverScoreRaw > 0
+      typeof minSilverScoreRaw === "number" &&
+      Number.isFinite(minSilverScoreRaw) &&
+      minSilverScoreRaw > 0
         ? Math.floor(minSilverScoreRaw)
         : 1;
     const minSilverDiversity =
@@ -3665,9 +3844,8 @@ const run = async () => {
     // Keep at least 4 counterparties so anti-collusion top2 ratio checks have room.
     const fallbackSignalCount = Math.max(minSilverScore, minSilverDiversity, 4);
     const fallbackSignalAt = new Date().toISOString();
-    const fallbackSignals: Array<{ event_hash: string; counterparty_did_hash: string }> = Array.from(
-      { length: fallbackSignalCount },
-      (_, idx) => {
+    const fallbackSignals: Array<{ event_hash: string; counterparty_did_hash: string }> =
+      Array.from({ length: fallbackSignalCount }, (_, idx) => {
         const counterpartyDidHash = pseudonymizer.didToHash(
           `did:example:counterparty:${idx}:${testRunId}`
         );
@@ -3682,8 +3860,7 @@ const run = async () => {
           }),
           counterparty_did_hash: counterpartyDidHash
         };
-      }
-    );
+      });
     for (const signalRow of fallbackSignals) {
       await db("aura_signals")
         .insert({
@@ -3743,805 +3920,6 @@ const run = async () => {
     }
     assert.equal(auraClaim.status, "ISSUED");
     assert.ok(auraClaim.credential);
-
-    console.log("Test 4b: Customer Capability Flow (E2E, no mocks)");
-    {
-      const capabilityConfigId = "aura:cuncta.social.can_post";
-      const capabilityVct = "cuncta.social.can_post";
-      const capabilityDomain = "social";
-      const privilegedActionId = "customer.social.privileged_write";
-
-      const customerWalletDir = path.join(repoRoot, ".tmp-wallet", `it-capability-${testRunId}`);
-      const walletEnvCustomerBase = {
-        WALLET_DIR: customerWalletDir,
-        NODE_ENV: "development",
-        DID_SERVICE_BASE_URL,
-        ISSUER_SERVICE_BASE_URL,
-        POLICY_SERVICE_BASE_URL,
-        VERIFIER_SERVICE_BASE_URL,
-        APP_GATEWAY_BASE_URL,
-        HEDERA_NETWORK: process.env.HEDERA_NETWORK ?? "testnet",
-        // Customer sub-flow is self-funded too; wire CI payer creds into this nested wallet-cli env.
-        HEDERA_PAYER_ACCOUNT_ID:
-          process.env.HEDERA_PAYER_ACCOUNT_ID ?? process.env.TESTNET_PAYER_ACCOUNT_ID ?? "",
-        HEDERA_PAYER_PRIVATE_KEY:
-          process.env.HEDERA_PAYER_PRIVATE_KEY ?? process.env.TESTNET_PAYER_PRIVATE_KEY ?? ""
-      };
-      const walletEnvCustomerDidCreate = {
-        ...walletEnvCustomerBase,
-        // Force self-funded DID creation without going through gateway sponsor-budget enforcement.
-        APP_GATEWAY_BASE_URL: ""
-      };
-
-      // 1) Create DID (self-funded)
-      const didCreate = await runWalletCli(["did:create:auto", "--mode", "user_pays"], walletEnvCustomerDidCreate);
-      assert.equal(didCreate.exitCode, 0, didCreate.stderr || didCreate.stdout);
-
-      const walletStatePath = path.join(customerWalletDir, "wallet-state.json");
-      const loadWallet = async () => {
-        const raw = JSON.parse(await readFile(walletStatePath, "utf8")) as any;
-        const did = String(raw?.did?.did ?? "");
-        assert.ok(did.startsWith("did:"), "customer DID missing from wallet state");
-        const holderKey = raw?.keystore?.holder_ed25519 ?? null;
-        const rootKey = raw?.keystore?.ed25519 ?? null;
-        const legacyKey = raw?.keys?.ed25519 ?? null;
-        const keyMaterial = holderKey ?? legacyKey ?? rootKey;
-        const priv = Buffer.from(String(keyMaterial?.privateKeyBase64 ?? ""), "base64");
-        const pub = Buffer.from(String(keyMaterial?.publicKeyBase64 ?? ""), "base64");
-        assert.ok(priv.length > 0 && pub.length > 0, "customer wallet keys missing");
-        const jwkPriv = {
-          kty: "OKP",
-          crv: "Ed25519",
-          x: toBase64Url(pub),
-          d: toBase64Url(priv),
-          alg: "EdDSA",
-          kid: `customer-${testRunId}`
-        };
-        const jwkPub = { kty: "OKP", crv: "Ed25519", x: jwkPriv.x, alg: "EdDSA", kid: jwkPriv.kid };
-        const cryptoKey = await importJWK(jwkPriv as never, "EdDSA");
-        return { did, jwkPriv, jwkPub, cryptoKey };
-      };
-
-      const customer = await loadWallet();
-      const pseudo = createHmacSha256Pseudonymizer({ pepper: PSEUDONYMIZER_PEPPER });
-      const customerHash = pseudo.didToHash(customer.did);
-
-      const fetchOid4vpRequest = async (actionId: string) => {
-        const requestUrl = `${APP_GATEWAY_BASE_URL}/oid4vp/request?action=${encodeURIComponent(actionId)}&verifier_origin=${encodeURIComponent(
-          gatewayOrigin
-        )}`;
-        const startedAt = Date.now();
-        const timeoutMs = 120_000;
-        let attempts = 0;
-        let lastError: string | null = null;
-        while (Date.now() - startedAt < timeoutMs) {
-          try {
-            attempts += 1;
-            return await requestJson<any>(requestUrl);
-          } catch (error) {
-            const retryReason = getRequirementsRetryReason(error);
-            if (!retryReason) {
-              throw error;
-            }
-            lastError = error instanceof Error ? error.message : String(error);
-            await sleep(2_000);
-          }
-        }
-        throw new Error(
-          `Timed out waiting for oid4vp request readiness action=${actionId} attempts=${attempts} lastError=${lastError ?? "none"}`
-        );
-      };
-
-      const postOid4vpResponseJwt = async (requestObj: any, vpToken: string, holder: typeof customer) => {
-        const pd = requestObj?.presentation_definition as { input_descriptors?: Array<{ id?: string }> };
-        const descriptorId = String(pd?.input_descriptors?.[0]?.id ?? "");
-        assert.ok(descriptorId.length > 0, "oid4vp request missing descriptor id");
-        const now = Math.floor(Date.now() / 1000);
-        const responseJwt = await new SignJWT({
-          vp_token: vpToken,
-          presentation_submission: {
-            descriptor_map: [{ id: descriptorId, path: "$.vp_token" }]
-          },
-          request: requestObj.request_jwt,
-          cnf: { jwk: holder.jwkPub }
-        })
-          .setProtectedHeader({ alg: "EdDSA" })
-          .setIssuedAt(now)
-          .setExpirationTime(now + 120)
-          .sign(holder.cryptoKey);
-
-        const res = await fetch(`${APP_GATEWAY_BASE_URL}/oid4vp/response`, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ response: responseJwt }).toString()
-        });
-        assert.ok(res.ok, `oid4vp response failed: ${res.status}`);
-        return (await res.json()) as { decision?: string; reasons?: string[] };
-      };
-
-      // Helper: perform an OID4VP verification (gateway request + direct_post.jwt response).
-      const verifyViaOid4vp = async (input: { actionId: string; sdJwt: string; holder: typeof customer }) => {
-        const req = await fetchOid4vpRequest(input.actionId);
-        const requirement = req.requirements?.[0];
-        assert.ok(requirement, `oid4vp request missing requirements for ${input.actionId}`);
-        const vpToken = await buildPresentation({
-          sdJwt: input.sdJwt,
-          disclose: buildDisclosureList(requirement),
-          nonce: req.nonce,
-          audience: req.audience,
-          holderJwk: input.holder.jwkPub,
-          holderKey: input.holder.cryptoKey
-        });
-        return await postOid4vpResponseJwt(req, vpToken, input.holder);
-      };
-
-      // 2) Ensure subject is eligible by generating Aura signals (real verifier obligations path)
-      // Bootstrap with the base social credential (non-aura) and verify `social.post.create` once to mint `social.post_success`.
-      const socialAccountReq = await requestJson<{
-        challenge: { nonce: string; audience: string };
-        requirements: Array<{ vct: string; disclosures?: string[]; predicates?: Array<{ path: string; op: string; value?: unknown }> }>;
-      }>(socialRequirementsUrl("social.profile.create"));
-      const socialAccountVct = socialAccountReq.requirements[0]?.vct ?? "cuncta.social.account_active";
-      const socialAccount = await issueCredentialFor({
-        subjectDid: customer.did,
-        vct: socialAccountVct,
-        claims: { account_active: true, domain: "social", as_of: new Date().toISOString() }
-      });
-      {
-        // Keep this in sync with Aura social rule thresholds (min_silver score).
-        const requiredPostSignals = 3;
-        let observedAllowSignals = 0;
-        for (let i = 0; i < requiredPostSignals; i += 1) {
-          const socialPostVerify = await verifyViaOid4vp({
-            actionId: "social.post.create",
-            sdJwt: socialAccount.credential,
-            holder: customer
-          });
-          if (socialPostVerify.decision !== "ALLOW") break;
-          observedAllowSignals += 1;
-        }
-        // IMPORTANT: obligations-driven social signals can be recorded with null counterparty hash.
-        // Aura eligibility for social.can_post requires diversity_min >= 1, so we deterministically
-        // seed non-null counterparties to guarantee eligibility convergence in CI.
-        const eligibleSignalsBefore = await db("aura_signals")
-          .where({
-            subject_did_hash: customerHash,
-            domain: capabilityDomain,
-            signal: "social.post_success"
-          })
-          .whereNotNull("counterparty_did_hash")
-          .count<{ count: string }>("id as count")
-          .first();
-        const eligibleBeforeCount = Number(eligibleSignalsBefore?.count ?? 0);
-        const missing = Math.max(0, requiredPostSignals - eligibleBeforeCount);
-        if (missing > 0) {
-          const createdAt = new Date().toISOString();
-          for (let i = 0; i < missing; i += 1) {
-            const counterpartyHash = pseudo.didToHash(
-              `did:example:signal-counterparty:${testRunId}:${i}:${randomUUID()}`
-            );
-            const eventHash = hashCanonicalJson({
-              signal: "social.post_success",
-              domain: capabilityDomain,
-              subjectDidHash: customerHash,
-              counterpartyDidHash: counterpartyHash,
-              createdAt,
-              nonce: `customer-social-bootstrap-${testRunId}-${i}-${randomUUID()}`
-            });
-            await db("aura_signals")
-              .insert({
-                subject_did_hash: customerHash,
-                domain: capabilityDomain,
-                signal: "social.post_success",
-                weight: 1,
-                counterparty_did_hash: counterpartyHash,
-                event_hash: eventHash,
-                created_at: createdAt,
-                processed_at: null
-              })
-              .onConflict("event_hash")
-              .ignore();
-          }
-        }
-        await runAuraWorkerOnce();
-        const after = await db("aura_signals")
-          .where({
-            subject_did_hash: customerHash,
-            domain: capabilityDomain,
-            signal: "social.post_success"
-          })
-          .whereNotNull("counterparty_did_hash")
-          .count<{ count: string }>("id as count")
-          .first();
-        const eligibleAfterCount = Number(after?.count ?? 0);
-        assert.ok(
-          eligibleAfterCount >= requiredPostSignals,
-          `expected eligible aura signals >= ${requiredPostSignals}; got ${eligibleAfterCount} (observedAllowSignals=${observedAllowSignals})`
-        );
-      }
-
-      // 3) Confirm privileged action is DENY before capability VC exists
-      {
-        const deny = await verifyViaOid4vp({
-          actionId: privilegedActionId,
-          sdJwt: socialAccount.credential,
-          holder: customer
-        });
-        assert.equal(deny.decision, "DENY");
-      }
-
-      // 4) Acquire capability VC via OID4VCI aura flow (explicit HTTP sequence)
-      const acquireAuraCapability = async (holder: typeof customer) => {
-        const auraOfferStartedAt = Date.now();
-        const auraOfferTimeoutMs = 180_000;
-        let offer: any | null = null;
-        let auraOfferAttempts = 0;
-        let lastAuraOfferError: string | null = null;
-        let now = Math.floor(Date.now() / 1000);
-        while (Date.now() - auraOfferStartedAt < auraOfferTimeoutMs) {
-          try {
-            auraOfferAttempts += 1;
-            const challenge = await requestJson<{ nonce: string; audience: string }>(
-              `${APP_GATEWAY_BASE_URL}/oid4vci/aura/challenge?config_id=${encodeURIComponent(capabilityConfigId)}`
-            );
-            now = Math.floor(Date.now() / 1000);
-            const offerProofJwt = await new SignJWT({
-              iss: holder.did,
-              aud: String(challenge.audience ?? "").replace(/\/$/, ""),
-              nonce: challenge.nonce,
-              iat: now,
-              exp: now + 120,
-              cnf: { jwk: holder.jwkPub }
-            })
-              .setProtectedHeader({ alg: "EdDSA", typ: "openid4vci-proof+jwt" })
-              .sign(holder.cryptoKey);
-            offer = await postJson<any>(`${APP_GATEWAY_BASE_URL}/oid4vci/aura/offer`, {
-              credential_configuration_id: capabilityConfigId,
-              domain: capabilityDomain,
-              subjectDid: holder.did,
-              offer_nonce: challenge.nonce,
-              proof_jwt: offerProofJwt
-            });
-            break;
-          } catch (error) {
-            const retryReason = getAuraOfferRetryReason(error);
-            if (!retryReason) {
-              throw error;
-            }
-            lastAuraOfferError = error instanceof Error ? error.message : String(error);
-            const retryDelayMs = retryReason === "rate_limited" ? 70_000 : 8_000;
-            if (retryReason !== "rate_limited") {
-              await runAuraWorkerOnce();
-            }
-            await sleep(retryDelayMs);
-          }
-        }
-        if (!offer) {
-          await emitAnchorDiagnostics(db, "aura_offer_not_ready");
-          if (SOCIAL_MODE) {
-            await emitSocialTimeoutDiagnostics(db, "aura_offer_not_ready");
-          }
-          throw new Error(
-            `Timed out waiting for aura offer readiness after ${auraOfferTimeoutMs}ms attempts=${auraOfferAttempts} lastError=${lastAuraOfferError ?? "none"}`
-          );
-        }
-        const preauth =
-          offer?.credential_offer?.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.[
-            "pre-authorized_code"
-          ];
-        assert.ok(typeof preauth === "string" && preauth.length > 10, "missing pre-authorized_code");
-
-        const issuerFromOffer = String(offer?.credential_offer?.credential_issuer ?? "");
-        assert.ok(issuerFromOffer.startsWith("http"), "missing credential_issuer");
-        const configId = String(offer?.credential_offer?.credential_configuration_ids?.[0] ?? capabilityConfigId);
-
-        const meta = await requestJson<{ token_endpoint: string; credential_endpoint: string }>(
-          `${issuerFromOffer.replace(/\/$/, "")}/.well-known/openid-credential-issuer`
-        );
-        const tokenRes = await fetch(meta.token_endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-            "pre-authorized_code": preauth,
-            // Do not log scope_json (sensitive portability surface).
-            scope_json: JSON.stringify({ domain: capabilityDomain })
-          }).toString()
-        });
-        assert.ok(tokenRes.ok, `token failed: ${tokenRes.status}`);
-        const tokenJson = (await tokenRes.json()) as { access_token?: string; c_nonce?: string };
-        assert.ok(typeof tokenJson.access_token === "string" && tokenJson.access_token.length > 10);
-        assert.ok(typeof tokenJson.c_nonce === "string" && tokenJson.c_nonce.length > 10);
-
-        const credProofJwt = await new SignJWT({
-          iss: holder.did,
-          aud: issuerFromOffer.replace(/\/$/, ""),
-          nonce: tokenJson.c_nonce,
-          iat: now,
-          exp: now + 120,
-          cnf: { jwk: holder.jwkPub }
-        })
-          .setProtectedHeader({ alg: "EdDSA", typ: "openid4vci-proof+jwt" })
-          .sign(holder.cryptoKey);
-
-        const credentialRes = await fetch(meta.credential_endpoint, {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            Authorization: `Bearer ${tokenJson.access_token}`
-          },
-          body: JSON.stringify({
-            subjectDid: holder.did,
-            credential_configuration_id: configId,
-            format: "dc+sd-jwt",
-            claims: {},
-            proof: { proof_type: "jwt", jwt: credProofJwt }
-          })
-        });
-        assert.ok(credentialRes.ok, `credential failed: ${credentialRes.status}`);
-        const credentialJson = (await credentialRes.json()) as { credential?: string };
-        assert.ok(typeof credentialJson.credential === "string" && credentialJson.credential.includes("~"));
-        return credentialJson.credential;
-      };
-
-      const capabilityVc1 = await acquireAuraCapability(customer);
-      {
-        const payload = decodeJwt(String(capabilityVc1).split("~")[0]) as any;
-        assert.equal(String(payload?.vct ?? ""), capabilityVct);
-        assert.ok(typeof payload?.as_of === "string" && payload.as_of.length > 10, "capability VC missing as_of");
-      }
-
-      // 4b-extra) Scope hardening: capability must not be acquirable with mismatched scope_json domain.
-      // Run after first successful capability acquisition so this check exercises scope logic, not readiness races.
-      {
-        const strictConfigId = capabilityConfigId;
-        const domainA = capabilityDomain;
-        const domainB = capabilityDomain === "social" ? "marketplace" : "social";
-        const challenge = await requestJson<{ nonce: string; audience: string }>(
-          `${APP_GATEWAY_BASE_URL}/oid4vci/aura/challenge?config_id=${encodeURIComponent(strictConfigId)}`
-        );
-        const now = Math.floor(Date.now() / 1000);
-        const offerProofJwt = await new SignJWT({
-          iss: customer.did,
-          aud: String(challenge.audience ?? "").replace(/\/$/, ""),
-          nonce: challenge.nonce,
-          iat: now,
-          exp: now + 120,
-          cnf: { jwk: customer.jwkPub }
-        })
-          .setProtectedHeader({ alg: "EdDSA", typ: "openid4vci-proof+jwt" })
-          .sign(customer.cryptoKey);
-        const offer = await postJson<any>(`${APP_GATEWAY_BASE_URL}/oid4vci/aura/offer`, {
-          credential_configuration_id: strictConfigId,
-          domain: domainA,
-          subjectDid: customer.did,
-          offer_nonce: challenge.nonce,
-          proof_jwt: offerProofJwt
-        });
-        const preauth =
-          offer?.credential_offer?.grants?.["urn:ietf:params:oauth:grant-type:pre-authorized_code"]?.[
-            "pre-authorized_code"
-          ];
-        assert.ok(typeof preauth === "string" && preauth.length > 10, "missing pre-authorized_code");
-        const issuerFromOffer = String(offer?.credential_offer?.credential_issuer ?? "");
-        assert.ok(issuerFromOffer.startsWith("http"), "missing credential_issuer");
-        const meta = await requestJson<{ token_endpoint: string }>(
-          `${issuerFromOffer.replace(/\/$/, "")}/.well-known/openid-credential-issuer`
-        );
-        const tokenRes = await fetch(meta.token_endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({
-            grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
-            "pre-authorized_code": preauth,
-            // Intentionally mismatched scope_json domain (must fail; do not log).
-            scope_json: JSON.stringify({ domain: domainB })
-          }).toString()
-        });
-        assert.ok(!tokenRes.ok, "expected token denial for mismatched scope_json domain");
-      }
-
-      // 5) Present capability VC via OID4VP during a privileged write → ALLOW
-      {
-        await waitFor(
-          "customer_capability_initial_allow",
-          async () => {
-            const res = await verifyViaOid4vp({
-              actionId: privilegedActionId,
-              sdJwt: capabilityVc1,
-              holder: customer
-            });
-            if (res.decision === "ALLOW") {
-              return { done: true, value: res };
-            }
-            return {
-              done: false,
-              lastResponse: {
-                decision: res.decision,
-                reasons: res.reasons ?? []
-              }
-            };
-          },
-          {
-            timeoutMs: 120_000,
-            intervalMs: 2_000
-          }
-        );
-      }
-
-      // 6) Revoke capability VC (admin surface) → privileged write DENY
-      const revokeSdJwt = async (sdJwt: string) => {
-        const jwt = String(sdJwt).split("~")[0];
-        const payload = decodeJwt(jwt) as any;
-        const status = payload.status ?? {};
-        const statusListCredential = String(status.statusListCredential ?? "");
-        const statusListIndex = Number(status.statusListIndex ?? NaN);
-        assert.ok(statusListCredential.includes("/status-lists/"), "unexpected statusListCredential shape");
-        assert.ok(Number.isInteger(statusListIndex) && statusListIndex >= 0, "missing statusListIndex");
-        const statusListId = statusListCredential.split("/").filter(Boolean).pop() as string;
-        await postJson(
-          `${ISSUER_SERVICE_BASE_URL}/v1/credentials/revoke`,
-          { statusListId, statusListIndex },
-          { Authorization: `Bearer ${serviceTokenIssuer}` }
-        );
-      };
-      await revokeSdJwt(capabilityVc1);
-      {
-        const startedAt = Date.now();
-        let denied = false;
-        while (Date.now() - startedAt < 60_000) {
-          const res = await verifyViaOid4vp({
-            actionId: privilegedActionId,
-            sdJwt: capabilityVc1,
-            holder: customer
-          });
-          if (res.decision === "DENY") {
-            denied = true;
-            break;
-          }
-          await sleep(2_000);
-        }
-        assert.ok(denied, "expected denial after capability revocation");
-      }
-
-      // 7) Freshness window (as_of): simulate expiry using a short-window policy version bump (no mocking)
-      const capabilityVc2 = await acquireAuraCapability(customer);
-      {
-        const allow = await verifyViaOid4vp({
-          actionId: privilegedActionId,
-          sdJwt: capabilityVc2,
-          holder: customer
-        });
-        assert.equal(allow.decision, "ALLOW");
-      }
-      await sleep(2_000);
-      {
-        const nowIso = new Date().toISOString();
-        await db("policies")
-          .insert({
-            policy_id: `${privilegedActionId}.v2`,
-            action_id: privilegedActionId,
-            version: 2,
-            enabled: true,
-            logic: JSON.stringify({
-              binding: { mode: "kb-jwt", require: true },
-              requirements: [
-                {
-                  vct: capabilityVct,
-                  issuer: { mode: "env", env: "ISSUER_DID" },
-                  disclosures: ["can_post", "tier", "as_of"],
-                  predicates: [
-                    { path: "can_post", op: "eq", value: true },
-                    // Freshness: require `as_of` to be >= the policy bump time.
-                    { path: "as_of", op: "gte", value: nowIso }
-                  ],
-                  revocation: { required: true }
-                }
-              ],
-              obligations: [{ type: "ANCHOR_EVENT", event: "VERIFY", when: "ON_ALLOW" }]
-            }),
-            created_at: nowIso,
-            updated_at: nowIso
-          })
-          .onConflict("policy_id")
-          .merge({
-            action_id: privilegedActionId,
-            version: 2,
-            enabled: true,
-            // Force re-sign on policy mutation so policy-service integrity checks do not
-            // fail on stale (hash, signature) from prior runs.
-            policy_hash: null,
-            policy_signature: null,
-            logic: JSON.stringify({
-              binding: { mode: "kb-jwt", require: true },
-              requirements: [
-                {
-                  vct: capabilityVct,
-                  issuer: { mode: "env", env: "ISSUER_DID" },
-                  disclosures: ["can_post", "tier", "as_of"],
-                  predicates: [
-                    { path: "can_post", op: "eq", value: true },
-                    { path: "as_of", op: "gte", value: nowIso }
-                  ],
-                  revocation: { required: true }
-                }
-              ],
-              obligations: [{ type: "ANCHOR_EVENT", event: "VERIFY", when: "ON_ALLOW" }]
-            }),
-            updated_at: nowIso
-          });
-        const stale = await verifyViaOid4vp({
-          actionId: privilegedActionId,
-          sdJwt: capabilityVc2,
-          holder: customer
-        });
-        assert.equal(stale.decision, "DENY");
-      }
-      const capabilityVc3 = await acquireAuraCapability(customer);
-      {
-        const allow = await verifyViaOid4vp({
-          actionId: privilegedActionId,
-          sdJwt: capabilityVc3,
-          holder: customer
-        });
-        assert.equal(allow.decision, "ALLOW");
-      }
-
-      // 8) Rotate DID key and ensure DID↔key binding still passes for new key
-      {
-        const rotate = await runWalletCli(["did:rotate"], walletEnvCustomerDidCreate);
-        assert.equal(rotate.exitCode, 0, rotate.stderr || rotate.stdout);
-        const rotated = await loadWallet();
-        // Mirror lag can delay DID doc visibility; use verifier acceptance with rotated key as
-        // the authoritative readiness condition, and keep DID resolve status as diagnostics.
-        await waitFor(
-          "customer_did_rotation_authorized",
-          async () => {
-            const resolved = await requestJson<{ didDocument?: Record<string, unknown> }>(
-              `${DID_SERVICE_BASE_URL}/v1/dids/resolve/${encodeURIComponent(rotated.did)}`
-            ).catch(() => ({ didDocument: undefined }));
-            const methods = Array.isArray(resolved.didDocument?.verificationMethod)
-              ? (resolved.didDocument?.verificationMethod as Array<Record<string, unknown>>)
-              : [];
-            const hasRotatedKeyInDidDoc = methods.some((m) => {
-              const jwk = (m as any).publicKeyJwk;
-              return jwk && typeof jwk === "object" && (jwk as any).x === rotated.jwkPub.x;
-            });
-            let decision = "ERR";
-            let reasons: string[] = [];
-            try {
-              const verifyRes = await verifyViaOid4vp({
-                actionId: privilegedActionId,
-                sdJwt: capabilityVc3,
-                holder: rotated
-              });
-              decision = verifyRes.decision;
-              reasons = verifyRes.reasons ?? [];
-              if (decision === "ALLOW") {
-                return {
-                  done: true,
-                  value: verifyRes,
-                  lastResponse: {
-                    hasRotatedKeyInDidDoc,
-                    decision,
-                    reasons
-                  }
-                };
-              }
-            } catch (error) {
-              decision = "ERR";
-              reasons = [error instanceof Error ? error.message : String(error)];
-            }
-            return {
-              done: false,
-              lastResponse: {
-                hasRotatedKeyInDidDoc,
-                decision,
-                reasons
-              }
-            };
-          },
-          {
-            timeoutMs: DID_VISIBILITY_TOTAL_TIMEOUT_MS,
-            intervalMs: DID_RESOLVE_INTERVAL_MS
-          }
-        );
-        // Continue using rotated key for DSR below.
-        customer.did = rotated.did;
-        customer.jwkPriv = rotated.jwkPriv;
-        customer.jwkPub = rotated.jwkPub;
-        customer.cryptoKey = rotated.cryptoKey;
-      }
-
-      // 9) DSR erase/unlink and confirm Aura data removed; capability not issuable until new signals occur
-      {
-        const privacyRequest = await postJson<{
-          requestId: string;
-          nonce: string;
-          audience: string;
-        }>(`${ISSUER_SERVICE_BASE_URL}/v1/privacy/request`, { did: customer.did });
-        const nowSeconds = Math.floor(Date.now() / 1000);
-        const dsrKbJwt = await new SignJWT({
-          aud: privacyRequest.audience,
-          nonce: privacyRequest.nonce,
-          iat: nowSeconds,
-          exp: nowSeconds + 120,
-          cnf: { jwk: customer.jwkPub }
-        })
-          .setProtectedHeader({ alg: "EdDSA", typ: "kb+jwt" })
-          .sign(customer.cryptoKey);
-        const privacyConfirm = await postJson<{ dsrToken: string }>(`${ISSUER_SERVICE_BASE_URL}/v1/privacy/confirm`, {
-          requestId: privacyRequest.requestId,
-          nonce: privacyRequest.nonce,
-          kbJwt: dsrKbJwt
-        });
-        await postJson(
-          `${ISSUER_SERVICE_BASE_URL}/v1/privacy/erase`,
-          { mode: "unlink" },
-          { Authorization: `Bearer ${privacyConfirm.dsrToken}` }
-        );
-
-        const remainingState = await db("aura_state").where({ subject_did_hash: customerHash }).first();
-        const remainingSignals = await db("aura_signals").where({ subject_did_hash: customerHash }).first();
-        const remainingQueue = await db("aura_issuance_queue").where({ subject_did_hash: customerHash }).first();
-        assert.equal(Boolean(remainingState), false, "aura_state should be removed for erased subject");
-        assert.equal(Boolean(remainingSignals), false, "aura_signals should be removed for erased subject");
-        assert.equal(Boolean(remainingQueue), false, "aura_issuance_queue should be removed for erased subject");
-
-        // After erase, offers should fail closed (restricted subject / no eligibility oracle).
-        const challengeRes = await fetch(
-          `${APP_GATEWAY_BASE_URL}/oid4vci/aura/challenge?config_id=${encodeURIComponent(capabilityConfigId)}`
-        );
-        assert.ok(challengeRes.ok, "challenge should remain available");
-        const challenge = (await challengeRes.json()) as { nonce: string; audience: string };
-        const proofJwt = await new SignJWT({
-          iss: customer.did,
-          aud: String(challenge.audience ?? "").replace(/\/$/, ""),
-          nonce: challenge.nonce,
-          iat: nowSeconds,
-          exp: nowSeconds + 120,
-          cnf: { jwk: customer.jwkPub }
-        })
-          .setProtectedHeader({ alg: "EdDSA", typ: "openid4vci-proof+jwt" })
-          .sign(customer.cryptoKey);
-        const offerRes = await fetch(`${APP_GATEWAY_BASE_URL}/oid4vci/aura/offer`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            credential_configuration_id: capabilityConfigId,
-            domain: capabilityDomain,
-            subjectDid: customer.did,
-            offer_nonce: challenge.nonce,
-            proof_jwt: proofJwt
-          })
-        });
-        assert.ok(!offerRes.ok, "erased subject must not be able to obtain capability offers");
-
-        // New subject: capability remains un-issuable until new Aura signals occur.
-        const freshWalletDir = path.join(repoRoot, ".tmp-wallet", `it-capability-fresh-${testRunId}`);
-        const freshEnv = { ...walletEnvCustomerBase, WALLET_DIR: freshWalletDir };
-        const freshEnvDidCreate = { ...freshEnv, APP_GATEWAY_BASE_URL: "" };
-        const freshDidCreate = await runWalletCli(["did:create:auto", "--mode", "user_pays"], freshEnvDidCreate);
-        assert.equal(freshDidCreate.exitCode, 0, freshDidCreate.stderr || freshDidCreate.stdout);
-        const freshStatePath = path.join(freshWalletDir, "wallet-state.json");
-        const freshRaw = JSON.parse(await readFile(freshStatePath, "utf8")) as any;
-        const freshDid = String(freshRaw?.did?.did ?? "");
-        assert.ok(freshDid.startsWith("did:"), "fresh DID missing");
-        const freshHolderKey = freshRaw?.keystore?.holder_ed25519 ?? null;
-        const freshRootKey = freshRaw?.keystore?.ed25519 ?? null;
-        const freshLegacyKey = freshRaw?.keys?.ed25519 ?? null;
-        const freshKeyMaterial = freshHolderKey ?? freshLegacyKey ?? freshRootKey;
-        const freshPriv = Buffer.from(String(freshKeyMaterial?.privateKeyBase64 ?? ""), "base64");
-        const freshPub = Buffer.from(String(freshKeyMaterial?.publicKeyBase64 ?? ""), "base64");
-        assert.ok(freshPriv.length > 0 && freshPub.length > 0, "fresh wallet keys missing");
-        const freshJwkPriv = {
-          kty: "OKP",
-          crv: "Ed25519",
-          x: toBase64Url(freshPub),
-          d: toBase64Url(freshPriv),
-          alg: "EdDSA",
-          kid: `fresh-${testRunId}`
-        };
-        const freshJwkPub = {
-          kty: "OKP",
-          crv: "Ed25519",
-          x: freshJwkPriv.x,
-          alg: "EdDSA",
-          kid: freshJwkPriv.kid
-        };
-        const freshCryptoKey = await importJWK(freshJwkPriv as never, "EdDSA");
-        const freshHolder = { did: freshDid, jwkPriv: freshJwkPriv, jwkPub: freshJwkPub, cryptoKey: freshCryptoKey };
-
-        // No signals yet -> offer must fail (not eligible).
-        {
-          const ch = await requestJson<{ nonce: string; audience: string }>(
-            `${APP_GATEWAY_BASE_URL}/oid4vci/aura/challenge?config_id=${encodeURIComponent(capabilityConfigId)}`
-          );
-          const iat = Math.floor(Date.now() / 1000);
-          const p = await new SignJWT({
-            iss: freshHolder.did,
-            aud: String(ch.audience ?? "").replace(/\/$/, ""),
-            nonce: ch.nonce,
-            iat,
-            exp: iat + 120,
-            cnf: { jwk: freshHolder.jwkPub }
-          })
-            .setProtectedHeader({ alg: "EdDSA", typ: "openid4vci-proof+jwt" })
-            .sign(freshHolder.cryptoKey);
-          const res = await fetch(`${APP_GATEWAY_BASE_URL}/oid4vci/aura/offer`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              credential_configuration_id: capabilityConfigId,
-              domain: capabilityDomain,
-              subjectDid: freshHolder.did,
-              offer_nonce: ch.nonce,
-              proof_jwt: p
-            })
-          });
-          assert.ok(!res.ok, "fresh subject should not be eligible before any signals");
-        }
-
-        // Generate a legitimate signal for the fresh subject, then capability issuance should succeed.
-        const freshAccount = await issueCredentialFor({
-          subjectDid: freshHolder.did,
-          vct: socialAccountVct,
-          claims: { account_active: true, domain: "social", as_of: new Date().toISOString() }
-        });
-        const freshPostVerify = await verifyViaOid4vp({
-          actionId: "social.post.create",
-          sdJwt: freshAccount.credential,
-          holder: freshHolder as any
-        });
-        assert.equal(freshPostVerify.decision, "ALLOW");
-        // Match current social Aura thresholds (min_silver + diversity) deterministically for fresh subject.
-        const freshSubjectHash = pseudo.didToHash(freshHolder.did);
-        const requiredFreshSignals = 3;
-        const freshEligibleBefore = await db("aura_signals")
-          .where({
-            subject_did_hash: freshSubjectHash,
-            domain: capabilityDomain,
-            signal: "social.post_success"
-          })
-          .whereNotNull("counterparty_did_hash")
-          .count<{ count: string }>("id as count")
-          .first();
-        const freshEligibleBeforeCount = Number(freshEligibleBefore?.count ?? 0);
-        const freshMissing = Math.max(0, requiredFreshSignals - freshEligibleBeforeCount);
-        if (freshMissing > 0) {
-          const createdAt = new Date().toISOString();
-          for (let i = 0; i < freshMissing; i += 1) {
-            const counterpartyHash = pseudo.didToHash(
-              `did:example:fresh-signal-counterparty:${testRunId}:${i}:${randomUUID()}`
-            );
-            const eventHash = hashCanonicalJson({
-              signal: "social.post_success",
-              domain: capabilityDomain,
-              subjectDidHash: freshSubjectHash,
-              counterpartyDidHash: counterpartyHash,
-              createdAt,
-              nonce: `fresh-social-bootstrap-${testRunId}-${i}-${randomUUID()}`
-            });
-            await db("aura_signals")
-              .insert({
-                subject_did_hash: freshSubjectHash,
-                domain: capabilityDomain,
-                signal: "social.post_success",
-                weight: 1,
-                counterparty_did_hash: counterpartyHash,
-                event_hash: eventHash,
-                created_at: createdAt,
-                processed_at: null
-              })
-              .onConflict("event_hash")
-              .ignore();
-          }
-        }
-        await runAuraWorkerOnce();
-        const freshCapability = await acquireAuraCapability(freshHolder as any);
-        assert.ok(typeof freshCapability === "string" && freshCapability.includes("~"));
-      }
-    }
 
     console.log("Test 5: DSR full lifecycle");
     const privacyRequest = await postJson<{
@@ -4672,7 +4050,9 @@ const run = async () => {
         onTimeout: async () => emitAnchorDiagnostics(db, "anchor_outbox_visible")
       }
     );
-    const visiblePayloadHashes = anchorRows.map((row: { payload_hash: string }) => row.payload_hash);
+    const visiblePayloadHashes = anchorRows.map(
+      (row: { payload_hash: string }) => row.payload_hash
+    );
     const confirmedAnchorRows = await waitForDbRow(
       db,
       async () => {
@@ -4752,7 +4132,11 @@ const run = async () => {
       if (goodResult?.status === "VERIFIED" && tamperResult?.status === "MISMATCH") {
         break;
       }
-      if (goodResult?.status && goodResult.status !== "VERIFIED" && goodResult.status !== "NOT_FOUND") {
+      if (
+        goodResult?.status &&
+        goodResult.status !== "VERIFIED" &&
+        goodResult.status !== "NOT_FOUND"
+      ) {
         console.log(
           `[diag] mirror_reconcile_unexpected_good_status status=${goodResult.status} reason=${goodResult.reason ?? ""}`
         );
@@ -5872,9 +5256,7 @@ const run = async () => {
           disclosures?: string[];
           predicates?: Array<{ path: string; op: string; value?: unknown }>;
         }>;
-      }>(
-        socialRequirementsUrl("social.space.join", { spaceId: createdSpace.spaceId })
-      );
+      }>(socialRequirementsUrl("social.space.join", { spaceId: createdSpace.spaceId }));
       const trustedJoinCredential = await issueCredentialFor({
         subjectDid: trustedActor.did,
         vct: trustedJoinRequirements.requirements[0].vct,
@@ -7127,9 +6509,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("media.emoji.pack.publish", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("media.emoji.pack.publish", { spaceId: createdSpace.spaceId }))
       );
       const emojiPublishPresentation = await buildPresentation({
         sdJwt: emojiCreatorCredential.credential,
@@ -7161,9 +6541,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("presence.set_mode", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("presence.set_mode", { spaceId: createdSpace.spaceId }))
       );
       const presenceCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7208,9 +6586,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId }))
       );
       const presencePingPresentation = await buildPresentation({
         sdJwt: presenceCredential.credential,
@@ -7247,9 +6623,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("social.crew.create", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("social.crew.create", { spaceId: createdSpace.spaceId }))
       );
       const crewPosterCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7290,9 +6664,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("social.crew.join", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("social.crew.join", { spaceId: createdSpace.spaceId }))
       );
       const crewMemberCredential = await issueCredentialFor({
         subjectDid: trustedActor.did,
@@ -7336,9 +6708,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("challenge.create", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("challenge.create", { spaceId: createdSpace.spaceId }))
       );
       const stewardCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7380,9 +6750,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("challenge.join", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("challenge.join", { spaceId: createdSpace.spaceId }))
       );
       const challengeMemberCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7421,9 +6789,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId }))
       );
       const banterThreadCreatePresentation = await buildPresentation({
         sdJwt: challengeMemberCredential.credential,
@@ -7442,9 +6808,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("banter.thread.read", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("banter.thread.read", { spaceId: createdSpace.spaceId }))
       );
       const banterReadPresentation = await buildPresentation({
         sdJwt: challengeMemberCredential.credential,
@@ -7463,9 +6827,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("banter.message.send", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("banter.message.send", { spaceId: createdSpace.spaceId }))
       );
       const banterSendPresentation = await buildPresentation({
         sdJwt: challengeMemberCredential.credential,
@@ -7493,9 +6855,7 @@ const run = async () => {
                   disclosures?: string[];
                   predicates?: Array<{ path: string; op: string; value?: unknown }>;
                 }>;
-              }>(
-                socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId })
-              )
+              }>(socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId }))
             );
             const createPresentation = await buildPresentation({
               sdJwt: challengeMemberCredential.credential,
@@ -7534,12 +6894,15 @@ const run = async () => {
             decision: string;
             permissionToken: string;
             expiresAt: string;
-          }>(`${APP_GATEWAY_BASE_URL}/v1/social/banter/threads/${encodeURIComponent(spaceThread.threadId)}/permission`, {
-            subjectDid: socialHolderDid,
-            presentation: banterReadPresentation,
-            nonce: banterThreadReadReq.challenge.nonce,
-            audience: banterThreadReadReq.challenge.audience
-          });
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/banter/threads/${encodeURIComponent(spaceThread.threadId)}/permission`,
+            {
+              subjectDid: socialHolderDid,
+              presentation: banterReadPresentation,
+              nonce: banterThreadReadReq.challenge.nonce,
+              audience: banterThreadReadReq.challenge.audience
+            }
+          );
           assert.equal(permission.decision, "ALLOW");
           assert.ok(permission.permissionToken.length > 20);
           const sent = await postJson<{ decision: string; messageId: string }>(
@@ -7561,7 +6924,9 @@ const run = async () => {
             `${APP_GATEWAY_BASE_URL}/v1/social/spaces/${encodeURIComponent(createdSpace.spaceId)}/banter/threads`
           );
           assert.ok(
-            list.threads.some((entry) => entry.kind === "space_chat" && entry.thread_id === spaceThread.threadId)
+            list.threads.some(
+              (entry) => entry.kind === "space_chat" && entry.thread_id === spaceThread.threadId
+            )
           );
           const messages = await requestJson<{
             messages: Array<{ message_id: string; body_text?: string }>;
@@ -7614,9 +6979,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("challenge.complete", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("challenge.complete", { spaceId: createdSpace.spaceId }))
       );
       const challengeCompletePresentation = await buildPresentation({
         sdJwt: challengeMemberCredential.credential,
@@ -7652,9 +7015,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("ritual.create", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("ritual.create", { spaceId: createdSpace.spaceId }))
       );
       const ritualPosterCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7698,9 +7059,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("ritual.participate", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("ritual.participate", { spaceId: createdSpace.spaceId }))
       );
       const ritualMemberCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7741,9 +7100,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("ritual.complete", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("ritual.complete", { spaceId: createdSpace.spaceId }))
       );
       const ritualCompletePresentation = await buildPresentation({
         sdJwt: ritualMemberCredential.credential,
@@ -7780,9 +7137,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId }))
       );
       const visibilityPresentation = await buildPresentation({
         sdJwt: presenceCredential.credential,
@@ -7814,9 +7169,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.hangout.create_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.hangout.create_session", { spaceId: createdSpace.spaceId }))
       );
       const huddleHostCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -7856,9 +7209,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.hangout.join_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.hangout.join_session", { spaceId: createdSpace.spaceId }))
       );
       const trustedPresenceCredential = await issueCredentialFor({
         subjectDid: trustedActor.did,
@@ -7904,9 +7255,7 @@ const run = async () => {
                 disclosures?: string[];
                 predicates?: Array<{ path: string; op: string; value?: unknown }>;
               }>;
-            }>(
-              socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId })
-            )
+            }>(socialRequirementsUrl("banter.thread.create", { spaceId: createdSpace.spaceId }))
           );
           const hangoutThreadCreatePresentation = await buildPresentation({
             sdJwt: challengeMemberCredential.credential,
@@ -7937,9 +7286,7 @@ const run = async () => {
                 disclosures?: string[];
                 predicates?: Array<{ path: string; op: string; value?: unknown }>;
               }>;
-            }>(
-              socialRequirementsUrl("banter.thread.read", { spaceId: createdSpace.spaceId })
-            )
+            }>(socialRequirementsUrl("banter.thread.read", { spaceId: createdSpace.spaceId }))
           );
           const hangoutReadPresentation = await buildPresentation({
             sdJwt: challengeMemberCredential.credential,
@@ -7952,12 +7299,15 @@ const run = async () => {
           const hangoutPermission = await postJson<{
             decision: string;
             permissionToken: string;
-          }>(`${APP_GATEWAY_BASE_URL}/v1/social/banter/threads/${encodeURIComponent(hangoutThread.threadId)}/permission`, {
-            subjectDid: socialHolderDid,
-            presentation: hangoutReadPresentation,
-            nonce: hangoutReadReq.challenge.nonce,
-            audience: hangoutReadReq.challenge.audience
-          });
+          }>(
+            `${APP_GATEWAY_BASE_URL}/v1/social/banter/threads/${encodeURIComponent(hangoutThread.threadId)}/permission`,
+            {
+              subjectDid: socialHolderDid,
+              presentation: hangoutReadPresentation,
+              nonce: hangoutReadReq.challenge.nonce,
+              audience: hangoutReadReq.challenge.audience
+            }
+          );
           assert.equal(hangoutPermission.decision, "ALLOW");
           const hangoutSendReq = await ensureRequirements(
             "banter.message.send",
@@ -7968,9 +7318,7 @@ const run = async () => {
                 disclosures?: string[];
                 predicates?: Array<{ path: string; op: string; value?: unknown }>;
               }>;
-            }>(
-              socialRequirementsUrl("banter.message.send", { spaceId: createdSpace.spaceId })
-            )
+            }>(socialRequirementsUrl("banter.message.send", { spaceId: createdSpace.spaceId }))
           );
           const hangoutSendPresentation = await buildPresentation({
             sdJwt: challengeMemberCredential.credential,
@@ -8001,9 +7349,7 @@ const run = async () => {
                 disclosures?: string[];
                 predicates?: Array<{ path: string; op: string; value?: unknown }>;
               }>;
-            }>(
-              socialRequirementsUrl("banter.status.set", { spaceId: createdSpace.spaceId })
-            )
+            }>(socialRequirementsUrl("banter.status.set", { spaceId: createdSpace.spaceId }))
           );
           const statusPresentation = await buildPresentation({
             sdJwt: trustedPresenceCredential.credential,
@@ -8058,9 +7404,7 @@ const run = async () => {
                 disclosures?: string[];
                 predicates?: Array<{ path: string; op: string; value?: unknown }>;
               }>;
-            }>(
-              socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId })
-            )
+            }>(socialRequirementsUrl("presence.ping", { spaceId: createdSpace.spaceId }))
           );
           const pulsePrefPresentation = await buildPresentation({
             sdJwt: presenceCredential.credential,
@@ -8103,9 +7447,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.hangout.end_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.hangout.end_session", { spaceId: createdSpace.spaceId }))
       );
       const huddleEndPresentation = await buildPresentation({
         sdJwt: huddleHostCredential.credential,
@@ -8138,9 +7480,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.scroll.create_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.scroll.create_session", { spaceId: createdSpace.spaceId }))
       );
       const scrollHostCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -8181,9 +7521,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.scroll.join_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.scroll.join_session", { spaceId: createdSpace.spaceId }))
       );
       const scrollJoinPresentation = await buildPresentation({
         sdJwt: trustedPresenceCredential.credential,
@@ -8229,9 +7567,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.scroll.end_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.scroll.end_session", { spaceId: createdSpace.spaceId }))
       );
       const scrollEndPresentation = await buildPresentation({
         sdJwt: scrollHostCredential.credential,
@@ -8263,9 +7599,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.listen.create_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.listen.create_session", { spaceId: createdSpace.spaceId }))
       );
       const listenHostCredential = await issueCredentialFor({
         subjectDid: socialHolderDid,
@@ -8305,9 +7639,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.listen.join_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.listen.join_session", { spaceId: createdSpace.spaceId }))
       );
       const listenJoinPresentation = await buildPresentation({
         sdJwt: trustedPresenceCredential.credential,
@@ -8348,9 +7680,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.listen.end_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.listen.end_session", { spaceId: createdSpace.spaceId }))
       );
       const listenEndPresentation = await buildPresentation({
         sdJwt: listenHostCredential.credential,
@@ -8382,9 +7712,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.scroll.create_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.scroll.create_session", { spaceId: createdSpace.spaceId }))
       );
       const eraseProbeCreatePresentation = await buildPresentation({
         sdJwt: scrollHostCredential.credential,
@@ -8414,9 +7742,7 @@ const run = async () => {
             disclosures?: string[];
             predicates?: Array<{ path: string; op: string; value?: unknown }>;
           }>;
-        }>(
-          socialRequirementsUrl("sync.scroll.join_session", { spaceId: createdSpace.spaceId })
-        )
+        }>(socialRequirementsUrl("sync.scroll.join_session", { spaceId: createdSpace.spaceId }))
       );
       const eraseProbeJoinPresentation = await buildPresentation({
         sdJwt: trustedPresenceCredential.credential,

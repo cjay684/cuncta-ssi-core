@@ -12,7 +12,6 @@
     "dev:issuer": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/issuer-service dev",
     "dev:verifier": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/verifier-service dev",
     "dev:policy": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/policy-service dev",
-    "dev:social": "pnpm migrate && cross-env AUTO_MIGRATE=false pnpm -C apps/social-service dev",
     "prepare": "husky",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
