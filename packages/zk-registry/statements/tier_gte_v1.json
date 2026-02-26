@@ -1,0 +1,57 @@
+{
+  "statement_id": "tier_gte_v1",
+  "version": "0.1.0",
+  "proof_system": "groth16_bn254",
+  "circuit_id": "tier_gte_v1_bn254",
+  "proving_key_ref": {
+    "path": "packages/zk-tier-snark/artifacts/tier_gte_v1/tier_gte_v1.zkey",
+    "sha256_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "verifying_key_ref": {
+    "path": "packages/zk-tier-snark/artifacts/tier_gte_v1/tier_gte_v1.verification_key.json",
+    "sha256_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "public_inputs_schema": {
+    "type": "object",
+    "properties": {
+      "tier_commitment": { "type": "string" },
+      "min_tier": { "type": "integer" },
+      "nonce_hash": { "type": "string" },
+      "audience_hash": { "type": "string" },
+      "request_hash": { "type": "string" }
+    },
+    "required": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"]
+  },
+  "public_inputs_order": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"],
+  "required_bindings": ["nonce", "audience", "request_hash"],
+  "credential": {
+    "credential_config_id": "tier_credential_v1",
+    "vct": "tier_credential_v1",
+    "format": "dc+sd-jwt",
+    "required_disclosures": ["tier_commitment", "commitment_scheme_version"]
+  },
+  "credential_requirements": {
+    "required_commitment_fields": ["tier_commitment", "commitment_scheme_version"],
+    "commitment_scheme_versions_allowed": ["0000000000000000000000000000000000000000000000000000000000000000"]
+  },
+  "zk_context_requirements": {},
+  "issuer_contract": {
+    "allowed_claims": ["tier_commitment", "commitment_scheme_version"],
+    "required_claims": ["tier_commitment", "commitment_scheme_version"]
+  },
+  "verifier_contract": {
+    "required_public_inputs": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"],
+    "binding_public_inputs": { "nonce": "nonce_hash", "audience": "audience_hash", "request_hash": "request_hash" },
+    "param_constraints": [{ "param": "min_tier", "public_input": "min_tier", "op": "eq" }],
+    "context_constraints": []
+  },
+  "wallet_contract": {
+    "witness_builder_id": "witness:tier_v1_bn254",
+    "commitment_builder_id": "poseidon_v1_bn254_stub",
+    "witness_inputs_schema": {}
+  },
+  "issuance": { "enabled": false },
+  "privacy_notes": "Stub to demonstrate data-driven extensibility; circuit and keys not shipped yet.",
+  "deprecated": false
+}
+

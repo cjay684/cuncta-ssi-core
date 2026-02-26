@@ -4,16 +4,22 @@
 
 ```mermaid
 flowchart LR
-  client[Client / Wallet] -->|present| appgw[app-gateway]
-  appgw --> did[did-service]
-  appgw --> issuer[issuer-service]
-  appgw --> verifier[verifier-service]
-  appgw --> policy[policy-service]
+  wallet[Wallet / Client] -->|HTTPS (public)| gw[app-gateway]
 
-  issuer --> db[(Postgres)]
+  gw -->|service JWT (private)| did[did-service]
+  gw -->|service JWT (private)| issuer[issuer-service]
+  gw -->|service JWT (private)| verifier[verifier-service]
+  gw -->|service JWT (private)| policy[policy-service]
+
+  did --> db[(Postgres)]
+  issuer --> db
   verifier --> db
   policy --> db
-  did --> db
+
+  did -->|Hiero DID registrar/resolver| hedera[(Hedera HCS)]
+  issuer -->|Anchors / audit / receipts| hedera
+  did --> mirror[Hedera Mirror Node]
+  issuer --> mirror
 ```
 
 ## Verification Flow
@@ -21,15 +27,27 @@ flowchart LR
 ```mermaid
 sequenceDiagram
   participant Wallet
-  participant Policy
-  participant Verifier
-  participant Issuer
-  Wallet->>Policy: GET /v1/requirements?action=...
-  Policy-->>Wallet: requirements + nonce + audience
-  Wallet->>Verifier: POST /v1/verify (SD-JWT + KB-JWT)
-  Verifier->>Issuer: GET /jwks.json
+  participant Gateway as app-gateway
+  participant Policy as policy-service
+  participant Verifier as verifier-service
+  participant Issuer as issuer-service
+
+  Wallet->>Gateway: GET /oid4vp/request?action=...
+  Gateway->>Policy: GET /v1/requirements?action=...&verifier_origin=<gateway-origin>
+  Policy-->>Gateway: requirements + nonce + origin-scoped audience
+  Gateway->>Verifier: POST /v1/request/sign (service JWT)
+  Verifier-->>Gateway: request_jwt (EdDSA)
+  Gateway-->>Wallet: OID4VP request object + request_jwt
+
+  Wallet->>Gateway: GET /.well-known/jwks.json (derived from request_jwt.iss)
+  Gateway-->>Wallet: JWKS (verifier signing key)
+
+  Wallet->>Gateway: POST /oid4vp/response (SD-JWT presentation + KB-JWT)
+  Gateway->>Verifier: POST /oid4vp/response (proxy)
+  Verifier->>Issuer: GET /jwks.json (credential signing + status list keys)
   Verifier->>Policy: POST /v1/policy/evaluate
-  Verifier-->>Wallet: decision + reasons
+  Verifier-->>Gateway: decision + reasons
+  Gateway-->>Wallet: decision (+ optional debug reasons)
 ```
 
 ## DSR Flow (Privacy)

@@ -134,7 +134,7 @@ This is the line between "code is correct" and "system is proven."
 - README explains:
   - testnet vs mainnet posture
   - gateway-only requirement
-  - self-funded vs sponsored onboarding
+  - self-funded onboarding
 - `.env.example` documents all safety-critical flags
 - Known warnings documented (Node loader, fs.Stats)
 - Runbooks exist for:

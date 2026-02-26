@@ -5,7 +5,10 @@ const TEST_SECRET_HEX = "0123456789abcdef".repeat(4);
 process.env.NODE_ENV = "development";
 process.env.ALLOW_INSECURE_DEV_AUTH = "true";
 process.env.SERVICE_BIND_ADDRESS = "127.0.0.1";
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
 process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.DID_SERVICE_BASE_URL = "http://did.test";
 process.env.ISSUER_DID = "did:example:issuer";
 process.env.ISSUER_JWK = JSON.stringify({
   kty: "OKP",
@@ -27,6 +30,19 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  let msg = "";
+  if (error instanceof Error) {
+    msg = error.message;
+  } else {
+    try {
+      msg = JSON.stringify(error);
+    } catch {
+      msg = "[non-Error thrown]";
+    }
+  }
+  console.error(msg);
+  // Also log the raw object for debugging; some thrown objects are non-enumerable.
+  // eslint-disable-next-line no-console
+  console.error(error);
   process.exit(1);
 });

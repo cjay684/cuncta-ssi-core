@@ -220,6 +220,9 @@ export const processAnchorOutboxOnce = async (
             kind: row.event_type,
             sha256: row.payload_hash,
             metadata: payloadMeta
+          }, {
+            maxFeeTinybars: config.ANCHOR_PUBLISH_MAX_FEE_TINYBARS,
+            maxMessageBytes: config.ANCHOR_MESSAGE_MAX_BYTES
           });
       log.info("anchor.worker.phase", {
         phase: "publish_hcs",
@@ -266,6 +269,10 @@ export const processAnchorOutboxOnce = async (
       hadError = true;
       const message = error instanceof Error ? error.message : "anchor_failed";
       workerStatus.lastError = message;
+      if (message === "anchor_message_too_large") {
+        await markDead(row, message, attemptCount + 1);
+        continue;
+      }
       if (attemptCount + 1 >= config.ANCHOR_MAX_ATTEMPTS) {
         await db("anchor_outbox")
           .where({ outbox_id: row.outbox_id })

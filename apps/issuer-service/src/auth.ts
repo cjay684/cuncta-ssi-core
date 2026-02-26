@@ -6,7 +6,7 @@ import { log } from "./log.js";
 export const requireServiceAuth = async (
   request: FastifyRequest,
   reply: FastifyReply,
-  options?: { requiredScopes?: string[] }
+  options?: { requiredScopes?: string[]; requireAdminScope?: string[] }
 ) => {
   const serviceSecret =
     config.SERVICE_JWT_SECRET_ISSUER ??
@@ -45,7 +45,8 @@ export const requireServiceAuth = async (
         secret: serviceSecret,
         issuer: "app-gateway",
         subject: "app-gateway",
-        requiredScopes: options?.requiredScopes
+        requiredScopes: options?.requiredScopes,
+        requireAdminScope: options?.requireAdminScope
       });
     } catch (error) {
       if (error instanceof Error && error.message === "jwt_missing_required_scope") {
@@ -57,7 +58,8 @@ export const requireServiceAuth = async (
           secret: nextSecret,
           issuer: "app-gateway",
           subject: "app-gateway",
-          requiredScopes: options?.requiredScopes
+          requiredScopes: options?.requiredScopes,
+          requireAdminScope: options?.requireAdminScope
         });
       } else {
         throw error;

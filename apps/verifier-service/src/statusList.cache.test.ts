@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 
+// Keep tests deterministic regardless of developer `.env`.
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
+
 process.env.NODE_ENV = "test";
 process.env.ISSUER_SERVICE_BASE_URL = "http://issuer.test";
 process.env.POLICY_SERVICE_BASE_URL = "http://policy.test";

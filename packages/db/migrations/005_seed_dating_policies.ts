@@ -22,10 +22,12 @@ export async function up(knex: Knex): Promise<void> {
       binding: { mode: "kb-jwt", require: true },
       requirements: [
         {
-          vct: "cuncta.age_over_18",
+          vct: "age_credential_v1",
           issuer: { mode: "env", env: "ISSUER_DID" },
-          disclosures: ["age_over_18"],
-          predicates: [{ path: "age_over_18", op: "eq", value: true }],
+          formats: ["dc+sd-jwt"],
+          zk_predicates: [{ id: "age_gte_v1", params: { min_age: 18 } }],
+          disclosures: ["dob_commitment", "commitment_scheme_version"],
+          predicates: [],
           revocation: { required: true }
         }
       ],

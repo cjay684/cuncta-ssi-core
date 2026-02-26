@@ -17,6 +17,8 @@ export const verifyServiceJwt = async (
     issuer?: string;
     subject?: string;
     requiredScopes?: string[];
+    /** When set, token must have admin:* OR all of these scopes. For /v1/admin/* routes. */
+    requireAdminScope?: string[];
   }
 ) => {
   const key = textEncoder.encode(options.secret);
@@ -28,13 +30,20 @@ export const verifyServiceJwt = async (
   if (!payload.exp || !payload.aud) {
     throw new Error("jwt_missing_required_claims");
   }
-  if (options.requiredScopes && options.requiredScopes.length > 0) {
-    const scopeValue = payload.scope;
-    const tokenScopes = Array.isArray(scopeValue)
-      ? scopeValue.map(String)
-      : typeof scopeValue === "string"
-        ? scopeValue.split(" ").filter(Boolean)
-        : [];
+  const scopeValue = payload.scope;
+  const tokenScopes = Array.isArray(scopeValue)
+    ? scopeValue.map(String)
+    : typeof scopeValue === "string"
+      ? scopeValue.split(" ").filter(Boolean)
+      : [];
+
+  if (options.requireAdminScope && options.requireAdminScope.length > 0) {
+    const hasAdminWildcard = tokenScopes.includes("admin:*");
+    const hasRequiredScopes = options.requireAdminScope.every((scope) => tokenScopes.includes(scope));
+    if (!hasAdminWildcard && !hasRequiredScopes) {
+      throw new Error("jwt_missing_required_scope");
+    }
+  } else if (options.requiredScopes && options.requiredScopes.length > 0) {
     if (!options.requiredScopes.every((scope) => tokenScopes.includes(scope))) {
       throw new Error("jwt_missing_required_scope");
     }

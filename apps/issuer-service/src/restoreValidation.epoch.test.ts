@@ -9,8 +9,48 @@ dotenv.config({
 });
 
 test("fails startup when privacy erase epoch regresses", async () => {
+  const TEST_SECRET_HEX = "0123456789abcdef".repeat(4);
   process.env.NODE_ENV = "production";
   process.env.BACKUP_RESTORE_MODE = "false";
+  process.env.TRUST_PROXY = "true";
+  process.env.SERVICE_BIND_ADDRESS = "127.0.0.1";
+  process.env.ISSUER_BASE_URL = process.env.ISSUER_BASE_URL ?? "http://issuer.test";
+  process.env.DID_SERVICE_BASE_URL = process.env.DID_SERVICE_BASE_URL ?? "http://did.test";
+  process.env.ISSUER_DID = process.env.ISSUER_DID ?? "did:example:issuer";
+  process.env.ISSUER_JWK =
+    process.env.ISSUER_JWK ??
+    JSON.stringify({
+      kty: "OKP",
+      crv: "Ed25519",
+      x: "test",
+      d: "test",
+      alg: "EdDSA",
+      kid: "issuer-1"
+    });
+  process.env.OID4VCI_TOKEN_SIGNING_JWK =
+    process.env.OID4VCI_TOKEN_SIGNING_JWK ??
+    JSON.stringify({
+      kty: "OKP",
+      crv: "Ed25519",
+      x: "test",
+      d: "test",
+      alg: "EdDSA",
+      kid: "oid4vci-token-1"
+    });
+  process.env.OID4VCI_TOKEN_SIGNING_BOOTSTRAP = "false";
+  process.env.POLICY_SIGNING_JWK =
+    process.env.POLICY_SIGNING_JWK ??
+    JSON.stringify({
+      kty: "OKP",
+      crv: "Ed25519",
+      x: "test",
+      d: "test",
+      alg: "EdDSA",
+      kid: "policy-1"
+    });
+  process.env.ANCHOR_AUTH_SECRET = process.env.ANCHOR_AUTH_SECRET ?? "change-me-anchor-secret";
+  process.env.SERVICE_JWT_SECRET = process.env.SERVICE_JWT_SECRET ?? TEST_SECRET_HEX;
+  process.env.SERVICE_JWT_SECRET_ISSUER = process.env.SERVICE_JWT_SECRET_ISSUER ?? TEST_SECRET_HEX;
   process.env.PSEUDONYMIZER_PEPPER = "pepper-test-restore-epoch-123456";
   process.env.PRIVACY_ERASE_EPOCH_EXPECTED = "2";
   process.env.DATABASE_URL =

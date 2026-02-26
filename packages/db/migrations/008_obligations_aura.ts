@@ -178,6 +178,7 @@ export async function up(knex: Knex): Promise<void> {
       output_vct: "cuncta.marketplace.seller_good_standing",
       version: 1,
       rule_logic: toJson({
+        purpose: "Capability to list items in the marketplace (good standing entitlement)",
         window_days: 30,
         signals: ["marketplace.listing_success"],
         score: { min_silver: 5, min_gold: 12 },
@@ -200,6 +201,7 @@ export async function up(knex: Knex): Promise<void> {
       output_vct: "cuncta.marketplace.trusted_seller_tier",
       version: 1,
       rule_logic: toJson({
+        purpose: "Capability to list high-value items in the marketplace (trusted seller tier entitlement)",
         window_days: 30,
         signals: ["marketplace.listing_success"],
         score: { min_silver: 8, min_gold: 16 },

@@ -10,8 +10,8 @@ const revokeSchema = z.object({
 });
 
 export const registerKeyRoutes = (app: FastifyInstance) => {
-  app.post("/v1/internal/keys/rotate", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:key_rotate"] });
+  app.post("/v1/admin/keys/rotate", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:key_rotate"] });
     if (reply.sent) return;
     try {
       const result = await rotateIssuerKey();
@@ -29,8 +29,8 @@ export const registerKeyRoutes = (app: FastifyInstance) => {
     }
   });
 
-  app.post("/v1/internal/keys/revoke", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:key_revoke"] });
+  app.post("/v1/admin/keys/revoke", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:key_revoke"] });
     if (reply.sent) return;
     const body = revokeSchema.parse(request.body);
     try {

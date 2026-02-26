@@ -409,6 +409,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.can_post",
     version: 1,
     rule_logic: {
+      purpose: "Capability to create social posts (anti-spam entitlement)",
       window_days: 30,
       signals: ["social.post_success"],
       score: { min_silver: 3, min_gold: 10 },
@@ -432,6 +433,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.can_comment",
     version: 1,
     rule_logic: {
+      purpose: "Capability to create social replies/comments (anti-spam entitlement)",
       window_days: 30,
       signals: ["social.post_success"],
       score: { min_silver: 2, min_gold: 8 },
@@ -455,6 +457,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.can_follow",
     version: 1,
     rule_logic: {
+      purpose: "Capability to follow social profiles (anti-abuse entitlement)",
       window_days: 30,
       signals: ["social.comment_success", "social.post_success"],
       score: { min_silver: 3, min_gold: 12 },
@@ -477,6 +480,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.community_member",
     version: 1,
     rule_logic: {
+      purpose: "Capability to join the default social community (membership entitlement)",
       window_days: 30,
       signals: ["social.post_success", "social.comment_success"],
       score: { min_silver: 4, min_gold: 12 },

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { buildPrivacyKbjwt, loadWalletState } from "./privacyKbjwt.js";
+import { buildPrivacyKbjwt } from "./privacyKbjwt.js";
+import { loadWalletState } from "../walletStore.js";
 
 const envSchema = z.object({
   ISSUER_SERVICE_BASE_URL: z.string().url()

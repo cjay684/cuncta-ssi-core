@@ -7,6 +7,7 @@ process.env.DEV_MODE = "true";
 process.env.TRUST_PROXY = "true";
 process.env.SERVICE_BIND_ADDRESS = "127.0.0.1";
 process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.DID_SERVICE_BASE_URL = "http://did.test";
 process.env.ISSUER_DID = "did:example:issuer";
 process.env.ISSUER_JWK = JSON.stringify({
   kty: "OKP",
@@ -16,6 +17,15 @@ process.env.ISSUER_JWK = JSON.stringify({
   alg: "EdDSA",
   kid: "issuer-1"
 });
+process.env.OID4VCI_TOKEN_SIGNING_JWK = JSON.stringify({
+  kty: "OKP",
+  crv: "Ed25519",
+  x: "test",
+  d: "test",
+  alg: "EdDSA",
+  kid: "oid4vci-token-1"
+});
+process.env.OID4VCI_TOKEN_SIGNING_BOOTSTRAP = "false";
 process.env.PSEUDONYMIZER_PEPPER = process.env.PSEUDONYMIZER_PEPPER ?? "test-pepper";
 process.env.POLICY_SIGNING_JWK = JSON.stringify({
   kty: "OKP",

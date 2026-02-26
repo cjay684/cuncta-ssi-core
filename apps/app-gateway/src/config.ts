@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import path from "path";
 import net from "node:net";
 import { z } from "zod";
+import { defaultFeeBudgets, parseFeeBudgetsJson } from "@cuncta/hedera";
 
 dotenv.config({
   path: path.resolve(process.cwd(), "../../.env")
@@ -23,6 +24,7 @@ const toCsvList = (value: unknown) => {
     .map((entry) => entry.trim())
     .filter(Boolean);
 };
+const isHederaAccountId = (value: string) => /^0\.0\.\d+$/.test(value);
 
 const isBase64UrlSecret = (value: string) => /^[A-Za-z0-9_-]+$/.test(value) && value.length >= 43;
 
@@ -47,6 +49,9 @@ const envSchema = z.object({
   SOCIAL_SERVICE_BASE_URL: z.string().url().optional(),
   VERIFIER_SERVICE_BASE_URL: z.string().url().optional(),
   POLICY_SERVICE_BASE_URL: z.string().url().optional(),
+  APP_GATEWAY_PUBLIC_BASE_URL: z.string().url().optional(),
+  GATEWAY_SIGN_OID4VP_REQUEST: z.preprocess((v) => v !== "false", z.boolean()).default(true),
+  BREAK_GLASS_DISABLE_STRICT: z.preprocess((v) => v === "true", z.boolean()).default(false),
   SERVICE_JWT_SECRET: z.string().min(32),
   SERVICE_JWT_SECRET_DID: z.string().min(32).optional(),
   SERVICE_JWT_SECRET_ISSUER: z.string().min(32).optional(),
@@ -74,18 +79,23 @@ const envSchema = z.object({
   ALLOW_SELF_FUNDED_ONBOARDING: z
     .preprocess((value) => value !== "false", z.boolean())
     .default(true),
-  ALLOW_SPONSORED_ONBOARDING: z.preprocess((value) => value !== "false", z.boolean()).default(true),
   USER_PAYS_HANDOFF_SECRET: z.preprocess(
     (value) => (value ? value : undefined),
     z.string().min(32).optional()
   ),
   PSEUDONYMIZER_PEPPER: z.string().min(10),
+  // ZK tracks are optional and require explicit opt-in in production.
+  ALLOW_EXPERIMENTAL_ZK: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined;
+    return value === "true";
+  }, z.boolean().optional()),
   BODY_LIMIT_BYTES: z.preprocess(toNumber(64 * 1024), z.number().int().min(1024)),
   RATE_LIMIT_IP_DEFAULT_PER_MIN: z.preprocess(toNumber(120), z.number().int().min(1)),
   RATE_LIMIT_IP_DID_REQUEST_PER_MIN: z.preprocess(toNumber(10), z.number().int().min(1)),
   RATE_LIMIT_IP_DID_SUBMIT_PER_MIN: z.preprocess(toNumber(5), z.number().int().min(1)),
   RATE_LIMIT_IP_ISSUE_PER_MIN: z.preprocess(toNumber(10), z.number().int().min(1)),
   RATE_LIMIT_IP_VERIFY_PER_MIN: z.preprocess(toNumber(60), z.number().int().min(1)),
+  RATE_LIMIT_IP_COMMAND_PER_MIN: z.preprocess(toNumber(60), z.number().int().min(1)),
   RATE_LIMIT_DEVICE_REQUIREMENTS_PER_MIN: z.preprocess(toNumber(60), z.number().int().min(1)),
   RATE_LIMIT_DEVICE_DID_PER_DAY: z.preprocess(toNumber(3), z.number().int().min(1)),
   RATE_LIMIT_DEVICE_ISSUE_PER_MIN: z.preprocess(toNumber(10), z.number().int().min(1)),
@@ -95,18 +105,46 @@ const envSchema = z.object({
     toNumber(50_000_000),
     z.number().int().min(1).max(1_000_000_000)
   ),
+  // Data-driven per-transaction budgets (defaults to the legacy USER_PAYS_* caps).
+  USER_PAYS_FEE_BUDGETS_JSON: z.string().default(""),
   GATEWAY_ALLOWED_VCTS: z.preprocess(toCsvList, z.array(z.string()).default([])),
   GATEWAY_REQUIREMENTS_ALLOWED_ACTIONS: z.preprocess(toCsvList, z.array(z.string()).default([])),
   REQUIRE_DEVICE_ID_FOR_REQUIREMENTS: z
     .preprocess((value) => value === "true", z.boolean())
     .default(false),
   DATABASE_URL: z.string().default("postgres://cuncta:cuncta@localhost:5432/cuncta_ssi"),
-  SPONSOR_MAX_DID_CREATES_PER_DAY: z.preprocess(toNumber(500), z.number().int().min(1)),
-  SPONSOR_MAX_ISSUES_PER_DAY: z.preprocess(toNumber(2000), z.number().int().min(1)),
-  SPONSOR_KILL_SWITCH: z.preprocess((value) => value === "true", z.boolean()).default(false),
+  REALTIME_ALLOW_QUERY_TOKEN: z.preprocess((value) => value !== "false", z.boolean()).default(true),
+  REALTIME_SOCIAL_FETCH_TIMEOUT_MS: z.preprocess(
+    toNumber(2500),
+    z.number().int().min(250).max(120_000)
+  ),
+  VERIFIER_PROXY_TIMEOUT_MS: z.preprocess(toNumber(2500), z.number().int().min(250).max(30_000)),
+  COMMAND_PLANNER_REQUIREMENTS_TIMEOUT_MS: z.preprocess(
+    toNumber(1500),
+    z.number().int().min(250).max(30_000)
+  ),
+  COMMAND_PLANNER_VERIFY_TIMEOUT_MS: z.preprocess(
+    toNumber(2000),
+    z.number().int().min(250).max(30_000)
+  ),
+  COMMAND_AUDIT_CLEANUP_ENABLED: z.preprocess((value) => value !== "false", z.boolean()).default(true),
+  COMMAND_AUDIT_RETENTION_DAYS: z.preprocess(toNumber(90), z.number().int().min(1).max(3650)),
+  COMMAND_AUDIT_CLEANUP_THROTTLE_MS: z.preprocess(
+    toNumber(5 * 60 * 1000),
+    z.number().int().min(1_000).max(86_400_000)
+  ),
+  COMMAND_AUDIT_CLEANUP_BATCH_SIZE: z.preprocess(toNumber(1000), z.number().int().min(1).max(5000)),
+  COMMAND_FEE_SCHEDULE_JSON: z.string().default(""),
+  PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET: z.string().default(""),
+  PAYMENTS_RECEIVER_ACCOUNT_ID_MAINNET: z.string().default(""),
+  HEDERA_TX_MEMO_MAX_BYTES: z.preprocess(toNumber(100), z.number().int().min(16).max(256)),
+  REALTIME_WS_POLL_MS: z.preprocess(toNumber(1000), z.number().int().min(250).max(10_000)),
   STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional()
 });
 
+if (process.env.ALLOW_SPONSORED_ONBOARDING === "true") {
+  throw new Error("ALLOW_SPONSORED_ONBOARDING is not supported. CUNCTA supports self-funded onboarding only.");
+}
 const parsed = envSchema.parse(process.env);
 const isValidIpOrCidr = (entry: string) => {
   const trimmed = entry.trim();
@@ -140,6 +178,30 @@ if (parsed.ALLOW_SELF_FUNDED_ONBOARDING && !parsed.USER_PAYS_HANDOFF_SECRET) {
 }
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
+}
+if (
+  parsed.BREAK_GLASS_DISABLE_STRICT &&
+  parsed.NODE_ENV === "production"
+) {
+  throw new Error("break_glass_forbidden_in_production");
+}
+if (parsed.BREAK_GLASS_DISABLE_STRICT) {
+  console.warn(
+    "[BREAK_GLASS] BREAK_GLASS_DISABLE_STRICT=true — strict posture disabled. " +
+      "Never use on mainnet or in production."
+  );
+}
+if (
+  parsed.PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET &&
+  !isHederaAccountId(parsed.PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET)
+) {
+  throw new Error("payments_receiver_account_id_testnet_invalid");
+}
+if (
+  parsed.PAYMENTS_RECEIVER_ACCOUNT_ID_MAINNET &&
+  !isHederaAccountId(parsed.PAYMENTS_RECEIVER_ACCOUNT_ID_MAINNET)
+) {
+  throw new Error("payments_receiver_account_id_mainnet_invalid");
 }
 const strictDbRole = parsed.STRICT_DB_ROLE ?? parsed.NODE_ENV === "production";
 if (parsed.NODE_ENV === "production" && !strictDbRole) {
@@ -190,9 +252,32 @@ if (strictSecrets) {
 }
 const serviceBindAddress =
   parsed.SERVICE_BIND_ADDRESS ?? (parsed.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");
+const gatewayPublicBaseUrl =
+  parsed.APP_GATEWAY_PUBLIC_BASE_URL ??
+  (parsed.NODE_ENV !== "production" ? "http://localhost:3010" : undefined);
+const allowExperimentalZk = parsed.ALLOW_EXPERIMENTAL_ZK ?? parsed.NODE_ENV !== "production";
+if (parsed.NODE_ENV === "production" && allowExperimentalZk) {
+  console.warn(
+    "[EXPERIMENTAL] ALLOW_EXPERIMENTAL_ZK=true — ZK/DI features enabled in production; ensure ceremony-grade artifacts."
+  );
+}
+const userPaysFeeBudgets = parseFeeBudgetsJson(
+  parsed.USER_PAYS_FEE_BUDGETS_JSON,
+  defaultFeeBudgets({
+    userPaysMaxFeeTinybars: parsed.USER_PAYS_MAX_FEE_TINYBARS,
+    userPaysMaxTxBytes: parsed.USER_PAYS_MAX_TX_BYTES
+  })
+);
 export const config = {
   ...parsed,
+  ALLOW_EXPERIMENTAL_ZK: allowExperimentalZk,
   STRICT_DB_ROLE: strictDbRole,
   SERVICE_BIND_ADDRESS: serviceBindAddress,
-  SERVICE_JWT_SECRET_FORMAT_STRICT: strictSecrets
+  SERVICE_JWT_SECRET_FORMAT_STRICT: strictSecrets,
+  APP_GATEWAY_PUBLIC_BASE_URL: gatewayPublicBaseUrl,
+  USER_PAYS_FEE_BUDGETS: userPaysFeeBudgets,
+  BREAK_GLASS_DISABLE_STRICT: parsed.BREAK_GLASS_DISABLE_STRICT ?? false,
+  GATEWAY_SIGN_OID4VP_REQUEST: parsed.BREAK_GLASS_DISABLE_STRICT
+    ? false
+    : (parsed.GATEWAY_SIGN_OID4VP_REQUEST ?? true)
 };

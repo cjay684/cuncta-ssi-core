@@ -38,6 +38,15 @@ const run = async () => {
           alg: "EdDSA",
           kid: "issuer-1"
         }),
+        OID4VCI_TOKEN_SIGNING_JWK: JSON.stringify({
+          kty: "OKP",
+          crv: "Ed25519",
+          x: "test",
+          d: "test",
+          alg: "EdDSA",
+          kid: "oid4vci-token-1"
+        }),
+        OID4VCI_TOKEN_SIGNING_BOOTSTRAP: "false",
         SERVICE_JWT_SECRET: TEST_SECRET_HEX,
         SERVICE_JWT_SECRET_ISSUER: TEST_SECRET_HEX,
         PSEUDONYMIZER_PEPPER: ""

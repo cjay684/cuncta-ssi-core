@@ -1,6 +1,10 @@
 import { strict as assert } from "node:assert";
 
 process.env.NODE_ENV = "development";
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
+process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.DID_SERVICE_BASE_URL = "http://did.test";
 process.env.ALLOW_INSECURE_DEV_AUTH = "false";
 process.env.SERVICE_JWT_SECRET = "";
 process.env.SERVICE_JWT_SECRET_ISSUER = "";

@@ -1,22 +1,14 @@
 import { FastifyInstance } from "fastify";
 import { config } from "../config.js";
-import { getSponsorBudgetSnapshot } from "../sponsorBudget.js";
 
 export const registerHealthRoutes = (app: FastifyInstance) => {
   app.get("/healthz", async () => {
-    let sponsorBudget = null as Awaited<ReturnType<typeof getSponsorBudgetSnapshot>> | null;
-    try {
-      sponsorBudget = await getSponsorBudgetSnapshot();
-    } catch {
-      sponsorBudget = null;
-    }
     return {
       ok: true,
       serviceAuth: {
         audience: config.SERVICE_JWT_AUDIENCE,
         ttlSeconds: config.SERVICE_JWT_TTL_SECONDS
       },
-      sponsorBudget,
       gateway: {
         allowedVcts: config.GATEWAY_ALLOWED_VCTS,
         verifierEnabled: Boolean(config.VERIFIER_SERVICE_BASE_URL),

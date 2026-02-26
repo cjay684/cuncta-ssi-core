@@ -8,6 +8,7 @@ import { sha256Hex, sha256Base64Url } from "../crypto/sha256.js";
 import { PresentationRequestStore, createNonce } from "../state/requestStore.js";
 import policyMap from "../policy-map.json" with { type: "json" };
 import { requireServiceAuth } from "../auth.js";
+import { verifyStatusListEntry } from "../statusList.js";
 const jwksSchema = z.object({
   keys: z.array(z.record(z.string(), z.unknown())).min(1)
 });
@@ -38,32 +39,11 @@ const selectKey = async (kid) => {
   }
   return keys.find((key) => key.kid === kid) ?? keys[0];
 };
-const decodeBitstring = (encoded) => new Uint8Array(Buffer.from(encoded, "base64url"));
-const getBit = (bytes, index) => {
-  const byteIndex = Math.floor(index / 8);
-  const bitIndex = index % 8;
-  return (bytes[byteIndex] & (1 << bitIndex)) !== 0;
-};
-const verifyStatus = async (status) => {
-  const listCredential = status.statusListCredential;
-  const index = status.statusListIndex;
-  if (!listCredential || !index) {
-    return { valid: false, reason: "missing_status_fields" };
-  }
-  const listUrl = new URL(listCredential, config.ISSUER_SERVICE_BASE_URL);
-  const response = await fetch(listUrl.toString());
-  if (!response.ok) {
-    return { valid: false, reason: "status_list_fetch_failed" };
-  }
-  const vc = await response.json();
-  const encodedList = vc.credentialSubject?.encodedList;
-  if (!encodedList) {
-    return { valid: false, reason: "status_list_missing" };
-  }
-  const bitBytes = decodeBitstring(encodedList);
-  const isRevoked = getBit(bitBytes, Number(index));
-  return { valid: !isRevoked, reason: isRevoked ? "revoked" : undefined };
-};
+// Revocation checking is delegated to ../statusList.js which enforces:
+// - issuer origin + path pinning (SSRF hardening)
+// - production HTTPS + private host blocking
+// - issuer signature verification on the status list proof JWT
+const verifyStatus = async (status) => verifyStatusListEntry(status);
 const requestStore = new PresentationRequestStore(5 * 60 * 1000);
 const predicateSchema = z.object({
   path: z.string().min(1),

@@ -1,5 +1,9 @@
 import { strict as assert } from "node:assert";
 
+// Keep tests deterministic regardless of developer `.env`.
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
+
 process.env.NODE_ENV = "development";
 process.env.ALLOW_INSECURE_DEV_AUTH = "true";
 process.env.SERVICE_BIND_ADDRESS = "127.0.0.1";
@@ -16,6 +20,7 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  // Avoid forcing string conversion on arbitrary thrown values.
+  console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

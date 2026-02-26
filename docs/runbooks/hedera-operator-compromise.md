@@ -4,26 +4,26 @@
 
 - Unexpected DID create or anchor activity.
 - Anchoring failures with `operator_not_configured` or abnormal anchor activity.
-- Sudden sponsor budget depletion in gateway metrics.
+- Sudden fee payer / operator account depletion (unexpected HBAR spend).
 
 ## Immediate containment (8-12 steps)
 
-1. Set `SPONSOR_KILL_SWITCH=true` to stop sponsor-funded actions.
-2. Set `ALLOW_SPONSORED_ONBOARDING=false` to prevent sponsored onboarding.
-3. Restrict outbound Hedera traffic at the network edge if required.
-4. Rotate `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_PRIVATE_KEY` (and DID/ANCHOR variants).
+1. Temporarily disable onboarding by setting `ALLOW_SELF_FUNDED_ONBOARDING=false` in app-gateway.
+2. Restrict outbound Hedera traffic at the network edge if required.
+3. Rotate `HEDERA_OPERATOR_ID` / `HEDERA_OPERATOR_PRIVATE_KEY` (and DID/ANCHOR variants).
+4. Rotate `HEDERA_PAYER_ACCOUNT_ID` / `HEDERA_PAYER_PRIVATE_KEY` if used for user-pays onboarding.
 5. Update `HEDERA_DID_TOPIC_ID` or `HEDERA_ANCHOR_TOPIC_ID` if required for new operator ownership.
 6. Redeploy did-service and issuer-service with new operator credentials.
 7. Verify issuer anchor worker status in `/healthz` and metrics.
-8. Re-enable sponsor operations only after validation.
-9. Monitor `anchor_outbox_backlog` until it stabilizes.
-10. Review issuer logs for `anchor.worker.failed` or unexpected anchors.
+8. Monitor `anchor_outbox_backlog` until it stabilizes.
+9. Review issuer logs for `anchor.worker.failed` or unexpected anchors.
 
 ## Key rotation steps
 
 - `HEDERA_OPERATOR_ID`, `HEDERA_OPERATOR_PRIVATE_KEY`.
 - `HEDERA_OPERATOR_ID_DID`, `HEDERA_OPERATOR_PRIVATE_KEY_DID`.
 - `HEDERA_OPERATOR_ID_ANCHOR`, `HEDERA_OPERATOR_PRIVATE_KEY_ANCHOR`.
+- `HEDERA_PAYER_ACCOUNT_ID`, `HEDERA_PAYER_PRIVATE_KEY` (if configured).
 
 ## Service restart order
 
@@ -33,6 +33,6 @@
 
 ## Post-incident verification checklist
 
-- New DIDs can be created (sponsored or user-pays).
+- New DIDs can be created (self-funded only).
 - Anchors resume without backlog growth.
-- Sponsor budget remains stable after re-enabling.
+- Gateway onboarding can be re-enabled after validation.

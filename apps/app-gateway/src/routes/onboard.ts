@@ -3,7 +3,7 @@ import net from "node:net";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { SignJWT, jwtVerify } from "jose";
-import { TopicMessageSubmitTransaction, Transaction } from "@hashgraph/sdk";
+import { enforceSignedTopicMessageSubmitBudget } from "@cuncta/hedera";
 import { makeErrorResponse } from "@cuncta/shared";
 import {
   GatewayContext,
@@ -14,12 +14,6 @@ import {
 } from "../server.js";
 import { log } from "../log.js";
 import { metrics } from "../metrics.js";
-
-const issueSchema = z.object({
-  subjectDid: z.string().min(3),
-  vct: z.string().min(3),
-  claims: z.record(z.string(), z.unknown()).default({})
-});
 
 const userPaysRequestSchema = z.object({
   network: z.enum(["testnet", "previewnet", "mainnet"]),
@@ -78,52 +72,16 @@ const ipAllowed = (request: GatewayRequest, context: GatewayContext, limitPerMin
   return context.ipQuotaMinute.consume(key, limitPerMinute, 60_000);
 };
 
-const enforceSponsorBudget = async (
-  reply: FastifyReply,
-  context: GatewayContext,
-  kind: "did_create" | "issue",
-  requestId?: string
-) => {
-  try {
-    const result = await context.reserveSponsorBudget(kind, { requestId });
-    if (!result.allowed) {
-      const message =
-        result.reason === "kill_switch" ? "Sponsor operations disabled" : "Sponsor budget exceeded";
-      const status = result.reason === "kill_switch" ? 503 : 429;
-      reply
-        .code(status)
-        .send(
-          makeErrorResponse(
-            result.reason === "kill_switch" ? "sponsor_kill_switch" : "sponsor_budget_exceeded",
-            message
-          )
-        );
-      return false;
-    }
-    if (!("reservation" in result) || !result.reservation) {
-      reply
-        .code(503)
-        .send(makeErrorResponse("sponsor_budget_unavailable", "Sponsor budget unavailable"));
-      return false;
-    }
-    metrics.incCounter("sponsor_budget_reserved_total", { kind });
-    return result.reservation;
-  } catch {
-    reply
-      .code(503)
-      .send(makeErrorResponse("sponsor_budget_unavailable", "Sponsor budget unavailable"));
-    return false;
-  }
-};
-
-const ensureSponsoredOnboardingAllowed = (reply: FastifyReply, context: GatewayContext) => {
-  if (context.config.ALLOW_SPONSORED_ONBOARDING) return true;
-  reply.code(403).send(
-    makeErrorResponse("sponsored_onboarding_disabled", "Self-funded required", {
-      details: "Sponsored onboarding is disabled"
-    })
+const sponsoredGone = (reply: FastifyReply, context: GatewayContext) => {
+  reply.code(410).send(
+    makeErrorResponse(
+      "sponsored_onboarding_not_supported",
+      "Legacy onboarding is not supported. Use self-funded flows only.",
+      {
+      devMode: context.config.DEV_MODE
+      }
+    )
   );
-  return false;
 };
 
 const ensureSelfFundedOnboardingAllowed = (reply: FastifyReply, context: GatewayContext) => {
@@ -382,52 +340,8 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
         }
       }
     },
-    async (request, reply) => {
-      const req = request as GatewayRequest;
-      if (!ipAllowed(req, context, context.config.RATE_LIMIT_IP_DID_REQUEST_PER_MIN)) {
-        metrics.incCounter("rate_limit_rejects_total", {
-          route: "/v1/onboard/did/create/request",
-          kind: "ip"
-        });
-        return reply.code(429).send(
-          makeErrorResponse("rate_limited", "IP rate limit exceeded", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const deviceError = deviceRequired(req, context);
-      if (deviceError) {
-        return reply.code(400).send(deviceError);
-      }
-      const serviceSecret = getServiceSecret(context, "did");
-      if (!serviceSecret) {
-        return reply.code(503).send(
-          makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const authHeader = await createServiceAuthHeader(context, {
-        audience: context.config.SERVICE_JWT_AUDIENCE_DID ?? context.config.SERVICE_JWT_AUDIENCE,
-        secret: serviceSecret,
-        scope: ["did:create_request"]
-      });
-      const url = new URL("/v1/dids/create/request", context.config.DID_SERVICE_BASE_URL);
-      const response = await context.fetchImpl(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: authHeader
-        },
-        body: JSON.stringify(request.body ?? {})
-      });
-      if (!response.ok) {
-        log.warn("onboard.did.request.failed", {
-          requestId: req.requestId,
-          status: response.status
-        });
-      }
-      return sendProxyResponse(reply, response);
+    async (_request, reply) => {
+      sponsoredGone(reply, context);
     }
   );
 
@@ -441,92 +355,8 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
         }
       }
     },
-    async (request, reply) => {
-      if (!ensureSponsoredOnboardingAllowed(reply, context)) return;
-      const req = request as GatewayRequest;
-      if (!ipAllowed(req, context, context.config.RATE_LIMIT_IP_DID_SUBMIT_PER_MIN)) {
-        metrics.incCounter("rate_limit_rejects_total", {
-          route: "/v1/onboard/did/create/submit",
-          kind: "ip"
-        });
-        return reply.code(429).send(
-          makeErrorResponse("rate_limited", "IP rate limit exceeded", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const deviceError = deviceRequired(req, context);
-      if (deviceError) {
-        return reply.code(400).send(deviceError);
-      }
-      const deviceHash = req.deviceHash!;
-      const allowed = context.deviceQuotaDaily.consume(
-        deviceHash,
-        context.config.RATE_LIMIT_DEVICE_DID_PER_DAY,
-        24 * 60 * 60 * 1000
-      );
-      if (!allowed) {
-        metrics.incCounter("rate_limit_rejects_total", {
-          route: "/v1/onboard/did/create/submit",
-          kind: "device_daily"
-        });
-        metrics.incCounter("device_quota_rejects_total", {
-          route: "/v1/onboard/did/create/submit",
-          kind: "daily"
-        });
-        return reply.code(429).send(
-          makeErrorResponse("rate_limited", "Device DID quota exceeded", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const reservation = await enforceSponsorBudget(reply, context, "did_create", req.requestId);
-      if (!reservation) return;
-      const serviceSecret = getServiceSecret(context, "did");
-      if (!serviceSecret) {
-        return reply.code(503).send(
-          makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const authHeader = await createServiceAuthHeader(context, {
-        audience: context.config.SERVICE_JWT_AUDIENCE_DID ?? context.config.SERVICE_JWT_AUDIENCE,
-        secret: serviceSecret,
-        scope: ["did:create_submit"]
-      });
-      const url = new URL("/v1/dids/create/submit", context.config.DID_SERVICE_BASE_URL);
-      const response = await context.fetchImpl(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: authHeader
-        },
-        body: JSON.stringify(request.body ?? {})
-      });
-      if (response.ok) {
-        const commit = await context.commitSponsorBudgetReservation(reservation.id);
-        if (!commit.committed) {
-          metrics.incCounter("sponsor_budget_commit_fail_total", { kind: "did_create" });
-          return reply
-            .code(503)
-            .send(makeErrorResponse("internal_error", "Sponsor budget unavailable"));
-        }
-        metrics.incCounter("sponsor_budget_committed_total", {
-          kind: "did_create",
-          idempotent: commit.idempotent
-        });
-      } else {
-        await context.revertSponsorBudgetReservation(reservation.id);
-        metrics.incCounter("sponsor_budget_reverted_total", { kind: "did_create" });
-      }
-      if (!response.ok) {
-        log.warn("onboard.did.submit.failed", {
-          requestId: req.requestId,
-          status: response.status
-        });
-      }
-      return sendProxyResponse(reply, response);
+    async (_request, reply) => {
+      sponsoredGone(reply, context);
     }
   );
 
@@ -540,100 +370,8 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
         }
       }
     },
-    async (request, reply) => {
-      if (!ensureSponsoredOnboardingAllowed(reply, context)) return;
-      const req = request as GatewayRequest;
-      if (!ipAllowed(req, context, context.config.RATE_LIMIT_IP_ISSUE_PER_MIN)) {
-        metrics.incCounter("rate_limit_rejects_total", {
-          route: "/v1/onboard/issue",
-          kind: "ip"
-        });
-        return reply.code(429).send(
-          makeErrorResponse("rate_limited", "IP rate limit exceeded", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const deviceError = deviceRequired(req, context);
-      if (deviceError) {
-        return reply.code(400).send(deviceError);
-      }
-      const body = issueSchema.parse(request.body ?? {});
-      if (!context.config.GATEWAY_ALLOWED_VCTS.includes(body.vct)) {
-        return reply.code(403).send(
-          makeErrorResponse("invalid_request", "VCT not allowed", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const deviceHash = req.deviceHash!;
-      const allowed = context.deviceQuotaMinute.consume(
-        deviceHash,
-        context.config.RATE_LIMIT_DEVICE_ISSUE_PER_MIN,
-        60_000
-      );
-      if (!allowed) {
-        metrics.incCounter("rate_limit_rejects_total", {
-          route: "/v1/onboard/issue",
-          kind: "device_minute"
-        });
-        metrics.incCounter("device_quota_rejects_total", {
-          route: "/v1/onboard/issue",
-          kind: "minute"
-        });
-        return reply.code(429).send(
-          makeErrorResponse("rate_limited", "Device issue quota exceeded", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const reservation = await enforceSponsorBudget(reply, context, "issue", req.requestId);
-      if (!reservation) return;
-      const serviceSecret = getServiceSecret(context, "issuer");
-      if (!serviceSecret) {
-        return reply.code(503).send(
-          makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
-      const authHeader = await createServiceAuthHeader(context, {
-        audience: context.config.SERVICE_JWT_AUDIENCE_ISSUER ?? context.config.SERVICE_JWT_AUDIENCE,
-        secret: serviceSecret,
-        scope: ["issuer:internal_issue"]
-      });
-      const url = new URL("/v1/internal/issue", context.config.ISSUER_SERVICE_BASE_URL);
-      const response = await context.fetchImpl(url, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          Authorization: authHeader
-        },
-        body: JSON.stringify(body)
-      });
-      if (response.ok) {
-        const commit = await context.commitSponsorBudgetReservation(reservation.id);
-        if (!commit.committed) {
-          metrics.incCounter("sponsor_budget_commit_fail_total", { kind: "issue" });
-          return reply
-            .code(503)
-            .send(makeErrorResponse("internal_error", "Sponsor budget unavailable"));
-        }
-        metrics.incCounter("sponsor_budget_committed_total", {
-          kind: "issue",
-          idempotent: commit.idempotent
-        });
-      } else {
-        await context.revertSponsorBudgetReservation(reservation.id);
-        metrics.incCounter("sponsor_budget_reverted_total", { kind: "issue" });
-      }
-      if (!response.ok) {
-        log.warn("onboard.issue.failed", {
-          requestId: req.requestId,
-          status: response.status
-        });
-      }
-      return sendProxyResponse(reply, response);
+    async (_request, reply) => {
+      sponsoredGone(reply, context);
     }
   );
 
@@ -766,13 +504,11 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
       }
       const body = userPaysSubmitSchema.parse(request.body ?? {});
       const signedBytes = Buffer.from(body.signedTransactionB64u, "base64url");
-      if (signedBytes.length > context.config.USER_PAYS_MAX_TX_BYTES) {
-        return reply.code(413).send(
-          makeErrorResponse("invalid_request", "Signed transaction too large", {
-            devMode: context.config.DEV_MODE
-          })
-        );
-      }
+      const budget = (context.config as unknown as { USER_PAYS_FEE_BUDGETS?: any })?.USER_PAYS_FEE_BUDGETS
+        ?.TopicMessageSubmitTransaction ?? {
+        maxFeeTinybars: context.config.USER_PAYS_MAX_FEE_TINYBARS,
+        maxTxBytes: context.config.USER_PAYS_MAX_TX_BYTES
+      };
       const txHash = createHash("sha256").update(signedBytes).digest("hex");
       try {
         const entry = await verifyUserPaysToken(body.handoffToken, context);
@@ -783,34 +519,29 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
             })
           );
         }
-        const transaction = Transaction.fromBytes(signedBytes);
-        if (!(transaction instanceof TopicMessageSubmitTransaction)) {
-          return reply.code(400).send(
-            makeErrorResponse("invalid_request", "Unsupported transaction type", {
+        const enforced = enforceSignedTopicMessageSubmitBudget({
+          signedTransactionBytes: signedBytes,
+          budget
+        });
+        if (!enforced.ok) {
+          const message =
+            enforced.reason === "signed_tx_too_large"
+              ? "Signed transaction too large"
+              : enforced.reason === "max_fee_too_high"
+                ? "Max fee too high"
+                : "Unsupported transaction type";
+          const status = enforced.reason === "signed_tx_too_large" ? 413 : 400;
+          return reply.code(status).send(
+            makeErrorResponse("invalid_request", message, {
               devMode: context.config.DEV_MODE
             })
           );
         }
+        const transaction = enforced.tx;
         const topicId = transaction.topicId?.toString();
         if (entry.topicId && topicId !== entry.topicId) {
           return reply.code(400).send(
             makeErrorResponse("invalid_request", "Topic id mismatch", {
-              devMode: context.config.DEV_MODE
-            })
-          );
-        }
-        const maxFeeTinybars = transaction.maxTransactionFee?.toTinybars();
-        const maxFeeValue =
-          maxFeeTinybars === undefined
-            ? undefined
-            : typeof maxFeeTinybars === "number"
-              ? maxFeeTinybars
-              : typeof (maxFeeTinybars as { toNumber?: () => number }).toNumber === "function"
-                ? (maxFeeTinybars as { toNumber: () => number }).toNumber()
-                : Number(maxFeeTinybars.toString());
-        if (maxFeeValue !== undefined && maxFeeValue > context.config.USER_PAYS_MAX_FEE_TINYBARS) {
-          return reply.code(400).send(
-            makeErrorResponse("invalid_request", "Max fee too high", {
               devMode: context.config.DEV_MODE
             })
           );
@@ -857,7 +588,6 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
       const req = request as GatewayRequest;
       const contractError = ensureContractE2eAllowed(req, reply, context);
       if (contractError) return;
-      if (!ensureSponsoredOnboardingAllowed(reply, context)) return;
       if (!ipAllowed(req, context, context.config.RATE_LIMIT_IP_ISSUE_PER_MIN)) {
         metrics.incCounter("rate_limit_rejects_total", {
           route: "/v1/onboard/revoke",

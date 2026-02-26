@@ -1,6 +1,7 @@
 import { Client as HieroClient } from "@hiero-ledger/sdk";
 import {
   Client as HashgraphClient,
+  Hbar,
   TopicCreateTransaction,
   TopicMessageSubmitTransaction
 } from "@hashgraph/sdk";
@@ -50,12 +51,20 @@ export async function ensureTopic(client: unknown, topicId?: string) {
 export async function publishAnchorMessage(
   client: unknown,
   topicId: string,
-  message: { kind: string; sha256: string; metadata?: Record<string, unknown> }
+  message: { kind: string; sha256: string; metadata?: Record<string, unknown> },
+  options?: { maxFeeTinybars?: number; maxMessageBytes?: number }
 ) {
-  const tx = await new TopicMessageSubmitTransaction()
-    .setTopicId(topicId)
-    .setMessage(JSON.stringify(message))
-    .execute(client as HashgraphClient);
+  const text = JSON.stringify(message);
+  const bytes = Buffer.from(text, "utf8");
+  const maxMessageBytes = options?.maxMessageBytes;
+  if (typeof maxMessageBytes === "number" && bytes.length > maxMessageBytes) {
+    throw new Error("anchor_message_too_large");
+  }
+  const builder = new TopicMessageSubmitTransaction().setTopicId(topicId).setMessage(bytes);
+  if (typeof options?.maxFeeTinybars === "number" && Number.isFinite(options.maxFeeTinybars)) {
+    builder.setMaxTransactionFee(Hbar.fromTinybars(Math.floor(options.maxFeeTinybars)));
+  }
+  const tx = await builder.execute(client as HashgraphClient);
   const receipt = await tx.getReceipt(client as HashgraphClient);
   const transactionId = tx.transactionId?.toString() ?? "";
   const record = await tx.getRecord(client as HashgraphClient);
@@ -66,3 +75,21 @@ export async function publishAnchorMessage(
     consensusTimestamp: record.consensusTimestamp?.toString() ?? ""
   };
 }
+
+export {
+  fetchTopicMessages,
+  fetchTopicMessageBySequence,
+  type FetchTopicMessagesOptions,
+  type MirrorTopicMessage,
+  type MirrorOrder
+} from "./mirror.js";
+
+export {
+  applyTopicSubmitMaxFee,
+  defaultFeeBudgets,
+  enforceSignedTopicMessageSubmitBudget,
+  extractMaxFeeTinybars,
+  parseFeeBudgetsJson,
+  type FeeBudgets,
+  type TxBudget
+} from "./feeBudget.js";

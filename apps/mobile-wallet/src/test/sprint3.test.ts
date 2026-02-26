@@ -26,6 +26,10 @@ const run = async (name: string, fn: () => Promise<void>) => {
   }
 };
 
+// Keep tests deterministic regardless of developer `.env`.
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
+
 const encodeDisclosure = (value: unknown[]) =>
   Buffer.from(JSON.stringify(value)).toString("base64url");
 

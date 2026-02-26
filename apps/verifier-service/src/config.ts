@@ -42,6 +42,11 @@ const envSchema = z.object({
   ALLOW_MAINNET: z.preprocess((value) => value === "true", z.boolean()).default(false),
   ISSUER_SERVICE_BASE_URL: z.string().url(),
   POLICY_SERVICE_BASE_URL: z.string().url().default("http://localhost:3004"),
+  DID_SERVICE_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
+  // Data-driven compliance profile selection (UK vs EU vs default).
+  COMPLIANCE_PROFILE_DEFAULT: z.string().default("default"),
+  // JSON map from verifier origin to profile_id, e.g. {"https://rp.example":"uk"}.
+  COMPLIANCE_PROFILE_ORIGIN_MAP_JSON: z.preprocess(emptyToUndefined, z.string().min(2).optional()),
   ISSUER_JWKS: z.preprocess((value) => (value ? value : undefined), z.string().min(10).optional()),
   VERIFIER_AUDIENCE: z.string().min(3).optional(),
   SDJWT_COMPAT_LEGACY_TYP: z.preprocess((value) => value === "true", z.boolean()).default(false),
@@ -58,6 +63,10 @@ const envSchema = z.object({
     clampNumber(2500, 500, 10000),
     z.number().int().min(500).max(10000)
   ),
+  STATUS_LIST_STRICT_MODE: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined;
+    return value === "true";
+  }, z.boolean().optional()),
   STATUS_LIST_CACHE_TTL_SECONDS: z.preprocess(
     clampNumber(10, 1, 60),
     z.number().int().min(1).max(60)
@@ -66,6 +75,25 @@ const envSchema = z.object({
     clampNumber(64, 8, 1024),
     z.number().int().min(8).max(1024)
   ),
+  ENFORCE_DID_KEY_BINDING: z.preprocess((value) => value === "true", z.boolean()).optional(),
+  DID_RESOLVE_TIMEOUT_MS: z.preprocess(
+    clampNumber(1500, 200, 10000),
+    z.number().int().min(200).max(10000)
+  ),
+  DID_RESOLVE_CACHE_TTL_SECONDS: z.preprocess(
+    clampNumber(300, 1, 86400),
+    z.number().int().min(1).max(86400)
+  ),
+  DID_RESOLVE_CACHE_MAX_ENTRIES: z.preprocess(
+    clampNumber(256, 8, 4096),
+    z.number().int().min(8).max(4096)
+  ),
+  ENFORCE_ORIGIN_AUDIENCE: z.preprocess((value) => value === "true", z.boolean()).optional(),
+  BREAK_GLASS_DISABLE_STRICT: z.preprocess((value) => value === "true", z.boolean()).default(false),
+  VERIFIER_SIGN_OID4VP_REQUEST: z.preprocess((value) => value !== "false", z.boolean()).default(true),
+  VERIFIER_SIGNING_JWK: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
+  VERIFIER_SIGNING_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
+  VERIFIER_ENABLE_OID4VP: z.preprocess((value) => value === "true", z.boolean()).optional(),
   VERIFY_MAX_PRESENTATION_BYTES: z.preprocess(
     clampNumber(65536, 4096, 262144),
     z.number().int().min(4096).max(262144)
@@ -99,11 +127,40 @@ const envSchema = z.object({
   ANCHOR_AUTH_SECRET: z.string().min(16).optional(),
   DATABASE_URL: z.string().default("postgres://cuncta:cuncta@localhost:5432/cuncta_ssi"),
   STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional()
+  ,
+  // ZK tracks are optional and require explicit opt-in in production.
+  ALLOW_EXPERIMENTAL_ZK: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined;
+    return value === "true";
+  }, z.boolean().optional()),
+  VERIFIER_ZK_MAX_DAY_DRIFT_DAYS: z.preprocess(clampNumber(1, 0, 7), z.number().int().min(0).max(7))
 });
 
 const parsed = envSchema.parse(process.env);
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
+}
+if (parsed.NODE_ENV === "production" && parsed.HEDERA_NETWORK === "mainnet" && parsed.VERIFIER_SIGNING_BOOTSTRAP) {
+  throw new Error("verifier_signing_bootstrap_forbidden_on_mainnet_production");
+}
+if (
+  parsed.VERIFIER_SIGN_OID4VP_REQUEST &&
+  parsed.NODE_ENV === "production" &&
+  !parsed.VERIFIER_SIGNING_JWK
+) {
+  throw new Error("verifier_signing_jwk_required_in_production");
+}
+if (
+  parsed.BREAK_GLASS_DISABLE_STRICT &&
+  parsed.NODE_ENV === "production"
+) {
+  throw new Error("break_glass_forbidden_in_production");
+}
+if (parsed.BREAK_GLASS_DISABLE_STRICT) {
+  console.warn(
+    "[BREAK_GLASS] BREAK_GLASS_DISABLE_STRICT=true — strict posture disabled. " +
+      "Never use on mainnet or in production."
+  );
 }
 const autoMigrate = parsed.AUTO_MIGRATE ?? parsed.NODE_ENV !== "production";
 if (parsed.NODE_ENV === "production" && autoMigrate) {
@@ -130,6 +187,12 @@ if (parsed.NODE_ENV === "production" && parsed.ENFORCE_HTTPS_INTERNAL) {
   if (policyUrl.protocol !== "https:") {
     throw new Error("internal_url_https_required:POLICY_SERVICE_BASE_URL");
   }
+  if (parsed.DID_SERVICE_BASE_URL) {
+    const didUrl = new URL(parsed.DID_SERVICE_BASE_URL);
+    if (didUrl.protocol !== "https:") {
+      throw new Error("internal_url_https_required:DID_SERVICE_BASE_URL");
+    }
+  }
 }
 const strictSecrets =
   parsed.NODE_ENV === "test"
@@ -140,6 +203,13 @@ const serviceSecrets = [
   { name: "SERVICE_JWT_SECRET_VERIFIER", value: parsed.SERVICE_JWT_SECRET_VERIFIER },
   { name: "SERVICE_JWT_SECRET_NEXT", value: parsed.SERVICE_JWT_SECRET_NEXT }
 ];
+
+const allowExperimentalZk = parsed.ALLOW_EXPERIMENTAL_ZK ?? parsed.NODE_ENV !== "production";
+if (parsed.NODE_ENV === "production" && allowExperimentalZk) {
+  console.warn(
+    "[EXPERIMENTAL] ALLOW_EXPERIMENTAL_ZK=true — ZK/DI features enabled in production; ensure ceremony-grade artifacts."
+  );
+}
 if (strictSecrets) {
   for (const secret of serviceSecrets) {
     if (secret.value && !isSecretFormatValid(secret.value)) {
@@ -152,11 +222,24 @@ const serviceBindAddress =
   parsed.SERVICE_BIND_ADDRESS ?? (parsed.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");
 export const config = {
   ...parsed,
+  ALLOW_EXPERIMENTAL_ZK: allowExperimentalZk,
   AUTO_MIGRATE: autoMigrate,
   STRICT_DB_ROLE: strictDbRole,
   PSEUDONYMIZER_ALLOW_LEGACY: allowLegacy,
   SERVICE_BIND_ADDRESS: serviceBindAddress,
   SERVICE_JWT_SECRET_FORMAT_STRICT: strictSecrets,
   POLICY_VERSION_FLOOR_ENFORCED:
-    parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production"
+    parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production",
+  STATUS_LIST_STRICT_MODE: parsed.STATUS_LIST_STRICT_MODE ?? parsed.NODE_ENV === "production",
+  DID_SERVICE_BASE_URL: parsed.DID_SERVICE_BASE_URL ?? "http://localhost:3001",
+  ENFORCE_DID_KEY_BINDING: parsed.BREAK_GLASS_DISABLE_STRICT
+    ? false
+    : (parsed.ENFORCE_DID_KEY_BINDING ?? parsed.NODE_ENV === "production"),
+  BREAK_GLASS_DISABLE_STRICT: parsed.BREAK_GLASS_DISABLE_STRICT ?? false,
+  ENFORCE_ORIGIN_AUDIENCE:
+    parsed.BREAK_GLASS_DISABLE_STRICT
+      ? false
+      : (parsed.ENFORCE_ORIGIN_AUDIENCE ?? true),
+  VERIFIER_SIGN_OID4VP_REQUEST: parsed.VERIFIER_SIGN_OID4VP_REQUEST ?? true,
+  VERIFIER_ENABLE_OID4VP: parsed.VERIFIER_ENABLE_OID4VP ?? true
 };

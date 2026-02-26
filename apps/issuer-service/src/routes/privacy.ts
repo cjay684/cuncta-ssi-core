@@ -11,6 +11,8 @@ import { getPrivacyStatus } from "../privacy/restrictions.js";
 import { getDidHashes, getLookupHashes } from "../pseudonymizer.js";
 import { metrics } from "../metrics.js";
 import { ensureAuraRuleIntegrity } from "../aura/auraIntegrity.js";
+import { computeAuraScoreAndDiversity } from "../aura/auraWorker.js";
+import { getRulePurpose, parseRuleLogic, ruleAppliesToDomain } from "../aura/ruleContract.js";
 import { bumpPrivacyEraseEpoch, markPrivacyEraseEver } from "../audit.js";
 import { requireServiceAuth } from "../auth.js";
 
@@ -124,9 +126,187 @@ const verifyKbJwt = async (input: { kbJwt: string; nonce: string; audience: stri
   }
 };
 
+const tableExistsCache = new Map<string, boolean>();
+
+const hasTable = async (tableName: string) => {
+  if (tableExistsCache.has(tableName)) {
+    return tableExistsCache.get(tableName) ?? false;
+  }
+  const exists = await (await getDb()).schema.hasTable(tableName);
+  tableExistsCache.set(tableName, exists);
+  return exists;
+};
+
+type SubjectLinkColumn = {
+  table: string;
+  column: string;
+  hasDeletedAt: boolean;
+};
+
+let subjectLinkInventory: { loadedAt: number; truncated: boolean; columns: SubjectLinkColumn[] } | null =
+  null;
+
+const loadSubjectLinkInventory = async (): Promise<{
+  truncated: boolean;
+  columns: SubjectLinkColumn[];
+}> => {
+  const now = Date.now();
+  if (subjectLinkInventory && now - subjectLinkInventory.loadedAt < 5 * 60_000) {
+    return { truncated: subjectLinkInventory.truncated, columns: subjectLinkInventory.columns };
+  }
+  const db = await getDb();
+
+  // Conservative inventory: any column that can carry a DID hash or subject hash.
+  // This favors false-positives (reporting "not complete") over false completion.
+  const rawColumns = (await db
+    .select("table_name", "column_name")
+    .from("information_schema.columns")
+    .where({ table_schema: "public" })
+    .andWhere((builder) =>
+      builder
+        .whereILike("column_name", "%did_hash%")
+        .orWhereILike("column_name", "%subject_hash%")
+        .orWhereILike("column_name", "%subject_did_hash%")
+    )) as Array<{ table_name: string; column_name: string }>;
+
+  const deletedAtTables = new Set<string>(
+    (
+      (await db
+        .select("table_name")
+        .from("information_schema.columns")
+        .where({ table_schema: "public", column_name: "deleted_at" })) as Array<{ table_name: string }>
+    ).map((row) => row.table_name)
+  );
+
+  const excludedTables = new Set<string>([
+    "knex_migrations",
+    "knex_migrations_lock",
+    // Tombstones intentionally persist by design; don't count them as "residual linkage".
+    "privacy_tombstones"
+  ]);
+
+  const MAX_COLUMNS = 5000;
+  const columns: SubjectLinkColumn[] = [];
+  let truncated = false;
+  for (const entry of rawColumns) {
+    if (excludedTables.has(entry.table_name)) continue;
+    columns.push({
+      table: entry.table_name,
+      column: entry.column_name,
+      hasDeletedAt: deletedAtTables.has(entry.table_name)
+    });
+    if (columns.length >= MAX_COLUMNS) {
+      truncated = true;
+      break;
+    }
+  }
+
+  subjectLinkInventory = { loadedAt: now, truncated, columns };
+  return { truncated, columns };
+};
+
+const countLinkedRows = async (input: {
+  table: string;
+  column: string;
+  lookup: string[];
+  deletedAtColumn?: string;
+  activeStatusColumn?: string;
+  activeStatusValue?: string;
+}) => {
+  if (!(await hasTable(input.table))) return 0;
+  const db = await getDb();
+  let query = db(input.table).whereIn(input.column, input.lookup);
+  if (input.deletedAtColumn) {
+    query = query.whereNull(input.deletedAtColumn);
+  }
+  if (input.activeStatusColumn && input.activeStatusValue) {
+    query = query.where(input.activeStatusColumn, input.activeStatusValue);
+  }
+  const row = await query.count<{ count: string }>("* as count").first();
+  return Number(row?.count ?? 0);
+};
+
+const getEraseCompletionState = async (didHash: string, legacyHash: string | null) => {
+  const db = await getDb();
+  const lookup = getLookupHashes({ primary: didHash, legacy: legacyHash });
+  const latestTombstone = await db("privacy_tombstones")
+    .whereIn("did_hash", lookup)
+    .orderBy("erased_at", "desc")
+    .first();
+
+  const pendingTableCounts: Record<string, number> = {};
+  let linkedResidualCount = 0;
+  let linkedActiveResidualCount = 0;
+  let inventoryTruncated = false;
+  try {
+    const inventory = await loadSubjectLinkInventory();
+    inventoryTruncated = inventory.truncated;
+    for (const entry of inventory.columns) {
+      const key = `${entry.table}.${entry.column}`;
+      const total = await countLinkedRows({ table: entry.table, column: entry.column, lookup });
+      pendingTableCounts[key] = total;
+      linkedResidualCount += total;
+      if (entry.hasDeletedAt) {
+        const active = await countLinkedRows({
+          table: entry.table,
+          column: entry.column,
+          lookup,
+          deletedAtColumn: "deleted_at"
+        });
+        pendingTableCounts[`${key}.active`] = active;
+        linkedActiveResidualCount += active;
+      } else {
+        linkedActiveResidualCount += total;
+      }
+    }
+  } catch (error) {
+    // Conservative: if we cannot compute inventory, never claim completion.
+    pendingTableCounts["inventory_error"] = 1;
+    linkedResidualCount = Number.POSITIVE_INFINITY;
+    linkedActiveResidualCount = Number.POSITIVE_INFINITY;
+    inventoryTruncated = true;
+    log.warn("privacy.erase.inventory_failed", {
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+  }
+
+  let purgePendingCount = 0;
+  if (await hasTable("social_media_assets")) {
+    const row = await db("social_media_assets")
+      .whereIn("owner_subject_hash", lookup)
+      .where({ purge_pending: true })
+      .count<{ count: string }>("* as count")
+      .first();
+    purgePendingCount = Number(row?.count ?? 0);
+  }
+
+  let purgeDeadLetteredCount = 0;
+  if (await hasTable("social_media_assets")) {
+    const row = await db("social_media_assets")
+      .whereIn("owner_subject_hash", lookup)
+      .whereNotNull("purge_dead_lettered_at")
+      .count<{ count: string }>("* as count")
+      .first();
+    purgeDeadLetteredCount = Number(row?.count ?? 0);
+  }
+
+  const offchainUnlinkDone = linkedResidualCount === 0 && !inventoryTruncated;
+  return {
+    requestedAt: typeof latestTombstone?.erased_at === "string" ? latestTombstone.erased_at : null,
+    offchainUnlinkDone,
+    purgePending: purgePendingCount > 0,
+    purgePendingCount,
+    purgeDeadLetteredCount,
+    linkedResidualCount,
+    linkedActiveResidualCount,
+    inventoryTruncated,
+    pendingTableCounts
+  };
+};
+
 export const registerPrivacyRoutes = (app: FastifyInstance) => {
-  app.get("/v1/internal/privacy/status", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:privacy_status"] });
+  app.get("/v1/admin/privacy/status", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:privacy_status"] });
     if (reply.sent) return;
     const query = internalPrivacyStatusSchema.parse(request.query ?? {});
     const db = await getDb();
@@ -430,9 +610,12 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       await trx("obligation_events").whereIn("subject_did_hash", lookup).del();
       await trx("obligations_executions").whereIn("subject_did_hash", lookup).del();
       await trx("rate_limit_events").whereIn("subject_hash", lookup).del();
+      await trx("command_center_audit_events").whereIn("subject_hash", lookup).del();
       await trx("privacy_requests").whereIn("did_hash", lookup).del();
       await trx("privacy_tokens").whereIn("did_hash", lookup).del();
       await trx("privacy_restrictions").whereIn("did_hash", lookup).del();
+      // Legacy (Semaphore-era) table; safe to delete rows if present.
+      await trx("zk_age_group_members").whereIn("subject_did_hash", lookup).del();
       await trx("issuance_events")
         .whereIn("subject_did_hash", lookup)
         .update({ subject_did_hash: null });
@@ -445,6 +628,8 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       }
     });
 
+    // If legacy ZK group tables exist, they are treated as best-effort cleanup only.
+
     log.info("privacy.erase", { didHash });
     metrics.incCounter("privacy_erase_total");
     await markPrivacyEraseEver();
@@ -454,10 +639,41 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       legacyHash: context.legacyHash,
       tokenHash: context.tokenHash
     });
+    const completion = await getEraseCompletionState(context.didHash, context.legacyHash);
     return reply.send({
       status: "erased",
       note: "On-chain anchors are immutable; off-chain linkability removed.",
-      nextToken
+      nextToken,
+      erase_completion: {
+        requested_at: completion.requestedAt,
+        offchain_unlink_done: completion.offchainUnlinkDone,
+        purge_pending: completion.purgePending,
+        purge_pending_count: completion.purgePendingCount,
+        purge_dead_lettered_count: completion.purgeDeadLetteredCount,
+        linked_residual_count: completion.linkedResidualCount,
+        linked_active_residual_count: completion.linkedActiveResidualCount,
+        inventory_truncated: completion.inventoryTruncated
+      }
+    });
+  });
+
+  app.get("/v1/privacy/erase-status", async (request, reply) => {
+    const context = await getDsrContext(request, reply);
+    if (!context) return;
+    const completion = await getEraseCompletionState(context.didHash, context.legacyHash);
+    return reply.send({
+      subject: { did_hash: context.didHash },
+      erase_completion: {
+        requested_at: completion.requestedAt,
+        offchain_unlink_done: completion.offchainUnlinkDone,
+        purge_pending: completion.purgePending,
+        purge_pending_count: completion.purgePendingCount,
+        purge_dead_lettered_count: completion.purgeDeadLetteredCount,
+        linked_residual_count: completion.linkedResidualCount,
+        linked_active_residual_count: completion.linkedActiveResidualCount,
+        inventory_truncated: completion.inventoryTruncated,
+        pending_table_counts: completion.pendingTableCounts
+      }
     });
   });
 
@@ -496,14 +712,12 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
         typeof stateRow.state === "string"
           ? (JSON.parse(stateRow.state) as Record<string, unknown>)
           : (stateRow.state as Record<string, unknown>);
-      const applicable = rules.filter(
-        (rule: Record<string, unknown>) => rule.domain === domain || rule.domain === "*"
+      const applicable = rules.filter((rule: Record<string, unknown>) =>
+        ruleAppliesToDomain(String(rule.domain ?? ""), domain)
       );
       for (const rule of applicable) {
-        const ruleLogic =
-          typeof rule.rule_logic === "string"
-            ? (JSON.parse(rule.rule_logic) as Record<string, unknown>)
-            : (rule.rule_logic as Record<string, unknown>);
+        const ruleLogic = parseRuleLogic(rule as { rule_logic?: unknown });
+        const purpose = getRulePurpose(ruleLogic);
         const windowSeconds =
           typeof ruleLogic.window_seconds === "number" ? ruleLogic.window_seconds : 0;
         const windowDays = typeof ruleLogic.window_days === "number" ? ruleLogic.window_days : 30;
@@ -519,66 +733,179 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
           query.whereIn("signal", signalNames);
         }
         const signals = await query;
-        const counterpartyMap = new Map<string, { count: number; weightSum: number }>();
-        for (const signal of signals) {
-          const weight = typeof signal.weight === "number" ? signal.weight : 1;
-          const counterparty = (signal.counterparty_did_hash as string | undefined) ?? "none";
-          const entry = counterpartyMap.get(counterparty) ?? { count: 0, weightSum: 0 };
-          entry.count += 1;
-          entry.weightSum += weight;
-          counterpartyMap.set(counterparty, entry);
+        const { score, diversity } = computeAuraScoreAndDiversity(
+          signals as Array<Record<string, unknown>>,
+          ruleLogic
+        );
+
+        const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
+        const minSilver = typeof scoreRule.min_silver === "number" ? scoreRule.min_silver : 0;
+        const minGold = typeof scoreRule.min_gold === "number" ? scoreRule.min_gold : 0;
+        const diversityMin = typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
+        const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
+
+        const reasons: string[] = [];
+        if (diversityMin > 0 && diversity < diversityMin) {
+          reasons.push(`Need ${diversityMin - diversity} more diverse counterparties`);
         }
-        const cap =
-          typeof ruleLogic.per_counterparty_cap === "number" ? ruleLogic.per_counterparty_cap : 0;
-        const decay =
-          typeof ruleLogic.per_counterparty_decay_exponent === "number"
-            ? ruleLogic.per_counterparty_decay_exponent
-            : 0.5;
-        const weights = Array.from(counterpartyMap.values()).map((entry) => {
-          const effectiveCount = cap > 0 ? Math.min(entry.count, cap) : entry.count;
-          const averageWeight = entry.weightSum / entry.count;
-          const effectiveWeightSum = averageWeight * effectiveCount;
-          return effectiveWeightSum / Math.pow(effectiveCount, decay);
-        });
-        const total = weights.reduce((sum, value) => sum + value, 0);
-        const sorted = [...weights].sort((a, b) => b - a);
-        const topTwo = sorted.slice(0, 2).reduce((sum, value) => sum + value, 0);
-        const top2Ratio = total > 0 ? topTwo / total : 0;
+        if (minSilver > 0 && score < minSilver) {
+          reasons.push(`Need ${(minSilver - score).toFixed(2)} more score to reach silver`);
+        } else if (minGold > 0 && score < minGold) {
+          reasons.push(`Need ${(minGold - score).toFixed(2)} more score to reach gold`);
+        }
 
         response.push({
           rule_id: rule.rule_id,
           rule_version: rule.version,
           domain,
           output_vct: rule.output_vct,
-          state: {
-            tier: state.tier ?? "bronze",
-            score: state.score ?? 0,
-            diversity: state.diversity ?? 0,
-            window_days: state.window_days ?? windowDays
+          capability: {
+            purpose,
+            benefit_vct: String(rule.output_vct ?? ""),
+            domain,
+            window_days: windowDays
           },
-          aggregates: {
-            signal_count: signals.length,
-            diversity: Array.from(counterpartyMap.keys()).filter((key) => key !== "none").length,
-            top2_ratio: Number(top2Ratio.toFixed(4))
-          },
-          thresholds: {
-            min_silver: (ruleLogic.score as Record<string, unknown>)?.min_silver ?? 5,
-            min_gold: (ruleLogic.score as Record<string, unknown>)?.min_gold ?? 12,
-            diversity_min: ruleLogic.diversity_min ?? 0,
-            collusion_threshold:
-              ruleLogic.collusion_cluster_threshold ??
-              (ruleLogic.anti_collusion as Record<string, unknown>)?.top2_ratio ??
-              0.6,
-            collusion_multiplier:
-              ruleLogic.collusion_multiplier ??
-              (ruleLogic.anti_collusion as Record<string, unknown>)?.multiplier ??
-              0.7,
-            min_tier: ruleLogic.min_tier ?? "bronze"
+          eligibility: {
+            eligible_now: reasons.length === 0,
+            reasons,
+            current: {
+              tier: state.tier ?? "bronze",
+              score: state.score ?? 0,
+              diversity: state.diversity ?? 0
+            },
+            window_aggregates: {
+              signal_count: signals.length,
+              score: Number(score.toFixed(4)),
+              diversity
+            },
+            required_thresholds: {
+              min_tier: minTier,
+              min_silver: minSilver,
+              min_gold: minGold,
+              diversity_min: diversityMin
+            }
           }
         });
       }
     }
 
+    return reply.send({
+      subject: { did_hash: didHash },
+      generated_at: new Date().toISOString(),
+      aura: response
+    });
+  });
+
+  // Admin/service-auth diagnostics: same safe capability-oriented shape, but allows querying by subjectDid.
+  // This route is intentionally service-auth only; it must not become a third-party reputation oracle.
+  app.get("/v1/admin/aura/explain", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:aura_admin"] });
+    if (reply.sent) return;
+    const q = z.object({ subjectDid: z.string().min(3) }).parse(request.query ?? {});
+    const hashes = getDidHashes(q.subjectDid);
+    const didHash = hashes.primary;
+    const status = await getPrivacyStatus({ primary: hashes.primary, legacy: hashes.legacy ?? null });
+    if (status.tombstoned) {
+      return reply.send({ subject: { did_hash: didHash }, aura: [], notice: "erased" });
+    }
+    const db = await getDb();
+    const lookup = getLookupHashes({ primary: hashes.primary, legacy: hashes.legacy ?? null });
+    const auraStates = await db("aura_state").whereIn("subject_did_hash", lookup);
+    const rules = await db("aura_rules").where({ enabled: true });
+    try {
+      for (const rule of rules) {
+        await ensureAuraRuleIntegrity(rule);
+      }
+    } catch {
+      return reply.code(503).send(
+        makeErrorResponse("aura_integrity_failed", "Aura rules unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    const response = [];
+    for (const stateRow of auraStates) {
+      const domain = stateRow.domain as string;
+      const state =
+        typeof stateRow.state === "string"
+          ? (JSON.parse(stateRow.state) as Record<string, unknown>)
+          : (stateRow.state as Record<string, unknown>);
+      const applicable = rules.filter((rule: Record<string, unknown>) =>
+        ruleAppliesToDomain(String(rule.domain ?? ""), domain)
+      );
+      for (const rule of applicable) {
+        const ruleLogic = parseRuleLogic(rule as { rule_logic?: unknown });
+        const purpose = getRulePurpose(ruleLogic);
+        const windowSeconds =
+          typeof ruleLogic.window_seconds === "number" ? ruleLogic.window_seconds : 0;
+        const windowDays = typeof ruleLogic.window_days === "number" ? ruleLogic.window_days : 30;
+        const windowMs =
+          windowSeconds > 0 ? windowSeconds * 1000 : windowDays * 24 * 60 * 60 * 1000;
+        const since = new Date(Date.now() - windowMs).toISOString();
+        const signalNames = Array.isArray(ruleLogic.signals) ? (ruleLogic.signals as string[]) : [];
+        const query = db("aura_signals")
+          .whereIn("subject_did_hash", lookup)
+          .andWhere("domain", domain)
+          .andWhere("created_at", ">=", since);
+        if (signalNames.length) {
+          query.whereIn("signal", signalNames);
+        }
+        const signals = await query;
+        const { score, diversity } = computeAuraScoreAndDiversity(
+          signals as Array<Record<string, unknown>>,
+          ruleLogic
+        );
+        const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
+        const minSilver = typeof scoreRule.min_silver === "number" ? scoreRule.min_silver : 0;
+        const minGold = typeof scoreRule.min_gold === "number" ? scoreRule.min_gold : 0;
+        const diversityMin =
+          typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
+        const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
+
+        const reasons: string[] = [];
+        if (diversityMin > 0 && diversity < diversityMin) {
+          reasons.push(`Need ${diversityMin - diversity} more diverse counterparties`);
+        }
+        if (minSilver > 0 && score < minSilver) {
+          reasons.push(`Need ${(minSilver - score).toFixed(2)} more score to reach silver`);
+        } else if (minGold > 0 && score < minGold) {
+          reasons.push(`Need ${(minGold - score).toFixed(2)} more score to reach gold`);
+        }
+
+        response.push({
+          rule_id: rule.rule_id,
+          rule_version: rule.version,
+          domain,
+          output_vct: rule.output_vct,
+          capability: {
+            purpose,
+            benefit_vct: String(rule.output_vct ?? ""),
+            domain,
+            window_days: windowDays
+          },
+          eligibility: {
+            eligible_now: reasons.length === 0,
+            reasons,
+            current: {
+              tier: state.tier ?? "bronze",
+              score: state.score ?? 0,
+              diversity: state.diversity ?? 0
+            },
+            window_aggregates: {
+              signal_count: signals.length,
+              score: Number(score.toFixed(4)),
+              diversity
+            },
+            required_thresholds: {
+              min_tier: minTier,
+              min_silver: minSilver,
+              min_gold: minGold,
+              diversity_min: diversityMin
+            }
+          }
+        });
+      }
+    }
     return reply.send({
       subject: { did_hash: didHash },
       generated_at: new Date().toISOString(),

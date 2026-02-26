@@ -3,6 +3,7 @@ import { getDb } from "../db.js";
 import { config } from "../config.js";
 import { ensurePolicyIntegrity } from "./integrity.js";
 import { getPolicyVersionFloor } from "./floor.js";
+import { applyComplianceProfileOverlay, selectComplianceProfile } from "../complianceProfiles.js";
 
 export const PredicateSchema = z.object({
   path: z.string().min(1),
@@ -17,14 +18,28 @@ export const ContextPredicateSchema = z.object({
 });
 
 export const IssuerRuleSchema = z.object({
-  mode: z.enum(["allowlist", "env"]),
+  mode: z.enum(["allowlist", "env", "trust_registry"]),
   allowed: z.array(z.string()).optional(),
-  env: z.string().optional()
+  env: z.string().optional(),
+  // Data-driven trust enforcement: verifier checks issuer DID against the signed trust registry.
+  registry_id: z.string().min(1).optional(),
+  trust_mark: z.string().min(1).optional()
 });
 
 export const RequirementSchema = z.object({
   vct: z.string().min(1),
   issuer: IssuerRuleSchema.optional(),
+  // Optional negotiation: SD-JWT remains default if omitted.
+  formats: z.array(z.string().min(1)).default(["dc+sd-jwt"]),
+  // Optional ZK predicates required to satisfy this requirement (e.g., age>=18).
+  zk_predicates: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        params: z.record(z.string(), z.unknown()).optional()
+      })
+    )
+    .default([]),
   disclosures: z.array(z.string()).default([]),
   predicates: z.array(PredicateSchema).default([]),
   context_predicates: z.array(ContextPredicateSchema).default([]),
@@ -87,6 +102,7 @@ export const getPolicyForAction = async (actionId: string): Promise<PolicyRecord
 };
 
 export const evaluate = async (input: { action: string; context?: Record<string, unknown> }) => {
+  const profile = selectComplianceProfile(input.context);
   const record = await getPolicyForAction(input.action);
   if (!record) {
     return {
@@ -96,17 +112,22 @@ export const evaluate = async (input: { action: string; context?: Record<string,
       requirements: [],
       obligations: [],
       binding: undefined,
-      context: input.context
+      context: input.context,
+      profileId: profile.profile_id,
+      profileFlags: profile.flags
     };
   }
+  const overlay = applyComplianceProfileOverlay({ profile, logic: record.logic });
   return {
     action: input.action,
     policyId: record.policyId,
     policyVersion: record.version,
     policyHash: record.policyHash,
-    requirements: record.logic.requirements,
-    obligations: record.logic.obligations,
-    binding: record.logic.binding,
-    context: input.context
+    requirements: overlay.logic.requirements,
+    obligations: overlay.logic.obligations,
+    binding: overlay.logic.binding,
+    context: input.context,
+    profileId: profile.profile_id,
+    profileFlags: overlay.flags
   };
 };

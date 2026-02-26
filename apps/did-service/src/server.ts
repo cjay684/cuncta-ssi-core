@@ -67,8 +67,7 @@ export const buildServer = () => {
       throw new Error("insecure_dev_auth_not_allowed");
     }
     const localDevAllowed =
-      config.NODE_ENV === "development" &&
-      (config.LOCAL_DEV || isLoopbackAddress(config.SERVICE_BIND_ADDRESS));
+      config.NODE_ENV === "development" && isLoopbackAddress(config.SERVICE_BIND_ADDRESS);
     if (!localDevAllowed) {
       log.error("service.auth.insecure_not_allowed", {
         env: config.NODE_ENV,
@@ -87,11 +86,13 @@ export const buildServer = () => {
     config.SERVICE_JWT_SECRET_DID ??
     (config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? config.SERVICE_JWT_SECRET : undefined);
   if (!serviceSecret) {
-    if (config.NODE_ENV === "production") {
+    const localDevAllowed =
+      config.NODE_ENV === "development" && isLoopbackAddress(config.SERVICE_BIND_ADDRESS);
+    if (config.ALLOW_INSECURE_DEV_AUTH && localDevAllowed) {
+      log.warn("service.auth.missing_insecure_ok", { env: config.NODE_ENV });
+    } else {
       log.error("service.auth.missing", { env: config.NODE_ENV });
       throw new Error("service_auth_not_configured");
-    } else {
-      log.warn("service.auth.missing", { env: config.NODE_ENV });
     }
   }
 

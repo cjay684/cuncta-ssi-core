@@ -25,6 +25,8 @@ export const registerReputationRoutes = (app: FastifyInstance) => {
   });
 
   app.post("/v1/reputation/recompute/:did", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:reputation_recompute"] });
+    if (reply.sent) return;
     const params = z.object({ did: z.string().min(3) }).parse(request.params);
     const result = await recomputeReputation(params.did);
     log.info("reputation.recompute", {

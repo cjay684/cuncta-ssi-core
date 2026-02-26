@@ -8,8 +8,87 @@ import { metrics } from "./metrics.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerSocialRoutes } from "./routes/social.js";
 import { makeErrorResponse } from "@cuncta/shared";
+import net from "node:net";
+
+const isLoopbackAddress = (value?: string) => {
+  if (!value) return false;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "localhost" || trimmed === "::1") return true;
+  const mapped = trimmed.startsWith("::ffff:") ? trimmed.slice(7) : trimmed;
+  const ipType = net.isIP(mapped);
+  if (ipType === 4) {
+    const [a] = mapped.split(".").map((part) => Number(part));
+    return a === 127;
+  }
+  return false;
+};
+
+const isPrivateAddress = (value?: string) => {
+  if (!value) return false;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed === "localhost" || trimmed === "::1") return true;
+  if (trimmed === "0.0.0.0" || trimmed === "::") return false;
+  const mapped = trimmed.startsWith("::ffff:") ? trimmed.slice(7) : trimmed;
+  const ipType = net.isIP(mapped);
+  if (ipType === 4) {
+    const [a, b] = mapped.split(".").map((part) => Number(part));
+    if (a === 10 || a === 127) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  if (ipType === 6) {
+    return mapped.startsWith("fc") || mapped.startsWith("fd");
+  }
+  return false;
+};
 
 export const buildServer = () => {
+  if (config.NODE_ENV === "production" && config.PUBLIC_SERVICE) {
+    log.error("public.service.not_allowed", { env: config.NODE_ENV });
+    throw new Error("public_service_not_allowed");
+  }
+  if (config.NODE_ENV === "production" && !config.TRUST_PROXY) {
+    log.error("trust.proxy.required", { env: config.NODE_ENV });
+    throw new Error("trust_proxy_required_in_production");
+  }
+  if (config.NODE_ENV === "production" && !isPrivateAddress(config.SERVICE_BIND_ADDRESS)) {
+    log.error("service.bind.public_not_allowed", {
+      env: config.NODE_ENV,
+      bind: config.SERVICE_BIND_ADDRESS
+    });
+    throw new Error("public_bind_not_allowed");
+  }
+  if (config.ALLOW_INSECURE_DEV_AUTH) {
+    if (config.NODE_ENV === "production") {
+      log.error("service.auth.insecure_not_allowed", {
+        env: config.NODE_ENV,
+        bind: config.SERVICE_BIND_ADDRESS
+      });
+      throw new Error("insecure_dev_auth_not_allowed");
+    }
+    const localDevAllowed =
+      config.NODE_ENV === "development" && isLoopbackAddress(config.SERVICE_BIND_ADDRESS);
+    if (!localDevAllowed) {
+      log.error("service.auth.insecure_not_allowed", {
+        env: config.NODE_ENV,
+        bind: config.SERVICE_BIND_ADDRESS
+      });
+      throw new Error("insecure_dev_auth_not_allowed");
+    }
+    log.warn("service.auth.insecure_enabled", { env: config.NODE_ENV });
+  }
+  const serviceSecret =
+    config.SERVICE_JWT_SECRET_SOCIAL ??
+    (config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? config.SERVICE_JWT_SECRET : undefined);
+  if (!serviceSecret && !config.ALLOW_INSECURE_DEV_AUTH) {
+    if (config.NODE_ENV === "production") {
+      log.error("service.auth.missing", { env: config.NODE_ENV });
+      throw new Error("service_auth_not_configured");
+    } else {
+      log.warn("service.auth.missing", { env: config.NODE_ENV });
+    }
+  }
   const app = fastify({
     logger: false,
     trustProxy: config.TRUST_PROXY,

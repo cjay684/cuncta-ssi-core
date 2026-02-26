@@ -11,9 +11,9 @@
 1. Restrict DB network access to service subnets only.
 2. Rotate `DATABASE_URL` credentials and redeploy services.
 3. Restart services in this order: policy-service, issuer-service, verifier-service, did-service, app-gateway.
-4. Enable `SPONSOR_KILL_SWITCH=true` and `ALLOW_SPONSORED_ONBOARDING=false` to reduce blast radius.
+4. Onboarding is self-funded only.
 5. Rotate `SERVICE_JWT_SECRET` using the dual-secret flow.
-6. If `ISSUER_KEYS_ALLOW_DB_PRIVATE=true`, rotate issuer keys via `/v1/internal/keys/rotate`.
+6. If `ISSUER_KEYS_ALLOW_DB_PRIVATE=true`, rotate issuer keys via `/v1/admin/keys/rotate`.
 7. If issuer key rotation is not configured, redeploy issuer-service with new key material (via `ISSUER_JWK` or KMS).
 8. Review audit logs (`audit_logs` hashes) and service logs for anomalous activity.
 9. Revoke compromised credentials via `/v1/revoke` (service auth required).

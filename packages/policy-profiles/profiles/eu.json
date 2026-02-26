@@ -1,0 +1,14 @@
+{
+  "profile_id": "eu",
+  "description": "EU profile (GDPR aligned): strict origin binding, strict dependency posture, revocation required.",
+  "flags": {
+    "enforceOriginAudience": true,
+    "failClosedDependencies": true,
+    "statusListStrict": true
+  },
+  "overlay": {
+    "binding": { "require": true, "mode": "kb-jwt" },
+    "requirements": {}
+  }
+}
+

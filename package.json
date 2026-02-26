@@ -27,6 +27,8 @@
     "verify:all": "node scripts/verify-all.mjs",
     "verify:testnet": "pnpm test:integration",
     "typecheck": "pnpm -r typecheck",
+    "check:mainnet-ready": "node --loader ts-node/esm scripts/mainnet-readiness-check.ts",
+    "smoke:staging": "tsx scripts/staging-smoke.ts",
     "audit": "pnpm audit --audit-level high"
   },
   "devDependencies": {

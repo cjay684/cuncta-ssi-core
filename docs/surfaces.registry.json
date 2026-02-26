@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "services": [
+    {
+      "id": "app-gateway",
+      "publiclyDeployable": true,
+      "routes": [
+        { "method": "GET", "path": "/healthz", "surface": "public", "probe": { "path": "/healthz" } },
+        { "method": "GET", "path": "/metrics", "surface": "public", "probe": { "path": "/metrics" } },
+        { "method": "GET", "path": "/v1/capabilities", "surface": "public", "probe": { "path": "/v1/capabilities" } },
+
+        { "method": "GET", "path": "/oid4vp/authorize", "surface": "public", "probe": { "path": "/oid4vp/authorize" } },
+        { "method": "GET", "path": "/oid4vp/request", "surface": "public", "probe": { "path": "/oid4vp/request" } },
+        { "method": "GET", "path": "/oid4vp/request_uri", "surface": "public", "probe": { "path": "/oid4vp/request_uri" } },
+        {
+          "method": "POST",
+          "path": "/oid4vp/response",
+          "surface": "public",
+          "probe": {
+            "path": "/oid4vp/response",
+            "headers": { "content-type": "application/x-www-form-urlencoded" },
+            "body": {}
+          }
+        },
+        { "method": "GET", "path": "/.well-known/jwks.json", "surface": "public", "probe": { "path": "/.well-known/jwks.json" } },
+
+        { "method": "GET", "path": "/oid4vci/offer", "surface": "public", "probe": { "path": "/oid4vci/offer?vct=test_vct" } },
+        {
+          "method": "GET",
+          "path": "/oid4vci/aura/challenge",
+          "surface": "public",
+          "probe": { "path": "/oid4vci/aura/challenge?config_id=aura:test" }
+        },
+        {
+          "method": "POST",
+          "path": "/oid4vci/aura/offer",
+          "surface": "public",
+          "probe": {
+            "path": "/oid4vci/aura/offer",
+            "body": {
+              "credential_configuration_id": "aura:test",
+              "domain": "marketplace",
+              "subjectDid": "did:example:holder",
+              "offer_nonce": "nonce-1234567890",
+              "proof_jwt": "proof-1234567890"
+            }
+          }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/onboard/did/create/user-pays/request",
+          "surface": "public",
+          "probe": { "path": "/v1/onboard/did/create/user-pays/request", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/onboard/did/create/user-pays/submit",
+          "surface": "public",
+          "probe": { "path": "/v1/onboard/did/create/user-pays/submit", "body": {} }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/onboard/did/create/request",
+          "surface": "dev_test_only",
+          "disabledStatus": 410,
+          "probe": { "path": "/v1/onboard/did/create/request", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/onboard/did/create/submit",
+          "surface": "dev_test_only",
+          "disabledStatus": 410,
+          "probe": { "path": "/v1/onboard/did/create/submit", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/onboard/issue",
+          "surface": "dev_test_only",
+          "disabledStatus": 410,
+          "probe": { "path": "/v1/onboard/issue", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/onboard/revoke",
+          "surface": "dev_test_only",
+          "disabledStatus": 404,
+          "probe": { "path": "/v1/onboard/revoke", "body": {} }
+        },
+
+        {
+          "method": "GET",
+          "path": "/v1/dids/resolve/:did",
+          "surface": "public",
+          "probe": { "path": "/v1/dids/resolve/did:example:alice" }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/command/plan",
+          "surface": "public",
+          "probe": { "path": "/v1/command/plan", "body": {} }
+        },
+
+        { "method": "GET", "path": "/v1/realtime/*", "surface": "public", "probe": { "path": "/v1/realtime/events?permissionToken=tok" } },
+        { "method": "POST", "path": "/v1/realtime/*", "surface": "public", "probe": { "path": "/v1/realtime/token", "body": {} } },
+        { "method": "GET", "path": "/v1/social/*", "surface": "public", "probe": { "path": "/v1/social/feed" } },
+        { "method": "POST", "path": "/v1/social/*", "surface": "public", "probe": { "path": "/v1/social/post", "body": {} } },
+        { "method": "POST", "path": "/v1/media/*", "surface": "public", "probe": { "path": "/v1/media/upload/request", "body": {} } },
+
+        {
+          "method": "POST",
+          "path": "/v1/verify",
+          "surface": "dev_test_only",
+          "disabledStatus": 404,
+          "probe": { "path": "/v1/verify", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/requirements",
+          "surface": "dev_test_only",
+          "disabledStatus": 404,
+          "probe": { "path": "/v1/requirements?action=test" }
+        }
+      ]
+    },
+    {
+      "id": "issuer-service",
+      "publiclyDeployable": true,
+      "routes": [
+        { "method": "GET", "path": "/healthz", "surface": "public", "probe": { "path": "/healthz" } },
+        { "method": "GET", "path": "/metrics", "surface": "public", "probe": { "path": "/metrics" } },
+
+        {
+          "method": "GET",
+          "path": "/.well-known/openid-credential-issuer",
+          "surface": "public",
+          "probe": { "path": "/.well-known/openid-credential-issuer" }
+        },
+        { "method": "GET", "path": "/jwks.json", "surface": "public", "probe": { "path": "/jwks.json" } },
+        { "method": "POST", "path": "/token", "surface": "public", "probe": { "path": "/token", "body": "" } },
+        { "method": "POST", "path": "/credential", "surface": "public", "probe": { "path": "/credential", "body": {} } },
+        { "method": "GET", "path": "/status-lists/*", "surface": "public", "probe": { "path": "/status-lists/invalid" } },
+        { "method": "GET", "path": "/v1/issuer", "surface": "public", "probe": { "path": "/v1/issuer" } },
+        { "method": "GET", "path": "/v1/catalog/credentials", "surface": "public", "probe": { "path": "/v1/catalog/credentials" } },
+        { "method": "GET", "path": "/v1/catalog/credentials/:vct", "surface": "public", "probe": { "path": "/v1/catalog/credentials/invalid" } },
+        { "method": "POST", "path": "/v1/privacy/request", "surface": "public", "probe": { "path": "/v1/privacy/request", "body": {} } },
+        { "method": "POST", "path": "/v1/privacy/confirm", "surface": "public", "probe": { "path": "/v1/privacy/confirm", "body": {} } },
+        { "method": "GET", "path": "/v1/privacy/export", "surface": "public", "probe": { "path": "/v1/privacy/export" } },
+        { "method": "POST", "path": "/v1/privacy/restrict", "surface": "public", "probe": { "path": "/v1/privacy/restrict", "body": {} } },
+        { "method": "POST", "path": "/v1/privacy/erase", "surface": "public", "probe": { "path": "/v1/privacy/erase", "body": {} } },
+        { "method": "GET", "path": "/v1/privacy/erase-status", "surface": "public", "probe": { "path": "/v1/privacy/erase-status" } },
+        { "method": "POST", "path": "/v1/privacy/*", "surface": "public", "probe": { "path": "/v1/privacy/request", "body": {} } },
+        { "method": "GET", "path": "/v1/privacy/*", "surface": "public", "probe": { "path": "/v1/privacy/export" } },
+
+        {
+          "method": "POST",
+          "path": "/v1/internal/oid4vci/*",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:oid4vci_preauth"] },
+          "probe": { "path": "/v1/internal/oid4vci/preauth", "body": { "vct": "sdjwt:test" } }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/internal/oid4vci/offer-challenge",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:oid4vci_offer_challenge"] },
+          "probe": { "path": "/v1/internal/oid4vci/offer-challenge", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/internal/oid4vci/preauth/aura",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:oid4vci_preauth"] },
+          "probe": {
+            "path": "/v1/internal/oid4vci/preauth/aura",
+            "body": {
+              "credential_configuration_id": "aura:test",
+              "domain": "marketplace",
+              "subjectDid": "did:example:holder",
+              "offer_nonce": "nonce-1234567890",
+              "proof_jwt": "proof-1234567890"
+            }
+          }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/aura/claim",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:aura_claim"] },
+          "probe": { "path": "/v1/aura/claim", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/aura/explain",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:aura_explain"] },
+          "probe": { "path": "/v1/aura/explain" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/credentials/revoke",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:credentials_revoke"] },
+          "probe": { "path": "/v1/credentials/revoke", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/revoke",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:revoke"] },
+          "probe": { "path": "/v1/revoke", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/issue",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:internal_issue"] },
+          "probe": { "path": "/v1/issue", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/reputation/events",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:reputation_events"] },
+          "probe": { "path": "/v1/reputation/events", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/reputation/recompute/:did",
+          "surface": "internal",
+          "auth": { "requiredScopes": ["issuer:reputation_recompute"] },
+          "probe": { "path": "/v1/reputation/recompute/did:example:alice", "body": {} }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/admin/issue",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:internal_issue"] },
+          "probe": { "path": "/v1/admin/issue", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/admin/keys/rotate",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:key_rotate"] },
+          "probe": { "path": "/v1/admin/keys/rotate", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/admin/keys/revoke",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:key_revoke"] },
+          "probe": { "path": "/v1/admin/keys/revoke", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/admin/anchors/reconcile",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:anchor_reconcile"] },
+          "probe": { "path": "/v1/admin/anchors/reconcile", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/admin/privacy/status",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:privacy_status"] },
+          "probe": { "path": "/v1/admin/privacy/status" }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/admin/aura/explain",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:aura_explain"] },
+          "probe": { "path": "/v1/admin/aura/explain" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/admin/aura/reset",
+          "surface": "admin",
+          "auth": { "requireAdminScope": ["issuer:aura_reset"] },
+          "probe": { "path": "/v1/admin/aura/reset", "body": {} }
+        },
+
+        {
+          "method": "POST",
+          "path": "/v1/dev/issue",
+          "surface": "dev_test_only",
+          "disabledStatus": 404,
+          "probe": { "path": "/v1/dev/issue", "body": {} }
+        }
+      ]
+    }
+  ]
+}
+

@@ -27,60 +27,88 @@ const run = async () => {
   await db("aura_state").del();
   await db("aura_issuance_queue").del();
   await db("aura_rules").update({ enabled: false });
-  await db("aura_rules").where({ rule_id: "test.auraWorker.v1" }).del();
-  await db("aura_rules").insert({
-    rule_id: "test.auraWorker.v1",
-    domain: "marketplace",
-    output_vct: "cuncta.marketplace.seller_good_standing",
-    rule_logic: JSON.stringify({
-      window_seconds: 3600,
-      signals: ["marketplace.listing_success"],
-      score: { min_silver: 1, min_gold: 2 },
-      per_counterparty_cap: 3,
-      per_counterparty_decay_exponent: 0.5,
-      diversity_min: 1,
-      collusion_cluster_threshold: 0.6,
-      collusion_multiplier: 0.7,
-      min_tier: "bronze",
-      output: {
-        claims: {
-          seller_good_standing: true,
-          domain: "{domain}",
-          tier: "{tier}",
-          as_of: "{now}"
+  await db("aura_rules")
+    .where("rule_id", "like", "test.auraWorker.%")
+    .del();
+
+  const insertRule = async (
+    ruleId: string,
+    domain: string,
+    signal: string,
+    minSilver: number,
+    minGold: number
+  ) => {
+    const now = new Date().toISOString();
+    await db("aura_rules").insert({
+      rule_id: ruleId,
+      domain,
+      output_vct: `cuncta.${domain}.test`,
+      rule_logic: JSON.stringify({
+        purpose: `Capability for test rule ${ruleId} within domain ${domain}`,
+        window_seconds: 3600,
+        signals: [signal],
+        score: { min_silver: minSilver, min_gold: minGold },
+        per_counterparty_cap: 3,
+        per_counterparty_decay_exponent: 0.5,
+        diversity_min: 1,
+        collusion_cluster_threshold: 0.6,
+        collusion_multiplier: 0.7,
+        min_tier: "bronze",
+        output: {
+          claims: {
+            domain: "{domain}",
+            tier: "{tier}",
+            as_of: "{now}"
+          }
         }
-      }
-    }),
-    enabled: true,
-    version: 1,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  });
+      }),
+      enabled: true,
+      version: 1,
+      created_at: now,
+      updated_at: now
+    });
+  };
+
+  const insertSignals = async (
+    subjectHash: string,
+    domain: string,
+    signal: string,
+    counterpartyHashes: string[],
+    prefix: string
+  ) => {
+    const now = new Date().toISOString();
+    await db("aura_signals").insert(
+      counterpartyHashes.map((counterpartyHash, index) => ({
+        subject_did_hash: subjectHash,
+        domain,
+        signal,
+        weight: 2,
+        counterparty_did_hash: counterpartyHash,
+        event_hash: sha256Hex(`${prefix}-${index}`),
+        created_at: now
+      }))
+    );
+  };
 
   const subjectDid = "did:example:holder:aura";
   const subjectHash = getDidHashes(subjectDid).primary;
   const counterpartyHash = getDidHashes("did:example:counterparty:1").primary;
+  const counterpartyHash2 = getDidHashes("did:example:counterparty:2").primary;
 
-  await db("aura_signals").insert([
-    {
-      subject_did_hash: subjectHash,
-      domain: "marketplace",
-      signal: "marketplace.listing_success",
-      weight: 2,
-      counterparty_did_hash: counterpartyHash,
-      event_hash: sha256Hex("signal-1"),
-      created_at: new Date().toISOString()
-    },
-    {
-      subject_did_hash: subjectHash,
-      domain: "marketplace",
-      signal: "marketplace.listing_success",
-      weight: 2,
-      counterparty_did_hash: getDidHashes("did:example:counterparty:2").primary,
-      event_hash: sha256Hex("signal-2"),
-      created_at: new Date().toISOString()
-    }
-  ]);
+  await insertRule(
+    "test.auraWorker.marketplace.v1",
+    "marketplace",
+    "marketplace.listing_success",
+    1,
+    2
+  );
+  await insertSignals(
+    subjectHash,
+    "marketplace",
+    "marketplace.listing_success",
+    [counterpartyHash, counterpartyHash2],
+    "marketplace-signal"
+  );
 
   await processAuraSignalsOnce();
 
@@ -91,6 +119,82 @@ const run = async () => {
 
   const queue = await db("aura_issuance_queue").where({ subject_did_hash: subjectHash }).first();
   assert.ok(queue, "aura issuance queue should be populated");
+
+  // A) Same-pass aggregation for social domain keeps highest tier.
+  await db("aura_signals").del();
+  await db("aura_state").where({ subject_did_hash: subjectHash, domain: "social" }).del();
+  await db("aura_rules")
+    .whereIn("rule_id", ["test.auraWorker.social.high.v1", "test.auraWorker.social.low.v1"])
+    .del();
+  await insertRule("test.auraWorker.social.high.v1", "social", "social.post_success", 1, 100);
+  await insertRule("test.auraWorker.social.low.v1", "social", "social.post_success", 10, 100);
+  await insertSignals(
+    subjectHash,
+    "social",
+    "social.post_success",
+    [counterpartyHash, counterpartyHash2],
+    "social-pass-a"
+  );
+  await processAuraSignalsOnce();
+  const socialStateA = await db("aura_state")
+    .where({ subject_did_hash: subjectHash, domain: "social" })
+    .first();
+  assert.equal(socialStateA?.state?.tier, "silver", "same pass should persist highest social tier");
+
+  // B) Rule order independence for same-pass social aggregation.
+  await db("aura_signals").del();
+  await db("aura_state").where({ subject_did_hash: subjectHash, domain: "social" }).del();
+  await db("aura_rules")
+    .whereIn("rule_id", ["test.auraWorker.social.high.v1", "test.auraWorker.social.low.v1"])
+    .del();
+  await insertRule("test.auraWorker.social.low.v1", "social", "social.post_success", 10, 100);
+  await insertRule("test.auraWorker.social.high.v1", "social", "social.post_success", 1, 100);
+  await insertSignals(
+    subjectHash,
+    "social",
+    "social.post_success",
+    [counterpartyHash, counterpartyHash2],
+    "social-pass-b"
+  );
+  await processAuraSignalsOnce();
+  const socialStateB = await db("aura_state")
+    .where({ subject_did_hash: subjectHash, domain: "social" })
+    .first();
+  assert.equal(
+    socialStateB?.state?.tier,
+    "silver",
+    "social tier should be order-independent in one pass"
+  );
+
+  // C) Across passes, social tier can downgrade (not monotonic best-ever).
+  await db("aura_signals").del();
+  await db("aura_rules")
+    .whereIn("rule_id", ["test.auraWorker.social.high.v1", "test.auraWorker.social.low.v1"])
+    .update({
+      rule_logic: JSON.stringify({
+        window_seconds: 3600,
+        signals: ["social.post_success"],
+        score: { min_silver: 999, min_gold: 1000 },
+        per_counterparty_cap: 3,
+        per_counterparty_decay_exponent: 0.5,
+        diversity_min: 1,
+        collusion_cluster_threshold: 0.6,
+        collusion_multiplier: 0.7,
+        min_tier: "bronze",
+        output: { claims: { domain: "{domain}", tier: "{tier}", as_of: "{now}" } }
+      }),
+      updated_at: new Date().toISOString()
+    });
+  await insertSignals(subjectHash, "social", "social.post_success", [counterpartyHash], "social-pass-c");
+  await processAuraSignalsOnce();
+  const socialStateC = await db("aura_state")
+    .where({ subject_did_hash: subjectHash, domain: "social" })
+    .first();
+  assert.equal(
+    socialStateC?.state?.tier,
+    "bronze",
+    "next pass should be able to downgrade social tier"
+  );
 };
 
 run().catch((error) => {

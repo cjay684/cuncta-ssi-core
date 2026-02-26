@@ -13,6 +13,8 @@ import { hashCanonicalJson, signAnchorMeta } from "@cuncta/shared";
 import { getDidHashes } from "../pseudonymizer.js";
 import { getPrivacyStatus } from "../privacy/restrictions.js";
 import { getActiveIssuerKey } from "./keyRing.js";
+import { issueDiBbsCredential } from "@cuncta/di-bbs";
+import { getIssuerDiBbsKeyPair } from "../diBbs/keyPair.js";
 
 const decodeBitstring = (bitstring: string) => new Uint8Array(Buffer.from(bitstring, "base64url"));
 
@@ -247,7 +249,18 @@ export const issueCredential = async (input: {
         sub: input.subjectDid,
         iat: Math.floor(Date.now() / 1000),
         vct: input.vct,
-        status: credentialStatus,
+        // Backward/forward compatible status encoding:
+        // - Keep current W3C BitstringStatusListEntry-style fields for existing in-repo verifiers.
+        // - Add token-style status_list { uri, idx } to support ecosystems that expect that shape.
+        // - Add a namespaced copy so future migrations can move without ambiguity.
+        status: {
+          ...credentialStatus,
+          status_list: {
+            uri: credentialStatus.statusListCredential,
+            idx: nextIndex
+          },
+          cuncta_bitstring: credentialStatus
+        },
         ...input.claims
       },
       selectiveDisclosure: catalog.sd_defaults,
@@ -316,9 +329,141 @@ export const issueCredential = async (input: {
   });
 };
 
+export const issueDiBbsCredentialWithStatus = async (input: {
+  subjectDid: string;
+  claims: Record<string, unknown>;
+  vct: string;
+}) => {
+  const catalog = await getCatalogEntry(input.vct);
+  if (!catalog) {
+    throw new Error("vct_not_found");
+  }
+  validateClaims(catalog.json_schema, input.claims);
+
+  const hashes = getDidHashes(input.subjectDid);
+  const privacyStatus = await getPrivacyStatus(hashes);
+  if (privacyStatus.tombstoned) {
+    throw new Error("privacy_erased");
+  }
+
+  const statusPurpose =
+    (catalog.revocation_config as Record<string, unknown>).statusPurpose ?? "revocation";
+  const statusListId =
+    ((catalog.revocation_config as Record<string, unknown>).statusListId as string | undefined) ??
+    "default";
+  const bitstringSizeRaw = (catalog.revocation_config as Record<string, unknown>).bitstringSize as
+    | number
+    | undefined;
+  const bitstringSize = Number(bitstringSizeRaw ?? config.STATUS_LIST_LENGTH);
+
+  const db = await getDb();
+  return await db.transaction(async (trx) => {
+    await ensureStatusList(trx, statusListId, String(statusPurpose), bitstringSize);
+    const locked = await trx("status_lists")
+      .where({ status_list_id: statusListId })
+      .forUpdate()
+      .first();
+    if (!locked) {
+      throw new Error("status_list_not_found");
+    }
+    const nextIndex = Number(locked.next_index ?? 0);
+    if (nextIndex >= bitstringSize) {
+      throw new Error("status_list_full");
+    }
+    await trx("status_lists")
+      .where({ status_list_id: statusListId })
+      .update({ next_index: nextIndex + 1, updated_at: new Date().toISOString() });
+
+    const eventId = `evt_${randomUUID()}`;
+    const credentialStatus = {
+      id: `${config.ISSUER_BASE_URL}/status-lists/${statusListId}#${nextIndex}`,
+      type: "BitstringStatusListEntry",
+      statusPurpose: String(statusPurpose),
+      statusListIndex: String(nextIndex),
+      statusListCredential: `${config.ISSUER_BASE_URL}/status-lists/${statusListId}`
+    };
+
+    const keyPair = await getIssuerDiBbsKeyPair();
+    const vc = await issueDiBbsCredential({
+      issuer: ISSUER_DID,
+      verificationMethod: `${ISSUER_DID}#bbs-key-1`,
+      vct: input.vct,
+      subjectClaims: input.claims,
+      keyPair
+    });
+    (vc as any).status = {
+      ...credentialStatus,
+      status_list: { uri: credentialStatus.statusListCredential, idx: nextIndex },
+      cuncta_bitstring: credentialStatus
+    };
+
+    const issuedAt = new Date().toISOString();
+    const subjectDidHash = hashes.primary;
+    const credentialFingerprint = hashCanonicalJson({
+      issuerDid: ISSUER_DID,
+      vct: input.vct,
+      statusListId,
+      statusIndex: nextIndex,
+      issuedAt,
+      subjectDidHash
+    });
+
+    await trx("issuance_events").insert({
+      event_id: eventId,
+      vct: input.vct,
+      subject_did_hash: subjectDidHash,
+      credential_fingerprint: credentialFingerprint,
+      status_list_id: statusListId,
+      status_index: nextIndex,
+      issued_at: issuedAt
+    });
+
+    const issuedPayload = {
+      eventId,
+      vct: input.vct,
+      statusListId,
+      statusIndex: nextIndex,
+      credentialFingerprint,
+      issuedAt
+    };
+    const issuedPayloadHash = hashCanonicalJson(issuedPayload);
+    await enqueueAnchor(trx, {
+      eventType: "ISSUED",
+      payloadHash: issuedPayloadHash,
+      payloadMeta: {
+        event_id_hash: sha256Hex(eventId),
+        vct_hash: sha256Hex(input.vct),
+        status_list_id_hash: sha256Hex(statusListId),
+        status_index: nextIndex
+      }
+    });
+
+    await writeAuditLog(
+      "credential_issued",
+      {
+        entityId: eventId,
+        vct: input.vct,
+        credentialFingerprint,
+        subjectDidHash
+      },
+      trx
+    );
+
+    return {
+      eventId,
+      credential: vc,
+      credentialFingerprint,
+      credentialStatus,
+      diagnostics: { anchorPending: true }
+    };
+  });
+};
+
 export const revokeCredential = async (input: {
   eventId?: string;
   credentialFingerprint?: string;
+  statusListId?: string;
+  statusListIndex?: number;
 }) => {
   const db = await getDb();
   return await db.transaction(async (trx) => {
@@ -328,6 +473,11 @@ export const revokeCredential = async (input: {
           builder.where({ event_id: input.eventId });
         } else if (input.credentialFingerprint) {
           builder.where({ credential_fingerprint: input.credentialFingerprint });
+        } else if (input.statusListId && input.statusListIndex !== undefined) {
+          builder.where({
+            status_list_id: input.statusListId,
+            status_index: input.statusListIndex
+          });
         }
       })
       .first();

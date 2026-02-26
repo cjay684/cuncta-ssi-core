@@ -28,3 +28,4 @@ Aura rules are signed using `POLICY_SIGNING_JWK` and anchored on change.
 
 - Invalid or missing signatures halt the aura worker by design.
 - Verification and issuance continue even if aura is halted.
+- Upgrades that modify `aura_rules.rule_logic` (including adding/adjusting capability `purpose` text) will invalidate existing rule signatures. Use the bootstrap flow to re-sign once, then disable bootstrap again.

@@ -25,7 +25,8 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
     const query = z
       .object({
         action: z.string().min(1),
-        space_id: z.string().uuid().optional()
+        space_id: z.string().uuid().optional(),
+        verifier_origin: z.string().min(3).optional()
       })
       .parse(request.query);
     let policy;
@@ -58,9 +59,12 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
 
     const requirements = policy.logic.requirements.map((req) => {
       const catalog = credentialTypes.find((row) => row.vct === req.vct);
+      const extras = req as unknown as { formats?: unknown; zk_predicates?: unknown };
       return {
         vct: req.vct,
         issuer: req.issuer,
+        formats: Array.isArray(extras.formats) ? extras.formats.map(String) : ["dc+sd-jwt"],
+        zk_predicates: Array.isArray(extras.zk_predicates) ? extras.zk_predicates : [],
         disclosures: req.disclosures,
         revocation: req.revocation,
         predicates: req.predicates,
@@ -73,7 +77,19 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
     const responseContext = query.space_id ? { space_id: query.space_id } : undefined;
 
     const nonce = randomBytes(32).toString("base64url");
-    const audience = `cuncta.action:${query.action}`;
+    let audience = `cuncta.action:${query.action}`;
+    if (query.verifier_origin) {
+      try {
+        const origin = new URL(query.verifier_origin).origin;
+        audience = `origin:${origin}`;
+      } catch {
+        return reply.code(400).send(
+          makeErrorResponse("invalid_request", "Invalid verifier origin", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+    }
     const expiresAt = new Date(Date.now() + config.CHALLENGE_TTL_SECONDS * 1000).toISOString();
     const challengeHash = createHash("sha256").update(nonce).digest("hex");
     const policyHash = policy.policyHash;
@@ -98,6 +114,18 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
       policyId: policy.policyId,
       policyVersion: policy.version
     });
+    const obligations = (policy.logic.obligations ?? []).map((ob) => {
+      // Capability scoping: for space-scoped actions, scope aura signals to the specific space domain.
+      // This prevents space activity from becoming a global cross-domain score.
+      const o = (ob ?? {}) as Record<string, unknown>;
+      if (o.type === "AURA_SIGNAL" && typeof o.domain !== "string") {
+        const signal = typeof o.signal === "string" ? o.signal : "";
+        if (signal.startsWith("social.space.") && typeof responseContext?.space_id === "string") {
+          return { ...o, domain: `space:${responseContext.space_id}` };
+        }
+      }
+      return o;
+    });
     return reply.send({
       action: query.action,
       action_id: query.action,
@@ -107,7 +135,7 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
       binding: policy.logic.binding ?? { mode: "kb-jwt", require: true },
       context: responseContext,
       requirements,
-      obligations: policy.logic.obligations ?? [],
+      obligations,
       challenge: {
         nonce,
         audience,
@@ -143,8 +171,8 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
     return reply.send(result);
   });
 
-  app.post("/v1/internal/policy/floor", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["policy:floor_set"] });
+  app.post("/v1/admin/policy/floor", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["policy:floor_set"] });
     if (reply.sent) return;
     const body = floorSetSchema.parse(request.body ?? {});
     await setPolicyVersionFloor(body.actionId, body.minVersion);

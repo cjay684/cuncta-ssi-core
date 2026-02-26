@@ -10,8 +10,8 @@
 
 1. Block public access to issuer-service if exposed.
 2. Rotate `SERVICE_JWT_SECRET` using the dual-secret flow to prevent internal misuse.
-3. If `ISSUER_KEYS_ALLOW_DB_PRIVATE=true`, call `/v1/internal/keys/rotate` to mint a new ACTIVE key.
-4. Revoke the compromised `kid` via `/v1/internal/keys/revoke`.
+3. If `ISSUER_KEYS_ALLOW_DB_PRIVATE=true`, call `/v1/admin/keys/rotate` to mint a new ACTIVE key.
+4. Revoke the compromised `kid` via `/v1/admin/keys/revoke`.
 5. Redeploy issuer-service to ensure key ring is refreshed.
 6. Ensure verifier-service fetches updated JWKS from issuer `/jwks.json`.
 7. Re-issue credentials that must remain valid.
@@ -21,7 +21,7 @@
 
 ## Key rotation steps
 
-- Issuer signing key via `/v1/internal/keys/rotate` and `/v1/internal/keys/revoke`.
+- Issuer signing key via `/v1/admin/keys/rotate` and `/v1/admin/keys/revoke`.
 
 ## Service restart order
 

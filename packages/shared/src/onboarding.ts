@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const OnboardingStrategySchema = z.enum(["sponsored", "user_pays"]);
+// Self-funded onboarding only (legacy mode removed).
+export const OnboardingStrategySchema = z.enum(["user_pays"]);
 export type OnboardingStrategy = z.infer<typeof OnboardingStrategySchema>;
 
 export const parseOnboardingStrategyList = (value?: string) => {
@@ -8,5 +9,5 @@ export const parseOnboardingStrategyList = (value?: string) => {
   return value
     .split(",")
     .map((entry) => entry.trim())
-    .filter((entry): entry is OnboardingStrategy => entry === "sponsored" || entry === "user_pays");
+    .filter((entry): entry is OnboardingStrategy => entry === "user_pays");
 };

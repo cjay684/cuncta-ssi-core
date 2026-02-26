@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@cuncta/sdjwt": "workspace:*",
+    "@cuncta/wallet-keystore": "workspace:*",
     "@hashgraph/sdk": "^2.80.0",
     "@hiero-did-sdk/messages": "^0.1.8",
     "@noble/ed25519": "^3.0.0",

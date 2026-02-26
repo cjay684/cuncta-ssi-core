@@ -1,5 +1,6 @@
 import fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import formbody from "@fastify/formbody";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerIssuerRoutes } from "./routes/issuer.js";
 import { registerStatusListRoutes } from "./routes/statusLists.js";
@@ -9,12 +10,16 @@ import { registerReputationRoutes } from "./routes/reputation.js";
 import { registerAuraRoutes } from "./routes/aura.js";
 import { registerPrivacyRoutes } from "./routes/privacy.js";
 import { registerKeyRoutes } from "./routes/keys.js";
+import { registerAnchorRoutes } from "./routes/anchors.js";
 import { log } from "./log.js";
 import { randomUUID } from "node:crypto";
 import { metrics } from "./metrics.js";
 import { makeErrorResponse } from "@cuncta/shared";
 import { config } from "./config.js";
 import { ensurePseudonymizerReady, ensurePseudonymizerConsistency } from "./pseudonymizer.js";
+import { getDb } from "./db.js";
+import { ensureAuraRuleIntegrity } from "./aura/auraIntegrity.js";
+import { registerSurfaceEnforcement } from "./surfaceEnforcement.js";
 import net from "node:net";
 
 const isLoopbackAddress = (value?: string) => {
@@ -51,10 +56,6 @@ const isPrivateAddress = (value?: string) => {
 };
 
 export const buildServer = () => {
-  if (config.NODE_ENV === "production" && config.PUBLIC_SERVICE) {
-    log.error("public.service.not_allowed", { env: config.NODE_ENV });
-    throw new Error("public_service_not_allowed");
-  }
   if (config.NODE_ENV === "production" && !config.TRUST_PROXY) {
     log.error("trust.proxy.required", { env: config.NODE_ENV });
     throw new Error("trust_proxy_required_in_production");
@@ -74,6 +75,24 @@ export const buildServer = () => {
   ensurePseudonymizerReady();
   app.addHook("onReady", async () => {
     await ensurePseudonymizerConsistency();
+    // Fail closed in production if any enabled capability rule violates the Aura capability contract.
+    if (config.NODE_ENV === "production") {
+      const db = await getDb();
+      const rules = await db("aura_rules").where({ enabled: true });
+      for (const rule of rules) {
+        await ensureAuraRuleIntegrity(rule);
+      }
+      const duplicates = (await db("aura_rules")
+        .where({ enabled: true })
+        .select("domain", "output_vct")
+        .count("rule_id as count")
+        .groupBy("domain", "output_vct")
+        .havingRaw("COUNT(rule_id) > 1")) as Array<{ domain: string; output_vct: string; count: string }>;
+      if (duplicates.length > 0) {
+        log.error("aura.rules.invariant_violated", { count: duplicates.length });
+        throw new Error("aura_rules_invariant_violated");
+      }
+    }
   });
   if (config.ALLOW_INSECURE_DEV_AUTH) {
     if (config.NODE_ENV === "production") {
@@ -115,12 +134,26 @@ export const buildServer = () => {
     log.info("request", { requestId, method: request.method, url: request.url });
   });
 
+  // Runtime public-surface enforcement (fail-closed) for customer-ready production deployments.
+  // Only active in NODE_ENV=production with PUBLIC_SERVICE=true.
+  registerSurfaceEnforcement(app, {
+    config: {
+      NODE_ENV: config.NODE_ENV,
+      PUBLIC_SERVICE: config.PUBLIC_SERVICE,
+      DEV_MODE: config.DEV_MODE,
+      SERVICE_JWT_SECRET:
+        config.SERVICE_JWT_SECRET_ISSUER ??
+        (config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? config.SERVICE_JWT_SECRET : undefined),
+      SERVICE_JWT_AUDIENCE: config.SERVICE_JWT_AUDIENCE
+    }
+  });
+
   app.addHook("preHandler", async (request, reply) => {
     if (!config.BACKUP_RESTORE_MODE) return;
     const path = request.url.split("?")[0];
     const blocked =
       path === "/v1/issue" ||
-      path === "/v1/internal/issue" ||
+      path === "/v1/admin/issue" ||
       path === "/token" ||
       path === "/credential" ||
       path.startsWith("/v1/privacy") ||
@@ -167,6 +200,8 @@ export const buildServer = () => {
   });
 
   app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
+  // OID4VCI token endpoint needs `application/x-www-form-urlencoded`.
+  app.register(formbody);
 
   registerHealthRoutes(app);
   registerIssuerRoutes(app);
@@ -176,6 +211,7 @@ export const buildServer = () => {
   registerAuraRoutes(app);
   registerPrivacyRoutes(app);
   registerKeyRoutes(app);
+  registerAnchorRoutes(app);
   registerDevRoutes(app);
 
   return app;

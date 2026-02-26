@@ -19,43 +19,56 @@ paths:
           description: Metrics text
   /v1/onboard/did/create/request:
     post:
-      summary: Sponsored DID create request
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
+      summary: Legacy onboarding route (disabled)
+      deprecated: true
       responses:
-        "200":
-          description: Create request
+        "410":
+          description: Gone (legacy onboarding disabled)
   /v1/onboard/did/create/submit:
     post:
-      summary: Sponsored DID create submit
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
+      summary: Legacy onboarding route (disabled)
+      deprecated: true
       responses:
-        "200":
-          description: Submit response
+        "410":
+          description: Gone (legacy onboarding disabled)
   /v1/onboard/issue:
     post:
-      summary: Sponsored issue credential
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
+      summary: Legacy onboarding route (disabled)
+      deprecated: true
+      responses:
+        "410":
+          description: Gone (legacy onboarding disabled)
+  /.well-known/jwks.json:
+    get:
+      summary: JWKS for OID4VP request signing (gateway)
+      description: |
+        Proxies the verifier-service JWKS when OID4VP request signing is enabled.
+        Consumers/wallets fetch this via the `iss` in `request_jwt`.
       responses:
         "200":
-          description: Issued credential
-  /v1/verify:
+          description: JWKS
+        "503":
+          description: Unavailable (signing misconfigured or verifier unavailable)
+
+  /oid4vp/request:
+    get:
+      summary: Canonical OID4VP request object (consumer)
+      description: |
+        Canonical consumer entrypoint for verification requests. Requirements are sourced from
+        policy-service and (when enabled) a signed `request_jwt` is attached.
+      responses:
+        "200":
+          description: OID4VP request object
+        "429":
+          description: Rate limited
+        "503":
+          description: Requirements unavailable
+
+  /oid4vp/response:
     post:
-      summary: Verify presentation (gateway proxy)
+      summary: Canonical OID4VP response submission (consumer)
+      description: |
+        Wallet submits a presentation response to be evaluated by verifier-service.
       requestBody:
         required: true
         content:
@@ -65,3 +78,37 @@ paths:
       responses:
         "200":
           description: Verification decision
+        "429":
+          description: Rate limited
+
+  /v1/verify:
+    post:
+      summary: Legacy verify endpoint (deprecated)
+      description: |
+        Deprecated legacy endpoint. In public production posture (`NODE_ENV=production` and
+        `PUBLIC_SERVICE=true`), this route is not registered on the gateway.
+      deprecated: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Verification decision (non-public deployments only)
+        "404":
+          description: Disabled in public production posture
+
+  /v1/requirements:
+    get:
+      summary: Legacy requirements endpoint (deprecated)
+      description: |
+        Deprecated legacy endpoint. In public production posture (`NODE_ENV=production` and
+        `PUBLIC_SERVICE=true`), this route is not registered on the gateway.
+      deprecated: true
+      responses:
+        "200":
+          description: Requirements (non-public deployments only)
+        "404":
+          description: Disabled in public production posture

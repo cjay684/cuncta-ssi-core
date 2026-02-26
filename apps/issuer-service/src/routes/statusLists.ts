@@ -9,10 +9,16 @@ import { config } from "../config.js";
 const revokeSchema = z
   .object({
     eventId: z.string().min(3).optional(),
-    credentialFingerprint: z.string().min(10).optional()
+    credentialFingerprint: z.string().min(10).optional(),
+    statusListId: z.string().min(1).optional(),
+    statusListIndex: z.preprocess((v) => {
+      if (v === undefined || v === null || v === "") return undefined;
+      const n = Number(v);
+      return Number.isInteger(n) && n >= 0 ? n : undefined;
+    }, z.number().int().min(0).optional())
   })
-  .refine((value) => value.eventId || value.credentialFingerprint, {
-    message: "eventId_or_fingerprint_required"
+  .refine((value) => value.eventId || value.credentialFingerprint || (value.statusListId && value.statusListIndex !== undefined), {
+    message: "eventId_or_fingerprint_or_status_list_required"
   });
 
 export const registerStatusListRoutes = (app: FastifyInstance) => {
@@ -40,7 +46,9 @@ export const registerStatusListRoutes = (app: FastifyInstance) => {
     try {
       const result = await revokeCredential({
         eventId: body.eventId,
-        credentialFingerprint: body.credentialFingerprint
+        credentialFingerprint: body.credentialFingerprint,
+        statusListId: body.statusListId,
+        statusListIndex: body.statusListIndex
       });
       return reply.send({
         listId: result.listId,

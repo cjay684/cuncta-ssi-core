@@ -10,9 +10,9 @@
 
 ## Operator override
 
-Use internal policy endpoint with service auth scope `policy:floor_set`:
+Use Admin API with service auth scope `policy:floor_set`:
 
-- `POST /v1/internal/policy/floor`
+- `POST /v1/admin/policy/floor`
 - body: `{ "actionId": "<action>", "minVersion": <int> }`
 
 Use this only for controlled rollout/migration steps.

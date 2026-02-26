@@ -1,0 +1,21 @@
+{
+  "name": "@cuncta/trust-registry",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "lint": "eslint \"src/**/*.ts\"",
+    "test": "tsx src/trustRegistry.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cuncta/shared": "workspace:*",
+    "jose": "^6.1.3",
+    "zod": "^4.3.6"
+  }
+}
+

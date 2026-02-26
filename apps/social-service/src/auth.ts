@@ -10,6 +10,7 @@ export const requireServiceAuth = async (
   const serviceSecret =
     config.SERVICE_JWT_SECRET_SOCIAL ??
     (config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? config.SERVICE_JWT_SECRET : undefined);
+  const nextSecret = config.SERVICE_JWT_SECRET_NEXT;
   if (!serviceSecret) {
     if (config.ALLOW_INSECURE_DEV_AUTH) {
       return;
@@ -37,13 +38,30 @@ export const requireServiceAuth = async (
   }
 
   try {
-    await verifyServiceJwt(token, {
-      audience: config.SERVICE_JWT_AUDIENCE_SOCIAL ?? config.SERVICE_JWT_AUDIENCE,
-      secret: serviceSecret,
-      issuer: "app-gateway",
-      subject: "app-gateway",
-      requiredScopes: options?.requiredScopes
-    });
+    const audience = config.SERVICE_JWT_AUDIENCE_SOCIAL ?? config.SERVICE_JWT_AUDIENCE;
+    try {
+      await verifyServiceJwt(token, {
+        audience,
+        secret: serviceSecret,
+        issuer: "app-gateway",
+        subject: "app-gateway",
+        requiredScopes: options?.requiredScopes
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "jwt_missing_required_scope") {
+        throw error;
+      }
+      if (!nextSecret) {
+        throw error;
+      }
+      await verifyServiceJwt(token, {
+        audience,
+        secret: nextSecret,
+        issuer: "app-gateway",
+        subject: "app-gateway",
+        requiredScopes: options?.requiredScopes
+      });
+    }
   } catch (error) {
     if (error instanceof Error && error.message === "jwt_missing_required_scope") {
       await reply.code(403).send(

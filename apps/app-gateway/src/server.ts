@@ -1,25 +1,35 @@
 import Fastify, { FastifyReply, FastifyRequest } from "fastify";
 import rateLimit from "@fastify/rate-limit";
+import websocket from "@fastify/websocket";
+import formbody from "@fastify/formbody";
 import { createHash, randomUUID } from "node:crypto";
-import { createHmacSha256Pseudonymizer } from "@cuncta/shared";
+import { createHmacSha256Pseudonymizer, hashCanonicalJson } from "@cuncta/shared";
+import {
+  buildPaymentRequest,
+  getFeeQuoteForContext,
+  getFeeQuoteForPlan,
+  parseFeeSchedule,
+  type FeeQuote,
+  type PaymentRequest
+} from "@cuncta/payments";
 import { Client, Transaction } from "@hashgraph/sdk";
 import { config } from "./config.js";
 import { log } from "./log.js";
 import { QuotaStore } from "./abuse.js";
 import { createServiceJwt } from "./serviceAuth.js";
-import {
-  commitSponsorBudgetReservation,
-  reserveSponsorBudget,
-  revertSponsorBudgetReservation
-} from "./sponsorBudget.js";
 import { metrics } from "./metrics.js";
+import { getDb } from "./db.js";
+import { registerSurfaceEnforcement } from "./surfaceEnforcement.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerOnboardRoutes } from "./routes/onboard.js";
 import { registerVerifyRoutes } from "./routes/verify.js";
+import { registerOid4vpRoutes } from "./routes/oid4vp.js";
+import { registerOid4vciRoutes } from "./routes/oid4vci.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerCapabilitiesRoutes } from "./routes/capabilities.js";
 import { registerDidRoutes } from "./routes/dids.js";
 import { registerSocialRoutes } from "./routes/social.js";
+import { registerCommandRoutes } from "./routes/command.js";
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -36,11 +46,21 @@ export type GatewayContext = {
   ipQuotaMinute: QuotaStore;
   pseudonymizer: ReturnType<typeof createHmacSha256Pseudonymizer>;
   createServiceJwt: typeof createServiceJwt;
-  reserveSponsorBudget: typeof reserveSponsorBudget;
-  commitSponsorBudgetReservation: typeof commitSponsorBudgetReservation;
-  revertSponsorBudgetReservation: typeof revertSponsorBudgetReservation;
   hashValue: (value: string) => string;
   submitUserPaysTransaction: SubmitUserPaysTransaction;
+  writeCommandCenterAuditEvent: (input: {
+    id: string;
+    createdAt: string;
+    subjectHash: string;
+    eventType: string;
+    payload: Record<string, unknown>;
+  }) => Promise<void>;
+  maybeCleanupCommandCenterAuditEvents: () => Promise<void>;
+  getFeeQuoteForPlan: (input: { actionId: string | null; intent: string }) => FeeQuote | null;
+  getFeeQuoteForPurpose: (purpose: string) => FeeQuote | null;
+  getPaymentRequest: (input: { feeQuote: FeeQuote | null; purposeScope: string }) => PaymentRequest | null;
+  feeScheduleFingerprint: string;
+  paymentsConfigFingerprint: string;
 };
 
 export type GatewayRequest = FastifyRequest & {
@@ -53,18 +73,36 @@ const hashValue = (value: string) => createHash("sha256").update(value).digest("
 export const buildServer = (input?: {
   configOverride?: typeof config;
   fetchImpl?: FetchLike;
-  reserveSponsorBudget?: typeof reserveSponsorBudget;
-  commitSponsorBudgetReservation?: typeof commitSponsorBudgetReservation;
-  revertSponsorBudgetReservation?: typeof revertSponsorBudgetReservation;
   submitUserPaysTransaction?: SubmitUserPaysTransaction;
+  writeCommandCenterAuditEvent?: GatewayContext["writeCommandCenterAuditEvent"];
+  maybeCleanupCommandCenterAuditEvents?: GatewayContext["maybeCleanupCommandCenterAuditEvents"];
 }) => {
   const activeConfig = input?.configOverride ?? config;
+  let parsedFeeSchedule: ReturnType<typeof parseFeeSchedule>;
+  try {
+    parsedFeeSchedule = parseFeeSchedule({
+      scheduleJson: activeConfig.COMMAND_FEE_SCHEDULE_JSON,
+      network: activeConfig.HEDERA_NETWORK
+    });
+  } catch (error) {
+    log.warn("command.fee.schedule_invalid", {
+      error: error instanceof Error ? error.message : "unknown_error"
+    });
+    parsedFeeSchedule = parseFeeSchedule({
+      scheduleJson: "",
+      network: activeConfig.HEDERA_NETWORK
+    });
+  }
+  const paymentsReceiverAccountId =
+    activeConfig.HEDERA_NETWORK === "mainnet"
+      ? activeConfig.PAYMENTS_RECEIVER_ACCOUNT_ID_MAINNET
+      : activeConfig.PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET;
+  const paymentsConfigFingerprint = hashCanonicalJson({
+    network: activeConfig.HEDERA_NETWORK === "mainnet" ? "mainnet" : "testnet",
+    receiverAccountId: paymentsReceiverAccountId || "",
+    memoMaxBytes: activeConfig.HEDERA_TX_MEMO_MAX_BYTES
+  });
   const fetchImpl = input?.fetchImpl ?? fetch;
-  const reserveSponsorBudgetImpl = input?.reserveSponsorBudget ?? reserveSponsorBudget;
-  const commitSponsorBudgetReservationImpl =
-    input?.commitSponsorBudgetReservation ?? commitSponsorBudgetReservation;
-  const revertSponsorBudgetReservationImpl =
-    input?.revertSponsorBudgetReservation ?? revertSponsorBudgetReservation;
   const submitUserPaysTransactionImpl =
     input?.submitUserPaysTransaction ??
     (async ({ network, signedTransactionBytes }) => {
@@ -79,6 +117,78 @@ export const buildServer = (input?: {
         transactionId: response.transactionId?.toString() ?? "",
         status: receipt.status?.toString()
       };
+    });
+  const writeCommandCenterAuditEventImpl =
+    input?.writeCommandCenterAuditEvent ??
+    (async (payload: {
+      id: string;
+      createdAt: string;
+      subjectHash: string;
+      eventType: string;
+      payload: Record<string, unknown>;
+    }) => {
+      const db = await getDb();
+      await db("command_center_audit_events").insert({
+        id: payload.id,
+        created_at: payload.createdAt,
+        subject_hash: payload.subjectHash,
+        event_type: payload.eventType,
+        payload_json: payload.payload
+      });
+    });
+  let commandAuditCleanupLastRunMs = 0;
+  let commandAuditCleanupInFlight: Promise<void> | null = null;
+  const maybeCleanupCommandCenterAuditEventsImpl =
+    input?.maybeCleanupCommandCenterAuditEvents ??
+    (async () => {
+      if (!activeConfig.COMMAND_AUDIT_CLEANUP_ENABLED) {
+        return;
+      }
+      const now = Date.now();
+      if (now - commandAuditCleanupLastRunMs < activeConfig.COMMAND_AUDIT_CLEANUP_THROTTLE_MS) {
+        return;
+      }
+      if (commandAuditCleanupInFlight) {
+        return commandAuditCleanupInFlight;
+      }
+      commandAuditCleanupLastRunMs = now;
+      commandAuditCleanupInFlight = (async () => {
+        const db = await getDb();
+        const cutoffIso = new Date(
+          Date.now() - activeConfig.COMMAND_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+        ).toISOString();
+        const maxBatches = 3;
+        let deletedTotal = 0;
+        for (let batch = 0; batch < maxBatches; batch += 1) {
+          const deletedCount = await db.transaction(async (trx) => {
+            const rows = (await trx("command_center_audit_events")
+              .where("created_at", "<", cutoffIso)
+              .orderBy("created_at", "asc")
+              .limit(activeConfig.COMMAND_AUDIT_CLEANUP_BATCH_SIZE)
+              .select("id")) as Array<{ id: string }>;
+            if (rows.length === 0) return 0;
+            const ids = rows.map((row) => row.id);
+            await trx("command_center_audit_events").whereIn("id", ids).del();
+            return ids.length;
+          });
+          deletedTotal += deletedCount;
+          if (deletedCount < activeConfig.COMMAND_AUDIT_CLEANUP_BATCH_SIZE) {
+            break;
+          }
+        }
+        if (deletedTotal > 0) {
+          log.info("command.audit.cleanup", { deletedRows: deletedTotal });
+        }
+      })()
+        .catch((error) => {
+          log.warn("command.audit.cleanup_failed", {
+            error: error instanceof Error ? error.message : "unknown_error"
+          });
+        })
+        .finally(() => {
+          commandAuditCleanupInFlight = null;
+        });
+      return commandAuditCleanupInFlight;
     });
   if (activeConfig.NODE_ENV === "production" && !activeConfig.TRUST_PROXY) {
     log.error("trust.proxy.required", { env: activeConfig.NODE_ENV });
@@ -108,6 +218,18 @@ export const buildServer = (input?: {
   app.addHook("onRequest", async (request) => {
     const req = request as GatewayRequest;
     req.requestId = randomUUID();
+  });
+
+  // Runtime public-surface enforcement (fail-closed) for customer-ready production deployments.
+  // Only active in NODE_ENV=production with PUBLIC_SERVICE=true.
+  registerSurfaceEnforcement(app, {
+    config: {
+      NODE_ENV: activeConfig.NODE_ENV,
+      PUBLIC_SERVICE: activeConfig.PUBLIC_SERVICE,
+      DEV_MODE: activeConfig.DEV_MODE,
+      SERVICE_JWT_SECRET: activeConfig.SERVICE_JWT_SECRET,
+      SERVICE_JWT_AUDIENCE: activeConfig.SERVICE_JWT_AUDIENCE
+    }
   });
 
   app.addHook("preHandler", async (request, reply) => {
@@ -158,6 +280,19 @@ export const buildServer = (input?: {
     timeWindow: "1 minute",
     max: activeConfig.RATE_LIMIT_IP_DEFAULT_PER_MIN
   });
+  app.register(websocket, {
+    options: {
+      handleProtocols: (protocols: Set<string>) => {
+        if (protocols.has("cuncta-rt")) {
+          return "cuncta-rt";
+        }
+        const first = protocols.values().next().value as string | undefined;
+        return first ?? false;
+      }
+    }
+  });
+  // OID4VP standard response modes use `application/x-www-form-urlencoded`.
+  app.register(formbody);
 
   const context: GatewayContext = {
     config: activeConfig,
@@ -167,20 +302,53 @@ export const buildServer = (input?: {
     ipQuotaMinute: new QuotaStore(),
     pseudonymizer: createHmacSha256Pseudonymizer({ pepper: activeConfig.PSEUDONYMIZER_PEPPER }),
     createServiceJwt,
-    reserveSponsorBudget: reserveSponsorBudgetImpl,
-    commitSponsorBudgetReservation: commitSponsorBudgetReservationImpl,
-    revertSponsorBudgetReservation: revertSponsorBudgetReservationImpl,
     hashValue,
-    submitUserPaysTransaction: submitUserPaysTransactionImpl
+    submitUserPaysTransaction: submitUserPaysTransactionImpl,
+    writeCommandCenterAuditEvent: writeCommandCenterAuditEventImpl,
+    maybeCleanupCommandCenterAuditEvents: maybeCleanupCommandCenterAuditEventsImpl,
+    getFeeQuoteForPlan: (payload: { actionId: string | null; intent: string }) =>
+      getFeeQuoteForPlan({
+        schedule: parsedFeeSchedule.schedule,
+        actionId: payload.actionId,
+        intent: payload.intent
+      }),
+    getFeeQuoteForPurpose: (purpose: string) =>
+      getFeeQuoteForContext({
+        schedule: parsedFeeSchedule.schedule,
+        actionId: null,
+        intent: "",
+        purpose
+      }),
+    getPaymentRequest: (input: { feeQuote: FeeQuote | null; purposeScope: string }) => {
+      if (!input.feeQuote || !paymentsReceiverAccountId) {
+        return null;
+      }
+      return buildPaymentRequest({
+        feeQuote: input.feeQuote,
+        feeScheduleFingerprint: parsedFeeSchedule.scheduleFingerprint,
+        purposeScope: input.purposeScope,
+        receiver: {
+          kind: "HEDERA_ACCOUNT",
+          accountId: paymentsReceiverAccountId,
+          network: activeConfig.HEDERA_NETWORK === "mainnet" ? "mainnet" : "testnet"
+        },
+        memoMaxBytes: activeConfig.HEDERA_TX_MEMO_MAX_BYTES
+      });
+    },
+    feeScheduleFingerprint: parsedFeeSchedule.scheduleFingerprint,
+    paymentsConfigFingerprint
   };
 
   registerHealthRoutes(app);
   registerMetricsRoutes(app);
   registerCapabilitiesRoutes(app, context);
+  registerOid4vciRoutes(app, context);
   registerOnboardRoutes(app, context);
   registerVerifyRoutes(app, context);
+  registerOid4vpRoutes(app, context);
   registerDidRoutes(app, context);
   registerSocialRoutes(app, context);
+  registerCommandRoutes(app, context);
 
   return app;
 };

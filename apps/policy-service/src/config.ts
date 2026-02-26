@@ -37,6 +37,13 @@ const envSchema = z.object({
   HEDERA_OPERATOR_PRIVATE_KEY: z.string().optional(),
   DATABASE_URL: z.string().default("postgres://cuncta:cuncta@localhost:5432/cuncta_ssi"),
   CHALLENGE_TTL_SECONDS: z.preprocess(toNumber(180), z.number().int().min(30).max(900)),
+  // Data-driven compliance profile selection (UK vs EU vs default).
+  COMPLIANCE_PROFILE_DEFAULT: z.string().default("default"),
+  // JSON map from verifier origin to profile_id, e.g. {"https://rp.example":"uk"}.
+  COMPLIANCE_PROFILE_ORIGIN_MAP_JSON: z.preprocess(
+    emptyToUndefined,
+    z.string().min(2).optional()
+  ),
   POLICY_SIGNING_JWK: z.string().min(10).optional(),
   POLICY_SIGNING_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
   ANCHOR_AUTH_SECRET: z.string().min(16).optional(),
@@ -56,12 +63,19 @@ const envSchema = z.object({
   }, z.boolean().optional()),
   SERVICE_JWT_AUDIENCE: z.string().default("cuncta-internal"),
   SERVICE_JWT_AUDIENCE_POLICY: z.string().default("cuncta.service.policy"),
-  STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional()
+  STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional(),
+  ALLOW_EXPERIMENTAL_ZK: z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") return undefined;
+    return value === "true";
+  }, z.boolean().optional())
 });
 
 const parsed = envSchema.parse(process.env);
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
+}
+if (parsed.NODE_ENV === "production" && parsed.HEDERA_NETWORK === "mainnet" && parsed.POLICY_SIGNING_BOOTSTRAP) {
+  throw new Error("policy_signing_bootstrap_forbidden_on_mainnet_production");
 }
 const autoMigrate = parsed.AUTO_MIGRATE ?? parsed.NODE_ENV !== "production";
 if (parsed.NODE_ENV === "production" && autoMigrate) {
@@ -77,6 +91,12 @@ if (parsed.NODE_ENV === "production" && parsed.ALLOW_LEGACY_SERVICE_JWT_SECRET) 
 if (parsed.ALLOW_LEGACY_SERVICE_JWT_SECRET) {
   console.warn(
     "ALLOW_LEGACY_SERVICE_JWT_SECRET is enabled (dev/test migration aid only; disable before production)."
+  );
+}
+const allowExperimentalZk = parsed.ALLOW_EXPERIMENTAL_ZK ?? parsed.NODE_ENV !== "production";
+if (parsed.NODE_ENV === "production" && allowExperimentalZk) {
+  console.warn(
+    "[EXPERIMENTAL] ALLOW_EXPERIMENTAL_ZK=true — ZK features enabled in production; ensure registry statements are curated."
   );
 }
 const serviceBindAddress =
@@ -100,6 +120,6 @@ export const config = {
   STRICT_DB_ROLE: strictDbRole,
   SERVICE_BIND_ADDRESS: serviceBindAddress,
   SERVICE_JWT_SECRET_FORMAT_STRICT: strictSecrets,
-  POLICY_VERSION_FLOOR_ENFORCED:
-    parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production"
+  ALLOW_EXPERIMENTAL_ZK: allowExperimentalZk,
+  POLICY_VERSION_FLOOR_ENFORCED: parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production"
 };

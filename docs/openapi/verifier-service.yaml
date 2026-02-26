@@ -17,9 +17,127 @@ paths:
       responses:
         "200":
           description: Metrics text
+
+  /.well-known/jwks.json:
+    get:
+      summary: Verifier request-signing JWKS (OID4VP)
+      description: |
+        JWKS for verifying `request_jwt` signatures.
+
+        Notes:
+        - In production posture, verifier-service is a private/internal service. Consumers fetch JWKS from the
+          gateway surface (`app-gateway GET /.well-known/jwks.json`), which proxies this endpoint.
+        - When `VERIFIER_SIGN_OID4VP_REQUEST=false`, this endpoint returns 404.
+      responses:
+        "200":
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Jwks"
+        "404":
+          description: Disabled (request signing off)
+        "503":
+          description: Unavailable (misconfigured signing key)
+
+  /v1/request/sign:
+    post:
+      summary: Sign an OID4VP request (internal/admin)
+      description: |
+        Internal service-to-service endpoint. The gateway calls this to obtain a signed `request_jwt`
+        that it attaches to the consumer `/oid4vp/request` response.
+      security:
+        - serviceJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Oid4vpRequestSignInput"
+      responses:
+        "200":
+          description: Signed request JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [request_jwt]
+                properties:
+                  request_jwt:
+                    type: string
+        "404":
+          description: Disabled (request signing off)
+        "401":
+          description: Missing/invalid service token
+        "403":
+          description: Missing required scope (`verifier:request_sign`)
+        "503":
+          description: Signing failed / unavailable
+
+  /oid4vp/request:
+    get:
+      summary: OID4VP request object (internal)
+      description: |
+        Verifier-service can construct an OID4VP request object by pulling requirements from policy-service.
+
+        This endpoint does NOT attach `request_jwt`. In production posture, consumers should use the gateway
+        consumer surface (`app-gateway GET /oid4vp/request`), which attaches `request_jwt` when enabled.
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: verifier_origin
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uri
+      responses:
+        "200":
+          description: OID4VP request object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Oid4vpRequestObject"
+        "404":
+          description: Route disabled
+        "503":
+          description: Requirements unavailable
+
+  /oid4vp/response:
+    post:
+      summary: OID4VP response submission (internal)
+      description: |
+        Internal endpoint used by the gateway to submit an OID4VP presentation for verification.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Oid4vpResponseInput"
+      responses:
+        "200":
+          description: Verification decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Oid4vpVerifyDecision"
+        "404":
+          description: Route disabled
+
   /v1/verify:
     post:
       summary: Verify presentation
+      deprecated: true
+      description: |
+        Legacy verification endpoint.
+
+        Production posture notes:
+        - Verifier-service is not designed to be internet-exposed in production; it must run private behind the gateway.
+        - This route is not registered when `NODE_ENV=production && PUBLIC_SERVICE=true`.
+        - Consumer/public verification surface is OID4VP via the gateway (`/oid4vp/*`), not this endpoint.
       parameters:
         - name: action
           in: query
@@ -31,7 +149,163 @@ paths:
         content:
           application/json:
             schema:
-              type: object
+              $ref: "#/components/schemas/LegacyVerifyInput"
       responses:
         "200":
           description: Verification decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyVerifyDecision"
+
+components:
+  securitySchemes:
+    serviceJwt:
+      type: http
+      scheme: bearer
+
+  schemas:
+    Jwks:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+
+    Oid4vpRequestSignInput:
+      type: object
+      required: [nonce, audience, exp, action_id, policyHash, iss]
+      properties:
+        nonce:
+          type: string
+        audience:
+          type: string
+        exp:
+          type: integer
+        action_id:
+          type: string
+        policyHash:
+          type: string
+        iss:
+          type: string
+          format: uri
+
+    Oid4vpRequirement:
+      type: object
+      required: [vct]
+      properties:
+        vct:
+          type: string
+        disclosures:
+          type: array
+          items:
+            type: string
+        predicates:
+          type: array
+          items:
+            type: object
+            required: [path, op]
+            properties:
+              path:
+                type: string
+              op:
+                type: string
+              value:
+                nullable: true
+
+    Oid4vpRequestObject:
+      type: object
+      required: [action, nonce, audience, expires_at, requirements, presentation_definition]
+      properties:
+        action:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        expires_at:
+          type: string
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Oid4vpRequirement"
+        request_jwt:
+          type: string
+          description: |
+            Present when a gateway has attached a signed request JWT. Verifier-service `/oid4vp/request`
+            does not attach this; gateway `/oid4vp/request` may.
+        presentation_definition:
+          type: object
+
+    Oid4vpResponseInput:
+      type: object
+      required: [action, presentation, nonce, audience]
+      properties:
+        action:
+          type: string
+        presentation:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+
+    Oid4vpVerifyDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [ALLOW, DENY]
+        reasons:
+          type: array
+          items:
+            type: string
+        policyId:
+          type: string
+          nullable: true
+        policyVersion:
+          type: integer
+          nullable: true
+        obligationsExecuted:
+          type: array
+          items:
+            type: object
+
+    LegacyVerifyInput:
+      type: object
+      required: [presentation, nonce, audience]
+      properties:
+        presentation:
+          type: string
+        nonce:
+          type: string
+        audience:
+          type: string
+        context:
+          type: object
+          additionalProperties: true
+
+    LegacyVerifyDecision:
+      type: object
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [ALLOW, DENY]
+        reasons:
+          type: array
+          items:
+            type: string
+        obligationExecutionId:
+          type: string
+          nullable: true
+        obligationsExecuted:
+          type: array
+          items:
+            type: object

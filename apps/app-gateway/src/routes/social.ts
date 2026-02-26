@@ -6,6 +6,40 @@ const getSocialSecret = (context: GatewayContext) =>
   context.config.SERVICE_JWT_SECRET_SOCIAL ??
   (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
 
+const REALTIME_PROTOCOL_NAME = "cuncta-rt";
+const REALTIME_PROTOCOL_TOKEN_PREFIX = `${REALTIME_PROTOCOL_NAME}.token.`;
+
+export const parseWebsocketProtocolHeader = (header: string | string[] | undefined) => {
+  if (!header) return [] as string[];
+  const value = Array.isArray(header) ? header.join(",") : header;
+  return value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
+export const extractRealtimeToken = (input: {
+  protocols: string[];
+  queryToken: string | null;
+  allowQueryToken: boolean;
+}) => {
+  const tokenProtocol = input.protocols.find((entry) => entry.startsWith(REALTIME_PROTOCOL_TOKEN_PREFIX));
+  if (tokenProtocol) {
+    const token = tokenProtocol.slice(REALTIME_PROTOCOL_TOKEN_PREFIX.length).trim();
+    if (!token) {
+      return { ok: false as const, code: "invalid_request", tokenSource: "subprotocol" as const };
+    }
+    return { ok: true as const, permissionToken: token, tokenSource: "subprotocol" as const };
+  }
+  if (input.queryToken) {
+    if (!input.allowQueryToken) {
+      return { ok: false as const, code: "invalid_request", tokenSource: "query" as const };
+    }
+    return { ok: true as const, permissionToken: input.queryToken, tokenSource: "query" as const };
+  }
+  return { ok: false as const, code: "invalid_request", tokenSource: "missing" as const };
+};
+
 const proxyToSocial = async (
   context: GatewayContext,
   input: {
@@ -13,6 +47,7 @@ const proxyToSocial = async (
     path: string;
     query?: string;
     body?: unknown;
+    timeoutMs?: number;
   }
 ) => {
   const secret = getSocialSecret(context);
@@ -31,13 +66,68 @@ const proxyToSocial = async (
   if (input.query) {
     url.search = input.query;
   }
-  return context.fetchImpl(url, {
-    method: input.method,
-    headers: {
-      Authorization: authHeader,
-      ...(input.method === "POST" ? { "content-type": "application/json" } : {})
-    },
-    ...(input.method === "POST" ? { body: JSON.stringify(input.body ?? {}) } : {})
+  const controller = new AbortController();
+  const timeoutMs = input.timeoutMs ?? 0;
+  const timeout =
+    timeoutMs > 0
+      ? setTimeout(() => {
+          controller.abort("social_proxy_timeout");
+        }, timeoutMs)
+      : null;
+  timeout?.unref?.();
+  try {
+    return await context.fetchImpl(url, {
+      method: input.method,
+      headers: {
+        Authorization: authHeader,
+        ...(input.method === "POST" ? { "content-type": "application/json" } : {})
+      },
+      ...(input.method === "POST" ? { body: JSON.stringify(input.body ?? {}) } : {}),
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (controller.signal.aborted && controller.signal.reason === "social_proxy_timeout") {
+      throw new Error("social_proxy_timeout");
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+};
+
+const sendProxyResponseWithFeeQuote = async (
+  reply: Parameters<typeof sendProxyResponse>[0],
+  response: Response,
+  input: {
+    feeQuote: ReturnType<GatewayContext["getFeeQuoteForPurpose"]>;
+    feeScheduleFingerprint: string;
+    paymentRequest: ReturnType<GatewayContext["getPaymentRequest"]>;
+  }
+) => {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return sendProxyResponse(reply, response);
+  }
+  const raw = await response.text();
+  let payload: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    payload = null;
+  }
+  if (!payload || Array.isArray(payload)) {
+    return reply.code(response.status).send(raw);
+  }
+  return reply.code(response.status).send({
+    ...payload,
+    feeQuote: input.feeQuote,
+    feeQuoteFingerprint: input.feeQuote?.quoteFingerprint ?? null,
+    feeScheduleFingerprint: input.feeScheduleFingerprint,
+    paymentRequest: input.paymentRequest,
+    paymentRequestFingerprint: input.paymentRequest?.paymentRequestFingerprint ?? null
   });
 };
 
@@ -113,6 +203,296 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
         label: requirementLabels[entry.vct] ?? entry.vct
       }))
     });
+  });
+
+  app.post("/v1/media/upload/request", async (request, reply) => {
+    try {
+      const feeQuote = context.getFeeQuoteForPurpose("media.upload.request");
+      const paymentRequest = context.getPaymentRequest({
+        feeQuote,
+        purposeScope: "media.upload.request"
+      });
+      const response = await proxyToSocial(context, {
+        method: "POST",
+        path: "/v1/social/media/upload/request",
+        body: request.body ?? {}
+      });
+      return sendProxyResponseWithFeeQuote(reply, response, {
+        feeQuote,
+        feeScheduleFingerprint: context.feeScheduleFingerprint,
+        paymentRequest
+      });
+    } catch (error) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Social service unavailable", {
+          devMode: context.config.DEV_MODE,
+          debug: context.config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "error" }
+            : undefined
+        })
+      );
+    }
+  });
+
+  app.post("/v1/media/upload/complete", async (request, reply) => {
+    try {
+      const response = await proxyToSocial(context, {
+        method: "POST",
+        path: "/v1/social/media/upload/complete",
+        body: request.body ?? {}
+      });
+      return sendProxyResponse(reply, response);
+    } catch (error) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Social service unavailable", {
+          devMode: context.config.DEV_MODE,
+          debug: context.config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "error" }
+            : undefined
+        })
+      );
+    }
+  });
+
+  app.post("/v1/media/view/request", async (request, reply) => {
+    try {
+      const response = await proxyToSocial(context, {
+        method: "POST",
+        path: "/v1/social/media/view/request",
+        body: request.body ?? {}
+      });
+      return sendProxyResponse(reply, response);
+    } catch (error) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Social service unavailable", {
+          devMode: context.config.DEV_MODE,
+          debug: context.config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "error" }
+            : undefined
+        })
+      );
+    }
+  });
+
+  app.post("/v1/realtime/token", async (request, reply) => {
+    try {
+      const feeQuote = context.getFeeQuoteForPurpose("realtime.token");
+      const paymentRequest = context.getPaymentRequest({
+        feeQuote,
+        purposeScope: "realtime.token"
+      });
+      const response = await proxyToSocial(context, {
+        method: "POST",
+        path: "/v1/social/realtime/token",
+        body: request.body ?? {}
+      });
+      return sendProxyResponseWithFeeQuote(reply, response, {
+        feeQuote,
+        feeScheduleFingerprint: context.feeScheduleFingerprint,
+        paymentRequest
+      });
+    } catch (error) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Social service unavailable", {
+          devMode: context.config.DEV_MODE,
+          debug: context.config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "error" }
+            : undefined
+        })
+      );
+    }
+  });
+
+  app.get("/v1/realtime/events", async (request, reply) => {
+    try {
+      const response = await proxyToSocial(context, {
+        method: "GET",
+        path: "/v1/social/realtime/events",
+        query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : "",
+        timeoutMs: context.config.REALTIME_SOCIAL_FETCH_TIMEOUT_MS
+      });
+      return sendProxyResponse(reply, response);
+    } catch (error) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Social service unavailable", {
+          devMode: context.config.DEV_MODE,
+          debug: context.config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "error" }
+            : undefined
+        })
+      );
+    }
+  });
+
+  app.get("/v1/realtime/connect", { websocket: true }, async (connection, request) => {
+    try {
+      const reqUrl = new URL(request.url, "http://localhost");
+      const offeredProtocols = parseWebsocketProtocolHeader(
+        request.headers["sec-websocket-protocol"] as string | string[] | undefined
+      );
+      const extracted = extractRealtimeToken({
+        protocols: offeredProtocols,
+        queryToken: reqUrl.searchParams.get("permission_token")?.trim() ?? null,
+        allowQueryToken: context.config.REALTIME_ALLOW_QUERY_TOKEN
+      });
+      if (!extracted.ok) {
+        connection.socket.send(JSON.stringify({ type: "error", code: "invalid_request" }));
+        connection.socket.close(1008, "invalid_request");
+        return;
+      }
+      const permissionToken = extracted.permissionToken;
+      let closed = false;
+      let after: string | null = reqUrl.searchParams.get("after")?.trim() ?? null;
+      if (after && !/^\d+$/.test(after)) {
+        connection.socket.send(JSON.stringify({ type: "error", code: "invalid_request" }));
+        connection.socket.close(1008, "invalid_request");
+        return;
+      }
+      const closeWithRealtimeError = (code: string, reason: string) => {
+        if (closed) return;
+        connection.socket.send(JSON.stringify({ type: "error", code }));
+        connection.socket.close(1011, reason);
+        closed = true;
+      };
+      const pushEvents = async () => {
+        const query = new URLSearchParams();
+        query.set("permissionToken", permissionToken);
+        if (after) {
+          query.set("after", after);
+        }
+        query.set("limit", "200");
+        const response = await proxyToSocial(context, {
+          method: "GET",
+          path: "/v1/social/realtime/events",
+          query: `?${query.toString()}`,
+          timeoutMs: context.config.REALTIME_SOCIAL_FETCH_TIMEOUT_MS
+        });
+        if (!response.ok) {
+          throw new Error(`realtime_events_fetch_failed:${response.status}`);
+        }
+        const payload = (await response.json().catch(() => null)) as
+          | { events?: Array<{ createdAt?: string; cursor?: string | null }>; nextCursor?: string | null }
+          | null;
+        const events = payload?.events ?? [];
+        for (const event of events) {
+          if (event.cursor && /^\d+$/.test(event.cursor)) {
+            after = event.cursor;
+          }
+        }
+        if (payload?.nextCursor && /^\d+$/.test(payload.nextCursor)) {
+          after = payload.nextCursor;
+        }
+        if (events.length > 0) {
+          connection.socket.send(JSON.stringify({ type: "events", events }));
+        }
+      };
+      const loop = async () => {
+        while (!closed) {
+          try {
+            await pushEvents();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : "realtime_events_fetch_failed";
+            if (message === "social_proxy_timeout") {
+              closeWithRealtimeError("upstream_timeout", "upstream_timeout");
+            } else {
+              closeWithRealtimeError("upstream_unavailable", "upstream_unavailable");
+            }
+            return;
+          }
+          await new Promise((resolve) => setTimeout(resolve, context.config.REALTIME_WS_POLL_MS));
+        }
+      };
+      let liveLoopStarted = false;
+      const startLiveLoop = () => {
+        if (liveLoopStarted || closed) return;
+        liveLoopStarted = true;
+        void loop();
+      };
+      const liveStartDelay = setTimeout(() => {
+        startLiveLoop();
+      }, 50);
+      liveStartDelay.unref?.();
+      connection.socket.on("message", async (raw: Buffer) => {
+        try {
+          const data = JSON.parse(String(raw ?? "{}")) as {
+            type?: string;
+            eventType?: string;
+            payload?: unknown;
+            after?: string | number | null;
+            channels?: string[];
+          };
+          if (data.type === "hello") {
+            clearTimeout(liveStartDelay);
+            const requestedAfter =
+              data.after === null || data.after === undefined ? null : String(data.after).trim();
+            if (requestedAfter && !/^\d+$/.test(requestedAfter)) {
+              closeWithRealtimeError("invalid_request", "invalid_request");
+              return;
+            }
+            after = requestedAfter;
+            try {
+              await pushEvents();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "realtime_events_fetch_failed";
+              if (message === "social_proxy_timeout") {
+                closeWithRealtimeError("upstream_timeout", "upstream_timeout");
+              } else {
+                closeWithRealtimeError("upstream_unavailable", "upstream_unavailable");
+              }
+              return;
+            }
+            connection.socket.send(
+              JSON.stringify({
+                type: "hello_ack",
+                server_time: new Date().toISOString(),
+                resume_from: requestedAfter
+              })
+            );
+            startLiveLoop();
+            return;
+          }
+          if (data.type !== "publish") {
+            startLiveLoop();
+            return;
+          }
+          if (!data.eventType) return;
+          const publishResponse = await proxyToSocial(context, {
+            method: "POST",
+            path: "/v1/social/realtime/publish",
+            body: {
+              permissionToken,
+              eventType: data.eventType,
+              payload: data.payload ?? {}
+            },
+            timeoutMs: context.config.REALTIME_SOCIAL_FETCH_TIMEOUT_MS
+          });
+          if (!publishResponse.ok) {
+            closeWithRealtimeError("publish_failed", "publish_failed");
+            return;
+          }
+          startLiveLoop();
+        } catch {
+          closeWithRealtimeError("invalid_message", "invalid_message");
+        }
+      });
+      connection.socket.on("close", () => {
+        closed = true;
+        clearTimeout(liveStartDelay);
+      });
+      connection.socket.on("error", () => {
+        closed = true;
+        clearTimeout(liveStartDelay);
+      });
+      connection.socket.send(
+        JSON.stringify({
+          type: "ready",
+          protocol: offeredProtocols.includes(REALTIME_PROTOCOL_NAME) ? REALTIME_PROTOCOL_NAME : null,
+          token_source: extracted.tokenSource
+        })
+      );
+    } catch {
+      connection.socket.close(1011, "internal_error");
+    }
   });
 
   app.post("/v1/social/profile/create", async (request, reply) => {
@@ -842,6 +1222,104 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
       method: "POST",
       path: `/v1/social/challenges/${encodeURIComponent(params.challengeId)}/complete`,
       body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/banter/threads", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/banter/threads`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/banter/threads", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/banter/threads`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/banter/threads/:threadId", async (request, reply) => {
+    const params = request.params as { threadId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/banter/threads/${encodeURIComponent(params.threadId)}`
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/banter/threads/:threadId/permission", async (request, reply) => {
+    const params = request.params as { threadId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/banter/threads/${encodeURIComponent(params.threadId)}/permission`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/banter/threads/:threadId/messages", async (request, reply) => {
+    const params = request.params as { threadId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/banter/threads/${encodeURIComponent(params.threadId)}/messages`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/banter/threads/:threadId/send", async (request, reply) => {
+    const params = request.params as { threadId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/banter/threads/${encodeURIComponent(params.threadId)}/send`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/banter/messages/:messageId/react", async (request, reply) => {
+    const params = request.params as { messageId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/banter/messages/${encodeURIComponent(params.messageId)}/react`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/banter/messages/:messageId/delete", async (request, reply) => {
+    const params = request.params as { messageId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/banter/messages/${encodeURIComponent(params.messageId)}/delete`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/banter/messages/:messageId/moderate", async (request, reply) => {
+    const params = request.params as { messageId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/banter/messages/${encodeURIComponent(params.messageId)}/moderate`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.post("/v1/social/spaces/:spaceId/status", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "POST",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/status`,
+      body: request.body ?? {}
+    });
+    return sendProxyResponse(reply, response);
+  });
+  app.get("/v1/social/spaces/:spaceId/status", async (request, reply) => {
+    const params = request.params as { spaceId: string };
+    const response = await proxyToSocial(context, {
+      method: "GET",
+      path: `/v1/social/spaces/${encodeURIComponent(params.spaceId)}/status`,
+      query: request.url.includes("?") ? request.url.slice(request.url.indexOf("?")) : ""
     });
     return sendProxyResponse(reply, response);
   });

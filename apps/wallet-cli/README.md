@@ -6,7 +6,6 @@ Client-managed signing for `did:hedera` using the DID service.
 
 ```bash
 pnpm --filter wallet-cli did:create
-pnpm --filter wallet-cli did:create:auto --mode sponsored
 pnpm --filter wallet-cli did:create:auto --mode user_pays
 pnpm --filter wallet-cli did:create:user-pays
 pnpm --filter wallet-cli did:create:user-pays-gateway
@@ -32,8 +31,8 @@ This fallback is never allowed on mainnet or in production.
 export DID_SERVICE_BASE_URL=http://localhost:3001
 export APP_GATEWAY_BASE_URL=http://localhost:3010
 export HEDERA_NETWORK=testnet
-export ONBOARDING_STRATEGY_DEFAULT=sponsored
-export ONBOARDING_STRATEGY_ALLOWED=sponsored,user_pays
+export ONBOARDING_STRATEGY_DEFAULT=user_pays
+export ONBOARDING_STRATEGY_ALLOWED=user_pays
 export HEDERA_PAYER_ACCOUNT_ID=0.0.x
 export HEDERA_PAYER_PRIVATE_KEY=302e...
 export USER_PAYS_MAX_FEE_TINYBARS=50000000

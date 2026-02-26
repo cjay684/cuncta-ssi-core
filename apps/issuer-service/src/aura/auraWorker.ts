@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { getDb } from "../db.js";
-import { hashCanonicalJson } from "@cuncta/shared";
+import { hashCanonicalJson, signAnchorMeta } from "@cuncta/shared";
 import { log } from "../log.js";
 import { metrics } from "../metrics.js";
 import { config } from "../config.js";
 import { getPrivacyStatus } from "../privacy/restrictions.js";
 import { ensureAuraRuleIntegrity } from "./auraIntegrity.js";
+import { parseRuleLogic, ruleAppliesToDomain } from "./ruleContract.js";
+import { clampTierByDiversity, computeTierFromScore, tierLevelForName } from "./tier.js";
 
 type AuraRule = {
   rule_id: string;
@@ -20,8 +22,6 @@ type AuraRule = {
 const parseNumber = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-const tierRank: Record<string, number> = { bronze: 0, silver: 1, gold: 2 };
-
 const workerStatus = {
   lastRunAt: null as string | null,
   lastError: null as string | null
@@ -31,24 +31,6 @@ let auraWorkerHalted = false;
 
 export const getAuraWorkerStatus = () => ({ ...workerStatus });
 export const isAuraWorkerHalted = () => auraWorkerHalted;
-
-const computeTier = (score: number, ruleLogic: Record<string, unknown>) => {
-  const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
-  const minSilver = parseNumber(scoreRule.min_silver, 5);
-  const minGold = parseNumber(scoreRule.min_gold, 12);
-  if (score >= minGold) return "gold";
-  if (score >= minSilver) return "silver";
-  return "bronze";
-};
-
-const clampByDiversity = (tier: string, diversity: number, ruleLogic: Record<string, unknown>) => {
-  const diversityRule = (ruleLogic.diversity as Record<string, unknown>) ?? {};
-  const minSilver = parseNumber(diversityRule.min_for_silver, 5);
-  const minGold = parseNumber(diversityRule.min_for_gold, 12);
-  if (diversity < minSilver) return "bronze";
-  if (diversity < minGold && tier === "gold") return "silver";
-  return tier;
-};
 
 const computeScore = (
   signals: Array<Record<string, unknown>>,
@@ -90,6 +72,8 @@ const computeScore = (
   const diversity = Array.from(counterpartyMap.keys()).filter((key) => key !== "none").length;
   return { score: total * antiCollusionMultiplier, diversity };
 };
+
+export const computeAuraScoreAndDiversity = computeScore;
 
 const applyTemplate = (value: unknown, context: Record<string, string | number>): unknown => {
   if (typeof value === "string") {
@@ -146,6 +130,73 @@ export const processAuraSignalsOnce = async () => {
     .limit(200)) as Array<Record<string, unknown>>;
   if (!pendingSignals.length) return;
 
+  // Privacy-safe anchoring: per-run batch receipts with no subject hashes.
+  // Batch hash is computed over signal event_hashes only (not published individually).
+  if (config.ANCHOR_AUTH_SECRET) {
+    try {
+      const byDomain = new Map<string, Array<Record<string, unknown>>>();
+      for (const s of pendingSignals) {
+        const domain = String(s.domain ?? "");
+        if (!domain) continue;
+        const list = byDomain.get(domain) ?? [];
+        list.push(s);
+        byDomain.set(domain, list);
+      }
+      for (const [domain, list] of byDomain.entries()) {
+        const hashes = list
+          .map((s) => String(s.event_hash ?? ""))
+          .filter((h) => h.length > 0)
+          .sort();
+        if (!hashes.length) continue;
+        // Deterministic batch hash: binds the event set and the active rule versions (privacy-safe).
+        const applicableRules = rules
+          .filter((r) => ruleAppliesToDomain(String(r.domain ?? ""), domain))
+          .map((r) => ({ rule_id: r.rule_id, output_vct: r.output_vct, version: r.version }))
+          .sort((a, b) => a.rule_id.localeCompare(b.rule_id));
+        const batchHash = hashCanonicalJson({
+          event_hashes: hashes,
+          rules: applicableRules
+        });
+        const windowStart = String(list[0]?.created_at ?? now);
+        const windowEnd = String(list[list.length - 1]?.created_at ?? now);
+        const payloadHash = hashCanonicalJson({
+          event: "AURA_BATCH",
+          domain,
+          window_start: windowStart,
+          window_end: windowEnd,
+          signal_count: list.length,
+          batch_hash: batchHash
+        });
+        await db("anchor_outbox")
+          .insert({
+            outbox_id: randomUUID(),
+            event_type: "AURA_BATCH",
+            payload_hash: payloadHash,
+            payload_meta: {
+              domain,
+              window_start: windowStart,
+              window_end: windowEnd,
+              signal_count: list.length,
+              batch_hash: batchHash,
+              ...signAnchorMeta(config.ANCHOR_AUTH_SECRET, {
+                payloadHash,
+                eventType: "AURA_BATCH"
+              })
+            },
+            status: "PENDING",
+            attempts: 0,
+            next_retry_at: now,
+            created_at: now,
+            updated_at: now
+          })
+          .onConflict("payload_hash")
+          .ignore();
+      }
+    } catch (error) {
+      log.warn("aura.batch.anchor_failed", { error: error instanceof Error ? error.message : "unknown_error" });
+    }
+  }
+
   const grouped = new Map<string, Array<Record<string, unknown>>>();
   for (const signal of pendingSignals) {
     const subject = signal.subject_did_hash as string;
@@ -168,14 +219,22 @@ export const processAuraSignalsOnce = async () => {
         .update({ processed_at: new Date().toISOString() });
       continue;
     }
-    const applicable = rules.filter((rule) => rule.domain === domain || rule.domain === "*");
+    const applicable = rules.filter((rule) => ruleAppliesToDomain(String(rule.domain ?? ""), domain));
     if (!applicable.length) continue;
 
+    let aggregatedState:
+      | {
+          score: number;
+          diversity: number;
+          tier: string;
+          tierLevel: number;
+          windowDays: number;
+          lastSignalAt: string;
+          updatedAt: string;
+        }
+      | null = null;
     for (const rule of applicable) {
-      const ruleLogic =
-        typeof rule.rule_logic === "string"
-          ? (JSON.parse(rule.rule_logic) as Record<string, unknown>)
-          : (rule.rule_logic as Record<string, unknown>);
+      const ruleLogic = parseRuleLogic(rule);
       const windowSeconds = parseNumber(ruleLogic.window_seconds, 0);
       const windowDays = parseNumber(ruleLogic.window_days, 30);
       const windowMs = windowSeconds > 0 ? windowSeconds * 1000 : windowDays * 24 * 60 * 60 * 1000;
@@ -191,9 +250,16 @@ export const processAuraSignalsOnce = async () => {
       if (!windowSignals.length) continue;
 
       const { score, diversity } = computeScore(windowSignals, ruleLogic);
-      let tier = computeTier(score, ruleLogic);
-      tier = clampByDiversity(tier, diversity, ruleLogic);
+      const tierComputed = computeTierFromScore(score, ruleLogic);
+      const clampedLevel = clampTierByDiversity({
+        tierLevel: tierComputed.tierLevel,
+        tiers: tierComputed.tiers,
+        diversity,
+        ruleLogic
+      });
+      const tier = tierComputed.tiers[clampedLevel]?.name ?? tierComputed.tier;
       const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
+      const minTierLevel = tierLevelForName(minTier, tierComputed.tiers);
       const diversityMin = parseNumber(ruleLogic.diversity_min, 0);
       const context = {
         tier,
@@ -204,30 +270,28 @@ export const processAuraSignalsOnce = async () => {
         now: new Date().toISOString()
       };
 
-      await db("aura_state")
-        .insert({
-          subject_did_hash: subjectDidHash,
-          domain,
-          state: {
-            score: context.score,
-            diversity: context.diversity,
-            tier: context.tier,
-            window_days: windowDays,
-            last_signal_at: windowSignals.at(-1)?.created_at ?? context.now
-          },
-          updated_at: context.now
-        })
-        .onConflict(["subject_did_hash", "domain"])
-        .merge({
-          state: {
-            score: context.score,
-            diversity: context.diversity,
-            tier: context.tier,
-            window_days: windowDays,
-            last_signal_at: windowSignals.at(-1)?.created_at ?? context.now
-          },
-          updated_at: context.now
-        });
+      const candidate = {
+        score: context.score,
+        diversity: context.diversity,
+        tier: context.tier,
+        tierLevel: clampedLevel,
+        windowDays,
+        lastSignalAt: String(windowSignals.at(-1)?.created_at ?? context.now),
+        updatedAt: context.now
+      };
+      if (!aggregatedState) {
+        aggregatedState = candidate;
+      } else {
+        // Non-authoritative UX state: choose the "best" across applicable rules deterministically.
+        // (Higher tier wins; tie-breaker: higher score.)
+        const currentLevel = (aggregatedState as { tierLevel?: number }).tierLevel ?? 0;
+        if (
+          candidate.tierLevel > currentLevel ||
+          (candidate.tierLevel === currentLevel && candidate.score > aggregatedState.score)
+        ) {
+          aggregatedState = candidate;
+        }
+      }
 
       const claims = buildClaims(ruleLogic, context);
       const reasonHash = hashCanonicalJson({
@@ -242,7 +306,7 @@ export const processAuraSignalsOnce = async () => {
         claims
       });
 
-      if (diversity >= diversityMin && tierRank[tier] >= (tierRank[minTier] ?? 0)) {
+      if (diversity >= diversityMin && clampedLevel >= minTierLevel) {
         await db("aura_issuance_queue")
           .insert({
             queue_id: `aq_${randomUUID()}`,
@@ -258,6 +322,32 @@ export const processAuraSignalsOnce = async () => {
           .onConflict(["rule_id", "subject_did_hash", "reason_hash"])
           .ignore();
       }
+    }
+    if (aggregatedState) {
+      await db("aura_state")
+        .insert({
+          subject_did_hash: subjectDidHash,
+          domain,
+          state: {
+            score: aggregatedState.score,
+            diversity: aggregatedState.diversity,
+            tier: aggregatedState.tier,
+            window_days: aggregatedState.windowDays,
+            last_signal_at: aggregatedState.lastSignalAt
+          },
+          updated_at: aggregatedState.updatedAt
+        })
+        .onConflict(["subject_did_hash", "domain"])
+        .merge({
+          state: {
+            score: aggregatedState.score,
+            diversity: aggregatedState.diversity,
+            tier: aggregatedState.tier,
+            window_days: aggregatedState.windowDays,
+            last_signal_at: aggregatedState.lastSignalAt
+          },
+          updated_at: aggregatedState.updatedAt
+        });
     }
 
     await db("aura_signals")

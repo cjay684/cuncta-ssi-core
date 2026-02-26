@@ -5,6 +5,7 @@ import { config } from "../config.js";
 import { getDb } from "../db.js";
 import { writeAuditLog } from "../audit.js";
 import { metrics } from "../metrics.js";
+import { getRulePurpose, isDomainPatternValid, parseRuleLogic } from "./ruleContract.js";
 
 type AuraRuleRow = {
   rule_id: string;
@@ -143,7 +144,48 @@ const recordAuraRuleChange = async (ruleHash: string, row: AuraRuleRow) => {
   await enqueueAuraRuleAnchor(ruleHash, row);
 };
 
+export const verifyAuraRuleIntegrity = async (row: AuraRuleRow) => {
+  // Same contract validation as ensureAuraRuleIntegrity, but with NO side effects:
+  // - does not sign missing signatures
+  // - does not write audit logs
+  // - does not enqueue anchors
+  if (row.enabled) {
+    const outputVct = String(row.output_vct ?? "").trim();
+    if (!outputVct) throw new Error("aura_integrity_failed");
+    const domainRaw = String(row.domain ?? "");
+    const domainValid = isDomainPatternValid(domainRaw);
+    if (!domainValid.ok) throw new Error("aura_integrity_failed");
+    const ruleLogic = parseRuleLogic(row);
+    const purpose = getRulePurpose(ruleLogic);
+    if (!purpose) throw new Error("aura_integrity_failed");
+  }
+  const ruleHash = computeAuraRuleHash(row);
+  if (!row.rule_signature) {
+    throw new Error("aura_integrity_failed");
+  }
+  await verifyAuraRuleSignature(ruleHash, row.rule_signature);
+  return { ruleHash };
+};
+
 export const ensureAuraRuleIntegrity = async (row: AuraRuleRow) => {
+  // Capability contract validation (fail-closed in production for enabled rules).
+  if (row.enabled) {
+    const outputVct = String(row.output_vct ?? "").trim();
+    if (!outputVct) {
+      throw new Error("aura_integrity_failed");
+    }
+    const domainRaw = String(row.domain ?? "");
+    const domainValid = isDomainPatternValid(domainRaw);
+    if (!domainValid.ok) {
+      throw new Error("aura_integrity_failed");
+    }
+    const ruleLogic = parseRuleLogic(row);
+    const purpose = getRulePurpose(ruleLogic);
+    if (!purpose) {
+      throw new Error("aura_integrity_failed");
+    }
+  }
+
   const ruleHash = computeAuraRuleHash(row);
   if (!row.rule_signature) {
     if (!config.POLICY_SIGNING_BOOTSTRAP) {

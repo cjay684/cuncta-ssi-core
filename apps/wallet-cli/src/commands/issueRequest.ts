@@ -1,35 +1,9 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { z } from "zod";
+import { loadWalletState, saveWalletState } from "../walletStore.js";
 
 const envSchema = z.object({
   ISSUER_SERVICE_BASE_URL: z.string().url()
 });
-
-type WalletState = {
-  did?: { did?: string };
-  credentials?: Array<{
-    vct: string;
-    credential: string;
-    eventId: string;
-    credentialFingerprint: string;
-  }>;
-};
-
-const walletStatePath = () => {
-  const dir = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(dir, "..", "..", "wallet-state.json");
-};
-
-const loadWalletState = async (): Promise<WalletState> => {
-  const content = await readFile(walletStatePath(), "utf8");
-  return JSON.parse(content) as WalletState;
-};
-
-const saveWalletState = async (state: WalletState) => {
-  await writeFile(walletStatePath(), JSON.stringify(state, null, 2), "utf8");
-};
 
 export const issueRequest = async () => {
   const env = envSchema.parse(process.env);
@@ -65,8 +39,7 @@ export const issueRequest = async () => {
   };
 
   const next =
-    state.credentials?.filter((cred) => cred.vct !== "cuncta.marketplace.seller_good_standing") ??
-    [];
+    state.credentials?.filter((cred) => cred.vct !== "cuncta.marketplace.seller_good_standing") ?? [];
   next.push({
     vct: "cuncta.marketplace.seller_good_standing",
     credential: payload.credential,

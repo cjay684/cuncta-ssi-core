@@ -37,7 +37,7 @@ This page summarizes security boundaries, guarantees, and operator responsibilit
 ## Public vs internal endpoint posture
 
 - Public onboarding should be exposed through `app-gateway`.
-- Internal issuance (`/v1/internal/issue`) requires service auth + scope.
+- Admin issuance (`/v1/admin/issue`) requires service auth + admin scope.
 - Public `/v1/issue` is disabled in production unless explicitly in dev mode.
 - Testnet integration routes/tests remain opt-in via `RUN_TESTNET_INTEGRATION=1`.
 

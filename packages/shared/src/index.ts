@@ -44,6 +44,39 @@ export { createSha256Pseudonymizer, createHmacSha256Pseudonymizer } from "./pseu
 export type { Pseudonymizer } from "./pseudonymizer.js";
 export { makeErrorResponse } from "./errors.js";
 export { createMetricsRegistry } from "./metrics.js";
-export { signAnchorMeta } from "./anchorAuth.js";
+export { signAnchorMeta, verifyAnchorMeta } from "./anchorAuth.js";
 export { OnboardingStrategySchema, parseOnboardingStrategyList } from "./onboarding.js";
 export type { OnboardingStrategy } from "./onboarding.js";
+export {
+  extractAuthorizedEd25519Keys,
+  isCnfKeyAuthorizedByDidDocument,
+  normalizeEd25519Jwk
+} from "./didKeyBinding.js";
+export type { NormalizedEd25519Jwk } from "./didKeyBinding.js";
+export {
+  classifyHederaFailure,
+  extractHederaStatusFromError,
+  extractTxIdFromError
+} from "./hederaFailure.js";
+export type { HederaFailureClassification, HederaFailureKind } from "./hederaFailure.js";
+export { Oid4vpRequestObjectSchema } from "./oid/oid4vp.js";
+export type { Oid4vpRequestObject } from "./oid/oid4vp.js";
+export {
+  compileSurfacePathPattern,
+  compileSurfaceRoutesForService,
+  loadSurfaceRegistryBundleFromFile,
+  loadSurfaceRegistryFromFile,
+  loadSurfaceRegistryForRuntime,
+  matchSurfaceRoute,
+  verifySurfaceRegistryBundle
+} from "./surfaceRegistry.js";
+export type {
+  CompiledSurfaceRoute,
+  SurfaceAuth,
+  SurfaceKind,
+  SurfaceProbe,
+  SurfaceRegistry,
+  SurfaceRegistryBundle,
+  SurfaceRegistryService,
+  SurfaceRouteEntry
+} from "./surfaceRegistry.js";

@@ -1,16 +1,7 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
-import { SignJWT, importJWK } from "jose";
-import { toBase64Url } from "../encoding/base64url.js";
+import { buildHolderJwtEdDsa, ensureHolderPublicJwk } from "../holder/holderKeys.js";
+import { loadWalletState } from "../walletStore.js";
 
 type WalletState = {
-  keys?: {
-    ed25519?: {
-      privateKeyBase64: string;
-      publicKeyBase64: string;
-    };
-  };
   did?: {
     did?: string;
   };
@@ -22,24 +13,6 @@ export type PrivacyKbjwtInput = {
   audience?: string;
   output?: (token: string) => void;
 };
-
-const walletStatePath = () => {
-  const dir = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(dir, "..", "..", "wallet-state.json");
-};
-
-export const loadWalletState = async (): Promise<WalletState> => {
-  const content = await readFile(walletStatePath(), "utf8");
-  return JSON.parse(content) as WalletState;
-};
-
-export const buildJwk = (privateKeyBase64: string, publicKeyBase64: string) => ({
-  kty: "OKP",
-  crv: "Ed25519",
-  d: toBase64Url(Buffer.from(privateKeyBase64, "base64")),
-  x: toBase64Url(Buffer.from(publicKeyBase64, "base64")),
-  alg: "EdDSA"
-});
 
 const parseOptionalNumber = (value: unknown) => {
   if (value === undefined || value === null || value === "") return undefined;
@@ -57,30 +30,26 @@ export const buildPrivacyKbjwt = async (input: {
   audience: string;
   output?: (token: string) => void;
 }) => {
-  const state = await loadWalletState();
-  const key = state.keys?.ed25519;
-  if (!key) {
-    throw new Error("wallet_state_missing_keys");
-  }
+  const state = (await loadWalletState()) as unknown as WalletState;
+  const holderPublicJwk = await ensureHolderPublicJwk();
   if (!state.did?.did) {
     throw new Error("wallet_state_missing_did");
   }
 
-  const holderJwk = buildJwk(key.privateKeyBase64, key.publicKeyBase64);
-  const holderKey = await importJWK(holderJwk as never, "EdDSA");
   const nowSeconds = Math.floor(Date.now() / 1000);
   const envTtl = parseOptionalNumber(process.env.KBJWT_TTL_SECONDS);
   const ttlSeconds = clampTtlSeconds(envTtl);
 
-  const kbJwt = await new SignJWT({
-    aud: input.audience,
-    nonce: input.nonce,
-    iat: nowSeconds,
-    exp: nowSeconds + ttlSeconds,
-    cnf: { jwk: { kty: "OKP", crv: "Ed25519", x: holderJwk.x, alg: "EdDSA" } }
-  })
-    .setProtectedHeader({ alg: "EdDSA", typ: "kb+jwt" })
-    .sign(holderKey);
+  const kbJwt = await buildHolderJwtEdDsa({
+    header: { alg: "EdDSA", typ: "kb+jwt" },
+    payload: {
+      aud: input.audience,
+      nonce: input.nonce,
+      iat: nowSeconds,
+      exp: nowSeconds + ttlSeconds,
+      cnf: { jwk: { kty: "OKP", crv: "Ed25519", x: holderPublicJwk.x, alg: "EdDSA" } }
+    }
+  });
 
   if (input.output) {
     input.output(kbJwt);

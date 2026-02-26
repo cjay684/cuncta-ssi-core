@@ -8,6 +8,7 @@ const requiresDb = (file) => {
   const normalized = file.replaceAll("\\", "/");
   return (
     normalized.endsWith("/routes/verify.guardrails.test.ts") ||
+    normalized.endsWith("/core/verifyPresentation.test.ts") ||
     normalized.endsWith("/verify.limits.test.ts")
   );
 };

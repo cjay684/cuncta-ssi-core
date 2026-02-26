@@ -3,6 +3,9 @@ import rateLimit from "@fastify/rate-limit";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerPresentationRoutes } from "./routes/presentations.js";
 import { registerVerifyRoutes } from "./routes/verify.js";
+import { registerOid4vpRoutes } from "./routes/oid4vp.js";
+import { registerRequestSigningRoutes } from "./routes/requestSigning.js";
+import { loadZkStatementRegistry } from "@cuncta/zk-registry";
 import { log } from "./log.js";
 import { randomUUID } from "node:crypto";
 import { metrics } from "./metrics.js";
@@ -73,6 +76,10 @@ export const buildServer = () => {
   ensurePseudonymizerReady();
   app.addHook("onReady", async () => {
     await ensurePseudonymizerConsistency();
+    if (config.ALLOW_EXPERIMENTAL_ZK) {
+      // Fail fast if artifact hashes do not match the registry (parameter poisoning hardening).
+      await loadZkStatementRegistry();
+    }
   });
   if (config.ALLOW_INSECURE_DEV_AUTH) {
     if (config.NODE_ENV === "production") {
@@ -172,6 +179,8 @@ export const buildServer = () => {
   registerHealthRoutes(app);
   registerPresentationRoutes(app);
   registerVerifyRoutes(app);
+  registerOid4vpRoutes(app);
+  registerRequestSigningRoutes(app);
 
   return app;
 };

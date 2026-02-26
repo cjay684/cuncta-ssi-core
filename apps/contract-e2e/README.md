@@ -23,10 +23,10 @@ pnpm -C apps/contract-e2e test:contract
 - `RUN_TESTNET_INTEGRATION=1` (suite refuses to run without it)
 - `HEDERA_NETWORK=testnet`
 - `APP_GATEWAY_BASE_URL` (public gateway URL)
-- `CONTRACT_ONBOARDING_MODE` (default: `sponsored`; set `self-funded` to reuse an existing DID)
+- `CONTRACT_ONBOARDING_MODE` (must be `self-funded`; CUNCTA supports self-funded onboarding only)
 - `CONTRACT_E2E_ADMIN_TOKEN` (must match gateway admin token for `/v1/onboard/revoke`)
 
-When `CONTRACT_ONBOARDING_MODE=self-funded`:
+For self-funded mode (required):
 
 - `HEDERA_PAYER_ACCOUNT_ID`
 - `HEDERA_PAYER_PRIVATE_KEY`

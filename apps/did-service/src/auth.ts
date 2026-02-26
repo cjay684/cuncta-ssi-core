@@ -13,17 +13,19 @@ export const requireServiceAuth = async (
     (config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? config.SERVICE_JWT_SECRET : undefined);
   const nextSecret = config.SERVICE_JWT_SECRET_NEXT;
   if (!serviceSecret) {
-    if (config.NODE_ENV === "production") {
-      await reply
-        .code(503)
-        .send(
-          makeErrorResponse(
-            "service_auth_not_configured",
-            "Service authentication is not configured",
-            { devMode: config.DEV_MODE }
-          )
-        );
+    // Defense-in-depth: server startup should fail-fast, but never "silent allow" at request time.
+    if (config.ALLOW_INSECURE_DEV_AUTH && config.NODE_ENV === "development") {
+      return;
     }
+    await reply
+      .code(503)
+      .send(
+        makeErrorResponse(
+          "service_auth_not_configured",
+          "Service authentication is not configured",
+          { devMode: config.DEV_MODE }
+        )
+      );
     return;
   }
   const token = extractBearerToken(request.headers.authorization);

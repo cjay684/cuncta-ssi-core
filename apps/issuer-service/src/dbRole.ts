@@ -59,8 +59,7 @@ export const enforceStrictDbRole = async () => {
   const forbiddenWriteTables = [
     "policies",
     "policy_version_floor",
-    "sponsor_budget_daily",
-    "sponsor_budget_events"
+    // Legacy tables removed from runtime role allowlists.
   ];
   for (const tableName of forbiddenWriteTables) {
     await probeReadAccess(tableName);

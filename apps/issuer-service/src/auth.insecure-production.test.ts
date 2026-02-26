@@ -3,7 +3,11 @@ import { strict as assert } from "node:assert";
 const TEST_SECRET_HEX = "0123456789abcdef".repeat(4);
 const TEST_ENV_OVERRIDES: Record<string, string | undefined> = {
   NODE_ENV: "production",
+  HEDERA_NETWORK: "testnet",
+  ALLOW_MAINNET: "false",
   ALLOW_INSECURE_DEV_AUTH: "true",
+  // Ensure this test is deterministic and does not depend on a developer's `.env`.
+  ISSUER_KEYS_ALLOW_DB_PRIVATE: "false",
   TRUST_PROXY: "true",
   PUBLIC_SERVICE: "false",
   SERVICE_BIND_ADDRESS: "127.0.0.1",
@@ -12,6 +16,7 @@ const TEST_ENV_OVERRIDES: Record<string, string | undefined> = {
   ENFORCE_HTTPS_INTERNAL: "false",
   ALLOW_LEGACY_SERVICE_JWT_SECRET: "false",
   ISSUER_BASE_URL: "http://issuer.test",
+  DID_SERVICE_BASE_URL: "http://did.test",
   ISSUER_DID: "did:example:issuer",
   ISSUER_JWK: JSON.stringify({
     kty: "OKP",
@@ -21,6 +26,15 @@ const TEST_ENV_OVERRIDES: Record<string, string | undefined> = {
     alg: "EdDSA",
     kid: "issuer-1"
   }),
+  OID4VCI_TOKEN_SIGNING_JWK: JSON.stringify({
+    kty: "OKP",
+    crv: "Ed25519",
+    x: "test",
+    d: "test",
+    alg: "EdDSA",
+    kid: "oid4vci-token-1"
+  }),
+  OID4VCI_TOKEN_SIGNING_BOOTSTRAP: "false",
   PSEUDONYMIZER_PEPPER: "test-pepper",
   SERVICE_JWT_SECRET: TEST_SECRET_HEX,
   SERVICE_JWT_SECRET_ISSUER: TEST_SECRET_HEX,

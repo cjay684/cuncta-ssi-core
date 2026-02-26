@@ -11,6 +11,10 @@ const requiresDb = (file) => {
     normalized.includes("/issuer/") ||
     normalized.includes("/privacy/") ||
     normalized.includes("/reputation/") ||
+    normalized.includes("/routes/aura.") ||
+    normalized.includes("/routes/issuer.") ||
+    normalized.includes("/routes/privacy.") ||
+    normalized.includes("/routes/dev.") ||
     normalized.includes("/hedera/") ||
     normalized.includes("anchorWorker") ||
     normalized.includes("cleanupWorker") ||

@@ -297,24 +297,19 @@ erased.
 - Show absence of subject-linked rows in telemetry tables.
 - Explain immutable anchoring boundary.
 
-## Sponsored Onboarding Disabled
+## Legacy Onboarding Routes (Disabled)
 
-Use this scenario to validate the sponsorship kill switch and client fallback behavior.
-
-**Condition**
-
-- `ALLOW_SPONSORED_ONBOARDING=false` on `app-gateway`
+CUNCTA supports self-funded onboarding only. Legacy onboarding endpoints are permanently disabled.
 
 **Expected behavior**
 
-- Gateway routes `/v1/onboard/did/create/request` and `/v1/onboard/did/create/submit`
-  return `403`.
-- Error payload: `error="sponsored_onboarding_disabled"` with message `Self-funded required`.
+- Gateway routes `/v1/onboard/did/create/request`, `/v1/onboard/did/create/submit`, and `/v1/onboard/issue`
+  return `410 Gone`.
+- Error payload: `error="sponsored_onboarding_not_supported"` with message `Legacy onboarding is not supported. Use self-funded flows only.`
 
 **Operator action**
 
-- Confirm clients fall back to self-funded onboarding.
-- If clients cannot self-fund, re-enable sponsorship or provide a migration window.
+- Clients must use self-funded flows (`/v1/onboard/did/create/user-pays/*`).
 
 ## Operator-as-Payer on Mainnet (Misconfiguration)
 

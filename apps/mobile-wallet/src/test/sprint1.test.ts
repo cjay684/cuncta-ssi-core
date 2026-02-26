@@ -39,6 +39,10 @@ const run = async (name: string, fn: () => Promise<void>) => {
   }
 };
 
+// Keep tests deterministic regardless of developer `.env`.
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
+
 await run("software keys blocked without explicit allow", async () => {
   process.env.NODE_ENV = "development";
   process.env.WALLET_BUILD_MODE = "development";

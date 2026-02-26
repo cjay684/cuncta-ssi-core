@@ -1,11 +1,8 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { z } from "zod";
-import { SignJWT, importJWK } from "jose";
 import { sha256Base64Url } from "../crypto/sha256.js";
-import { toBase64Url } from "../encoding/base64url.js";
 import { presentSdJwtVc } from "@cuncta/sdjwt";
+import { loadWalletState } from "../walletStore.js";
+import { buildHolderJwtEdDsa, ensureHolderPublicJwk } from "../holder/holderKeys.js";
 
 const toOptionalNumber = (value: unknown) => {
   if (value === undefined || value === null || value === "") return undefined;
@@ -20,53 +17,29 @@ const envSchema = z.object({
 });
 
 type WalletState = {
-  keys?: {
-    ed25519?: {
-      privateKeyBase64: string;
-      publicKeyBase64: string;
-    };
-  };
   credentials?: Array<{ vct: string; sdJwt: string }>;
 };
-
-const walletStatePath = () => {
-  const dir = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(dir, "..", "..", "wallet-state.json");
-};
-
-const loadWalletState = async (): Promise<WalletState> => {
-  const content = await readFile(walletStatePath(), "utf8");
-  return JSON.parse(content) as WalletState;
-};
-
-const buildJwk = (privateKeyBase64: string, publicKeyBase64: string) => ({
-  kty: "OKP",
-  crv: "Ed25519",
-  d: toBase64Url(Buffer.from(privateKeyBase64, "base64")),
-  x: toBase64Url(Buffer.from(publicKeyBase64, "base64")),
-  alg: "EdDSA"
-});
 
 const buildPresentation = async (
   sdJwtPresentation: string,
   audience: string,
   nonce: string,
-  holderJwk: Record<string, unknown>,
+  holderJwk: { x: string },
   ttlSeconds: number
 ) => {
   const sdHash = sha256Base64Url(sdJwtPresentation);
-  const holderKey = await importJWK(holderJwk as never, "EdDSA");
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const kbJwt = await new SignJWT({
-    aud: audience,
-    nonce,
-    iat: nowSeconds,
-    exp: nowSeconds + ttlSeconds,
-    sd_hash: sdHash,
-    cnf: { jwk: { kty: "OKP", crv: "Ed25519", x: holderJwk.x, alg: "EdDSA" } }
-  })
-    .setProtectedHeader({ alg: "EdDSA", typ: "kb+jwt" })
-    .sign(holderKey);
+  const kbJwt = await buildHolderJwtEdDsa({
+    header: { alg: "EdDSA", typ: "kb+jwt" },
+    payload: {
+      aud: audience,
+      nonce,
+      iat: nowSeconds,
+      exp: nowSeconds + ttlSeconds,
+      sd_hash: sdHash,
+      cnf: { jwk: { kty: "OKP", crv: "Ed25519", x: holderJwk.x, alg: "EdDSA" } }
+    }
+  });
 
   const base = sdJwtPresentation.endsWith("~") ? sdJwtPresentation : `${sdJwtPresentation}~`;
   return `${base}${kbJwt}`;
@@ -74,11 +47,8 @@ const buildPresentation = async (
 
 export const presentAge = async () => {
   const env = envSchema.parse(process.env);
-  const state = await loadWalletState();
-  const key = state.keys?.ed25519;
-  if (!key) {
-    throw new Error("holder_keys_missing");
-  }
+  const state = (await loadWalletState()) as unknown as WalletState;
+  const holderJwk = await ensureHolderPublicJwk();
   const matching = state.credentials?.filter((cred) => cred.vct === "cuncta.age_over_18") ?? [];
   const credential = matching.at(-1);
   if (!credential) {
@@ -139,7 +109,6 @@ export const presentAge = async () => {
       .flatMap((req) => req.predicates?.map((predicate) => predicate.path) ?? []) ?? [];
   const disclosures = requiredPaths.filter((path) => defaults.includes(path));
 
-  const holderJwk = buildJwk(key.privateKeyBase64, key.publicKeyBase64);
   const baseTtl = Number.isFinite(env.KBJWT_TTL_SECONDS as number)
     ? Math.max(30, Math.min(600, Number(env.KBJWT_TTL_SECONDS)))
     : 120;

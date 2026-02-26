@@ -4,7 +4,7 @@ Production should use separate DB roles per service instead of one shared `DATAB
 
 ## Roles
 
-- `db_role_gateway`: sponsor budget tables only
+- `db_role_gateway`: gateway audit/event tables only (no onboarding sponsorship tables)
 - `db_role_policy`: policy and challenge lifecycle tables
 - `db_role_verifier`: verify read/write obligations and rate-limit side effects
 - `db_role_issuer`: issuance/revocation/aura/privacy/anchor tables

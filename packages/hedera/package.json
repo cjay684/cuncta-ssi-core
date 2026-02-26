@@ -16,6 +16,7 @@
     "@hashgraph/sdk": "^2.80.0",
     "@hiero-did-sdk/registrar": "^0.1.8",
     "@hiero-did-sdk/resolver": "^0.1.8",
-    "@hiero-ledger/sdk": "^2.80.0"
+    "@hiero-ledger/sdk": "^2.80.0",
+    "zod": "^4.3.6"
   }
 }

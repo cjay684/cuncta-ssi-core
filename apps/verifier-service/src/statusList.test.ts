@@ -4,6 +4,9 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose";
 
 const run = async () => {
   process.env.NODE_ENV = "test";
+  // Keep tests deterministic regardless of developer `.env`.
+  process.env.HEDERA_NETWORK = "testnet";
+  process.env.ALLOW_MAINNET = "false";
 
   const { privateKey, publicKey } = await generateKeyPair("EdDSA", { extractable: true });
   const publicJwk = await exportJWK(publicKey);

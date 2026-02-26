@@ -154,6 +154,7 @@ const run = async () => {
     domain: "marketplace",
     output_vct: "cuncta.marketplace.seller_good_standing",
     rule_logic: JSON.stringify({
+      purpose: "Capability for seller good standing within marketplace",
       window_seconds: 60,
       per_counterparty_cap: 3,
       per_counterparty_decay_exponent: 0.5,

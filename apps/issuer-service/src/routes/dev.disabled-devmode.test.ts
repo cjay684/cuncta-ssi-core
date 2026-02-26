@@ -3,7 +3,10 @@ import { strict as assert } from "node:assert";
 process.env.NODE_ENV = "development";
 process.env.DEV_MODE = "false";
 process.env.SERVICE_BIND_ADDRESS = "127.0.0.1";
+process.env.HEDERA_NETWORK = "testnet";
+process.env.ALLOW_MAINNET = "false";
 process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.DID_SERVICE_BASE_URL = "http://did.test";
 process.env.ISSUER_DID = "did:example:issuer";
 process.env.ISSUER_JWK = JSON.stringify({
   kty: "OKP",

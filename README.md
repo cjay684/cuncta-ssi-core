@@ -18,7 +18,7 @@ Infrastructure config belongs in `.env` (network, operator keys, base URLs, flag
 - Verifier issues per-request nonce/audience.
 - Wallet creates a KB-JWT bound to nonce/audience and holder key.
 - Verifier validates SD-JWT + KB-JWT and status list.
-- `/v1/verify` always requires holder binding (KB-JWT); policy cannot disable it.
+- Verification always requires holder binding (KB-JWT); policy cannot disable it.
 
 ## Verifier helper (SDK)
 
@@ -53,7 +53,7 @@ const statusCheck = await verifyStatusListEntry({
 
 See `apps/web-demo` for a minimal frontend that demonstrates how applications integrate with CUNCTA SSI Core.
 It is a demo/reference implementation, not a production wallet. In production posture, the demo uses
-`app-gateway` for sponsor-paid onboarding so clients never hold service secrets.
+`app-gateway` for self-funded onboarding (user pays Hedera fees; private keys never leave the client).
 
 ## Social MVP Contract
 
@@ -72,6 +72,14 @@ Minimal OpenAPI stubs live in `docs/openapi/`:
 - `docs/openapi/policy-service.yaml`
 - `docs/openapi/app-gateway.yaml`
 
+## API Surfaces (Source of Truth)
+
+See `docs/surfaces.md` for the canonical list of:
+
+- Consumer/public endpoints (customers)
+- Operator/admin endpoints (`/v1/admin/*`)
+- Private/internal service endpoints (must not be internet-exposed)
+
 ## Architecture diagrams
 
 See `docs/architecture.md` for Mermaid diagrams covering topology, verification flow, and DSR flow.
@@ -84,33 +92,27 @@ See `docs/coverage-plan.md` for the current thresholds and step-up plan.
 
 See `docs/release-process.md`.
 
-## Onboarding strategies
+## Onboarding (self-funded only)
 
-Users can choose one of two onboarding modes without changing DID semantics or verification:
-
-- **Sponsored**: app-gateway pays Hedera fees. Clients call gateway onboarding endpoints.
-- **Self-funded**: users provide their own Hedera account to pay fees locally (private keys never leave client).
+Users provide their own Hedera account to pay fees locally; private keys never leave the client.
 
 Config:
 
-- `ONBOARDING_STRATEGY_DEFAULT` (`sponsored` or `user_pays`)
-- `ONBOARDING_STRATEGY_ALLOWED` (comma list)
-- `ALLOW_SPONSORED_ONBOARDING` (gateway kill switch)
+- `ALLOW_SELF_FUNDED_ONBOARDING` (`true` by default)
+- `ONBOARDING_STRATEGY_DEFAULT` (`user_pays`)
+- `ONBOARDING_STRATEGY_ALLOWED` (comma list, typically `user_pays`)
 
-Runbook: `docs/transition-sponsored-to-self-funded.md`.
-
-## Testnet convenience: shared payer/sponsor account
+## Testnet convenience: shared operator/payer account
 
 For development, demos, and integration tests on Hedera Testnet only, the same account can be used
-as both sponsor/operator and payer. This is a convenience to complete real Testnet proofs without
-extra accounts.
+as both operator and payer. This is a convenience to complete real Testnet proofs without extra accounts.
 
 Rules:
 
 - Allowed only on Testnet.
 - Blocked in production.
 - Requires explicit opt-in (warning is logged once).
-- Never use this on mainnet; production must separate payer and operator credentials.
+- Never use this on mainnet; production should separate payer and operator credentials.
 
 ## Quickstart (PowerShell)
 
@@ -163,6 +165,20 @@ Run migrations explicitly (recommended for all environments):
 pnpm migrate
 ```
 
+## Migration notes (Security Spine)
+
+- `policy-service` `/v1/requirements` supports optional `verifier_origin=<url>`; when provided, `audience` is minted as `origin:<new URL(verifier_origin).origin>` (otherwise it remains `cuncta.action:<action>`).
+- `verifier-service` can optionally enforce `origin:` audiences via `ENFORCE_ORIGIN_AUDIENCE=true` (requests with non-`origin:` audiences are denied with `audience_origin_required`).
+- `verifier-service` can optionally enforce DID ↔ `cnf.jwk` key binding via `ENFORCE_DID_KEY_BINDING=true`:
+  the KB-JWT `cnf.jwk` must match an authorized Ed25519 verification method in the SD-JWT subject DID Document (deny reason `did_key_not_authorized`).
+- Verification challenges are consumed on first verify attempt (successful or not); a repeated nonce is denied with `challenge_consumed`.
+
+## Migration notes (Anchor reconciliation)
+
+- `anchor_receipts` records “submitted to HCS” (topic + sequence + consensus timestamp).
+- `anchor_reconciliations` records mirror verification status for each receipt (`VERIFIED|NOT_FOUND|MISMATCH|INVALID_AUTH|ERROR`).
+- Issuer Admin API: `POST /v1/admin/anchors/reconcile` (service-auth scope `issuer:anchor_reconcile` or `admin:*`) verifies mirror retrieval + payload hash + `anchor_auth_*` metadata.
+
 ## Required env
 
 Base URLs:
@@ -189,6 +205,11 @@ Optional:
 - `MIGRATIONS_DATABASE_URL` (required in production for `pnpm migrate`; dev/test may fall back to `DATABASE_URL`)
 - `STRICT_DB_ROLE` (defaults to `true` in production and `false` in dev/test)
 - `ENFORCE_HTTPS_INTERNAL` (optional strict mode to require `https://` internal service URLs in production)
+- `ENFORCE_DID_KEY_BINDING` (verifier; enforce DID ↔ `cnf.jwk` key binding, default `false`)
+- `DID_RESOLVE_TIMEOUT_MS` (verifier; DID resolution timeout, default 1500ms)
+- `DID_RESOLVE_CACHE_TTL_SECONDS` (verifier; DID doc cache TTL, default 60s)
+- `DID_RESOLVE_CACHE_MAX_ENTRIES` (verifier; DID doc cache size, default 256)
+- `ENFORCE_ORIGIN_AUDIENCE` (verifier; require `origin:` audiences, default `false`)
 - `STATUS_LIST_CACHE_TTL_SECONDS` (verifier status list cache TTL, 1-60s)
 - `STATUS_LIST_CACHE_MAX_ENTRIES` (verifier status list cache size, 8-1024)
 - `STATUS_LIST_FETCH_TIMEOUT_MS` (verifier status list fetch timeout)
@@ -238,7 +259,8 @@ and incur testnet costs. No mocks are used.
 Modes:
 
 - Direct mode (default): services called directly.
-- Gateway mode (`GATEWAY_MODE=1`): run onboarding via `app-gateway` and proxy `/v1/verify`.
+- Gateway mode (`GATEWAY_MODE=1`): run onboarding via `app-gateway` and use gateway verification surfaces
+  (canonical: `/oid4vp/*`; legacy `/v1/verify` is only available when the gateway is not in public production posture).
 - User-pays mode (`USER_PAYS_MODE=1`): create DIDs locally with payer creds (no did-service create/submit).
 
 Commands:
@@ -309,15 +331,17 @@ Optional:
 - `STATUS_LIST_CACHE_TTL_SECONDS`
 - `STATUS_LIST_FETCH_TIMEOUT_MS`
 - `DEV_MODE=true` (required for dev-only aura signal test)
-- `SPONSOR_MAX_DID_CREATES_PER_DAY` (defaults to `500`)
-- `SPONSOR_MAX_ISSUES_PER_DAY` (defaults to `2000`)
-- `SPONSOR_KILL_SWITCH` (defaults to `false`)
 - `HEDERA_PAYER_ACCOUNT_ID` + `HEDERA_PAYER_PRIVATE_KEY` (required when `USER_PAYS_MODE=1`)
 - Testnet-only fallback (dev/demo): if `HEDERA_PAYER_*` is missing and `HEDERA_NETWORK=testnet`,
   the operator creds may be used as payer with a warning. This is disabled in production.
 - `DID_RESOLVE_MAX_ATTEMPTS` (integration polling attempts, default 240, clamped)
 - `DID_RESOLVE_INTERVAL_MS` (integration polling interval, default 5000, clamped)
 - `DID_VISIBILITY_TOTAL_TIMEOUT_MS` (overall DID visibility budget, default 1,200,000 ms, clamped)
+- `MIRROR_NODE_BASE_URL` (mirror REST base URL; defaults per `HEDERA_NETWORK`, e.g. `https://testnet.mirrornode.hedera.com/api/v1`)
+- `ANCHOR_RECONCILIATION_ENABLED` (issuer; mirror reconciliation, default `true`, required on mainnet production)
+- `ANCHOR_RECONCILE_TIMEOUT_MS` (issuer; mirror fetch timeout, default 3000ms)
+- `ANCHOR_RECONCILE_MAX_ATTEMPTS` (issuer; mirror retry attempts, default 10)
+- `ANCHOR_RECONCILE_BATCH_SIZE` (issuer; receipts processed per run, default 5)
 
 Example `.env` snippet (placeholders):
 
@@ -419,6 +443,42 @@ Guarantees:
 - Stable fields; additive-only changes.
 - Intended for lightweight client boot-time checks (cache briefly).
 
+## Client Construction Guide: Advisory PaymentRequest (HBAR/HTS)
+
+`feeQuote` and `paymentRequest` metadata are advisory-only. They help clients render expected costs and build user-paid transfers, but they do not enforce payment and do not submit transactions.
+
+Inputs:
+
+- `paymentRequest.instructions[]` with `asset`, `amount`, `to.accountId`, `memo`, `purpose`
+- Asset decimals from `instruction.asset.decimals` (no network metadata lookup required)
+- If `instruction.asset.decimals` is missing or invalid, treat that instruction as non-executable and do not attempt transfer construction
+
+Client responsibilities:
+
+- Construct transfers locally in the client.
+- Sign with user-held keys only (no server-side custody).
+- Submit to Hedera Testnet.
+- Verify receipt/consensus result client-side.
+
+Amount conversion (no floating-point math):
+
+- Convert decimal string to smallest unit integer using exact decimal arithmetic.
+- `smallest = round(amount * 10^decimals)` using decimal-safe integer math.
+- HBAR uses tinybars (typically `decimals=8`).
+- HTS uses the token decimals provided in metadata.
+
+Transfer construction guidance:
+
+- For each instruction, transfer from payer account to `to.accountId`.
+- For HTS, include `asset.tokenId` in token transfer construction.
+- Set transaction memo exactly to `instruction.memo` (server already caps memo; client should still enforce Hedera memo constraints before submit as defense in depth).
+- For multi-asset instructions, either build one transaction with multiple transfers (if library supports it) or submit one transaction per asset.
+
+Safety notes:
+
+- Do not post full `paymentRequest`, `paymentRef`, or fingerprints in public tickets/chats.
+- Treat these fields as correlatable metadata and share only through secured operational channels.
+
 Contract suite requires a staging gateway with contract admin routes enabled:
 
 - `CONTRACT_E2E_ENABLED=true`
@@ -474,11 +534,11 @@ pnpm -C apps/web-demo dev
 
 ## Production posture (summary)
 
-Sponsor-paid onboarding must not be publicly exposed from core services. Use `app-gateway`:
+Self-funded onboarding must not be publicly exposed from core services. Use `app-gateway`:
 
 - Public onboarding routes: gateway only.
 - did-service / issuer-service: internal only, service-auth in production.
-- verifier `/v1/verify`: can be public but must be rate-limited (gateway or WAF).
+- verifier legacy `/v1/verify`: internal only; external consumers use OID4VP flows via gateway/verifier.
 
 TLS termination and CORS are handled at the edge. Services do not enable CORS by default, so
 configure HTTPS/TLS and any required CORS policies in your ingress or gateway layer.
@@ -525,7 +585,7 @@ For release hardening and trust-boundary posture, see
 ## Production safety guarantees
 
 - Startup fails on unsafe public bindings, proxy misconfig, or prohibited dev flags.
-- `/v1/verify` always requires holder binding (KB-JWT), independent of policy.
+- Verification always requires holder binding (KB-JWT), independent of policy.
 - Audit logs are chained and periodically anchored for tamper evidence.
 - Aura rules are signed and anchored; invalid rules halt aura processing.
 - Backup/restore mode blocks high‑risk endpoints until integrity checks pass.
@@ -560,12 +620,15 @@ For release hardening and trust-boundary posture, see
 | app-gateway `POST /v1/onboard/did/create/request` | Public          | None (gateway)     | strict per IP/device | Medium      | hash-only |
 | app-gateway `POST /v1/onboard/did/create/submit`  | Public          | None (gateway)     | strict per IP/device | High (fees) | hash-only |
 | app-gateway `POST /v1/onboard/issue`              | Public          | None (gateway)     | strict per IP/device | High        | hash-only |
+| app-gateway `GET /oid4vp/request`                 | Public          | None               | strict               | Medium      | hash-only |
+| app-gateway `POST /oid4vp/response`               | Public          | None               | strict               | Medium      | hash-only |
+| app-gateway `GET /.well-known/jwks.json`          | Public          | None               | cache                | Low         | ok        |
 | did-service `/v1/dids/create/*`                   | Internal        | Service JWT        | n/a                  | High (fees) | hash-only |
-| issuer-service `/v1/internal/issue`               | Internal        | Service JWT        | n/a                  | High        | hash-only |
+| issuer-service `/v1/admin/issue`                  | Admin           | Service JWT        | n/a                  | High        | hash-only |
 | issuer-service `/v1/issue`                        | Dev/demo only   | None               | n/a                  | High        | hash-only |
 | issuer-service `/jwks.json`                       | Public          | None               | cache                | Low         | ok        |
 | issuer-service `/status-lists/*`                  | Public          | None               | cache                | Low         | ok        |
-| verifier-service `/v1/verify`                     | Public          | None               | strict               | Medium      | hash-only |
+| verifier-service legacy `/v1/verify`              | Internal        | None               | strict               | Medium      | hash-only |
 | privacy endpoints                                 | Public          | DSR token / KB-JWT | strict               | High        | hash-only |
 
 Edge header normalization (at ingress/WAF):
@@ -608,6 +671,7 @@ Dev-only routes under `/v1/dev/*` require `NODE_ENV=development`, `DEV_MODE=true
 - JWKS fetch failing: verify `ISSUER_SERVICE_BASE_URL` and that issuer-service is running.
 - Aura not ready: queue is populated only after successful verification obligations run.
 - Anchoring pending: issuance/verification succeed even if anchor worker is down; receipts will confirm once HCS is reachable.
+- Anchoring reconciliation: `anchor_receipts` confirm submission; mirror reconciliation verifies the mirror-retrieved message matches (`payload_hash` + `anchor_auth_*`).
 
 ## We do NOT store
 
@@ -663,6 +727,148 @@ Note: `privacy:kbjwt` is a dev/testing helper. Production apps should mint KB-JW
 `docs/threat-model.md` for storage limitation and immutable anchor details. For local testing, you can use
 `privacy:flow` to exercise the full DSR lifecycle; production apps must implement this flow in their own
 wallet/client. See `docs/compliance.md` for a concise compliance posture overview.
+
+## Operator Runbook: Command Planner Audit Events (DSR + Retention)
+
+This runbook covers the `command_center_audit_events` table created by the Command Center planner audit feature.
+
+**Key properties**
+
+- Rows store only `subject_hash` (pseudonymized) and non-sensitive metadata (no raw DID, no proofs/tokens).
+- DSR `restrict` does not delete audit rows.
+- DSR `erase` unlinks off-chain state by deleting `command_center_audit_events` rows for the erased pseudonymizer `subject_hash`.
+- A short historical window may exist where `subject_hash` was computed with a legacy method (plain SHA-256). Rows from that window may not be deletable by current DSR unlink unless explicitly handled.
+
+### Safety & handling
+
+- Run these checks with a least-privilege operator DB role (read-only where possible; write only when explicitly required for non-prod verification).
+- Do not paste raw query output (including full `subject_hash` values) into public tickets/chats.
+- If discussion outside secured operational channels is necessary, redact to short hash prefixes only.
+- `subject_hash` is not raw PII, but it is correlatable pseudonymous linkage data and should be handled as sensitive operational data.
+
+### Prerequisites
+
+- Operator DB access (Postgres) in Testnet/non-prod.
+- A known deployment timestamp for the hash-alignment change (planner audit switched to pseudonymizer hash domain).
+- Retention config visibility for gateway runtime:
+  - `COMMAND_AUDIT_RETENTION_DAYS`
+  - `COMMAND_AUDIT_CLEANUP_THROTTLE_MS`
+  - `COMMAND_AUDIT_CLEANUP_BATCH_SIZE`
+  - `COMMAND_AUDIT_CLEANUP_ENABLED`
+
+### Variables
+
+Set a cutoff timestamp for the hash-alignment deployment:
+Set `legacy_hash_cutoff` to the time the hash-alignment change was live in runtime (Testnet/production), not PR merge time; if uncertain, choose a conservative later cutoff to avoid misclassifying rows.
+
+```sql
+-- Replace with deployment time of hash-alignment change (ISO-8601)
+SELECT TIMESTAMPTZ '2026-02-20T12:00:00Z' AS legacy_hash_cutoff;
+```
+
+### 1) Erase unlink verification
+
+Goal: prove that for a fresh subject (post-fix), DSR erase removes planner audit rows to zero.
+
+Step A - identify a subject hash safely:
+
+1. Trigger a planner call as the test user (creates `command_plan_requested`).
+2. Fetch recent rows in a narrow time window and select the relevant `subject_hash`:
+
+```sql
+SELECT
+  created_at,
+  event_type,
+  LEFT(subject_hash, 8) AS subject_hash_prefix,
+  subject_hash
+FROM command_center_audit_events
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Expected: target `subject_hash` can be identified for the test action. Treat full hashes as sensitive pseudonymous linkage values.
+
+Step B - run DSR erase for that user with the existing issuer DSR flow, then verify unlink:
+
+```sql
+SELECT COUNT(*) AS remaining
+FROM command_center_audit_events
+WHERE subject_hash = '<PASTE_SUBJECT_HASH_FROM_STEP_A>';
+```
+
+Expected: `remaining = 0`.
+
+Optional sanity check (other users still present):
+
+```sql
+SELECT COUNT(*) AS total_rows
+FROM command_center_audit_events;
+```
+
+### 2) Retention batch verification (non-prod)
+
+Goal: confirm opportunistic cleanup deletes only rows older than retention, respects batch cap, and does not block planner responses.
+
+Observe eligible rows at your effective retention horizon (example shown with 1 day):
+
+```sql
+SELECT COUNT(*) AS eligible
+FROM command_center_audit_events
+WHERE created_at < NOW() - INTERVAL '1 day';
+```
+
+Trigger `/v1/command/plan` a few times (cleanup is opportunistic + throttled), then re-check:
+
+```sql
+SELECT COUNT(*) AS eligible_after
+FROM command_center_audit_events
+WHERE created_at < NOW() - INTERVAL '1 day';
+```
+
+Expected: `eligible_after` decreases in bounded steps (batch-limited, throttle-limited), not necessarily to zero in a single invocation.
+
+Batch-cap verification (optional): in non-prod, insert a known number of synthetic old rows and verify one cleanup cycle removes at most `batch_size * max_batches_per_call`.
+
+### 3) Legacy-window residual detection (plain-SHA window)
+
+Goal: detect whether rows exist from before hash alignment that may be in a legacy hash domain.
+
+Note: this detects existence and concentration; by itself it does not prove erasability for specific historical erased subjects.
+
+Count rows before cutoff:
+
+```sql
+WITH params AS (
+  SELECT TIMESTAMPTZ '2026-02-20T12:00:00Z' AS cutoff
+)
+SELECT COUNT(*) AS legacy_rows
+FROM command_center_audit_events, params
+WHERE created_at < params.cutoff;
+```
+
+Inspect top legacy hash prefixes:
+
+```sql
+WITH params AS (
+  SELECT TIMESTAMPTZ '2026-02-20T12:00:00Z' AS cutoff
+)
+SELECT
+  LEFT(subject_hash, 8) AS subject_hash_prefix,
+  COUNT(*) AS cnt,
+  MIN(created_at) AS first_seen,
+  MAX(created_at) AS last_seen
+FROM command_center_audit_events, params
+WHERE created_at < params.cutoff
+GROUP BY LEFT(subject_hash, 8)
+ORDER BY cnt DESC
+LIMIT 50;
+```
+
+Expected: `legacy_rows` trends to zero over retention horizon. If `legacy_rows > 0`, retention convergence (Option C) limits linkage horizon even when legacy-hash unlink certainty is unavailable.
+
+### Decision Record (legacy-hash window)
+
+A brief legacy-hash residual window is possible because planner audit `subject_hash` moved from plain SHA-256 to pseudonymizer hashing after initial rollout. The selected mitigation is observability plus retention convergence: operators can detect residual pre-cutoff rows, monitor trends, and verify unlink behavior for fresh post-fix subjects. This preserves current trust and privacy guarantees without changing verifier, policy, or DSR contract semantics. DSR `restrict` and `erase` meanings remain unchanged; only operational visibility was expanded. Any one-time cleanup of pre-cutoff rows is an environment-specific operator decision based on risk posture and retention policy.
 
 ## Core invariants
 

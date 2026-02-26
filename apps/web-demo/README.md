@@ -29,7 +29,7 @@ Set these in your shell or a `.env.local` file:
 - `VITE_VERIFIER_SERVICE_BASE_URL` (default: `http://localhost:3003`)
 - `VITE_POLICY_SERVICE_BASE_URL` (default: `http://localhost:3004`)
 - `VITE_KBJWT_TTL_SECONDS` (optional, clamped 30–600, default 120)
-- `VITE_ONBOARDING_STRATEGY_DEFAULT` (`sponsored` or `user_pays`)
+- `VITE_ONBOARDING_STRATEGY_DEFAULT` (`user_pays`; CUNCTA supports self-funded only)
 - `VITE_ONBOARDING_STRATEGY_ALLOWED` (comma list)
 - `VITE_HEDERA_NETWORK` (default `testnet`)
 - `VITE_HEDERA_OPERATOR_ID` + `VITE_HEDERA_OPERATOR_PRIVATE_KEY` (testnet demo fallback only)

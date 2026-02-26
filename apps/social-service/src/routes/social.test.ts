@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
-import { createHmacSha256Pseudonymizer } from "@cuncta/shared";
+import { randomUUID, createHash } from "node:crypto";
+import { createHmacSha256Pseudonymizer, hashCanonicalJson } from "@cuncta/shared";
 
 process.env.NODE_ENV = "development";
 process.env.ALLOW_INSECURE_DEV_AUTH = "true";
@@ -9,6 +9,8 @@ process.env.PSEUDONYMIZER_PEPPER = process.env.PSEUDONYMIZER_PEPPER ?? "social-t
 process.env.APP_GATEWAY_BASE_URL = process.env.APP_GATEWAY_BASE_URL ?? "http://localhost:3010";
 process.env.ISSUER_SERVICE_BASE_URL =
   process.env.ISSUER_SERVICE_BASE_URL ?? "http://localhost:3002";
+process.env.ISSUER_PRIVACY_STATUS_TIMEOUT_MS =
+  process.env.ISSUER_PRIVACY_STATUS_TIMEOUT_MS ?? "300";
 process.env.SERVICE_JWT_SECRET =
   process.env.SERVICE_JWT_SECRET ?? "test-social-secret-012345678901234567890123";
 process.env.SERVICE_JWT_SECRET_ISSUER =
@@ -24,7 +26,7 @@ test("social post denies when verify decision is DENY", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -63,7 +65,7 @@ test("space join denies on pinned policy hash mismatch", async () => {
   let verifyCalled = false;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -148,7 +150,7 @@ test("privacy tombstone blocks social action before verify", async () => {
   let verifyCalled = false;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: true });
     }
     if (url.includes("/v1/verify")) {
@@ -183,7 +185,7 @@ test("restricted account cannot write but can read feed", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: true, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -225,7 +227,7 @@ test("funnel counts attempts and denied decisions", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -360,7 +362,7 @@ test("moderation cases routes deny non-moderator", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -460,7 +462,7 @@ test("media asset moderation denies non-moderator capability", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -497,7 +499,7 @@ test("tombstone unlinks entertainment subject-linked records", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: true });
     }
     return makeJsonResponse({}, 404);
@@ -512,12 +514,26 @@ test("tombstone unlinks entertainment subject-linked records", async () => {
     pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
   }).didToHash(subjectDid);
   const assetId = randomUUID();
+  const mediaAssetId = randomUUID();
   await db("media_emoji_assets").insert({
     id: assetId,
     creator_subject_hash: subjectHash,
     space_id: null,
     asset_ref: "ipfs://asset",
     hash: "hash-1",
+    status: "ACTIVE",
+    created_at: new Date().toISOString()
+  });
+  await db("social_media_assets").insert({
+    asset_id: mediaAssetId,
+    owner_subject_hash: subjectHash,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${mediaAssetId}.jpg`,
+    thumbnail_object_key: `thumb/${mediaAssetId}.jpg`,
+    mime_type: "image/jpeg",
+    byte_size: 1024,
+    sha256_hex: createHash("sha256").update("media-1").digest("hex"),
     status: "ACTIVE",
     created_at: new Date().toISOString()
   });
@@ -535,7 +551,11 @@ test("tombstone unlinks entertainment subject-linked records", async () => {
   assert.equal(deny.statusCode, 403);
   const stored = await db("media_emoji_assets").where({ id: assetId }).first();
   assert.ok(stored?.deleted_at);
+  const storedMedia = await db("social_media_assets").where({ asset_id: mediaAssetId }).first();
+  assert.equal(storedMedia?.status, "ERASED");
+  assert.ok(storedMedia?.erased_at);
   await db("media_emoji_assets").where({ id: assetId }).del();
+  await db("social_media_assets").where({ asset_id: mediaAssetId }).del();
   await app.close();
   globalThis.fetch = originalFetch;
 });
@@ -544,7 +564,7 @@ test("scroll join mints permission token only on allow", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -657,7 +677,7 @@ test("scroll sync_event enforces permission expiry", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -778,7 +798,7 @@ test("presence ping denies restricted subject", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: true, tombstoned: false });
     }
     return makeJsonResponse({}, 404);
@@ -882,7 +902,7 @@ test("huddle create and join are policy-gated", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -942,7 +962,7 @@ test("ritual lifecycle completes once and logs bounded completion", async () => 
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -961,7 +981,7 @@ test("ritual lifecycle completes once and logs bounded completion", async () => 
   const db = await getDb();
   const app = buildServer();
   await app.ready();
-  const subjectDid = "did:hedera:testnet:ritual-subject";
+  const subjectDid = `did:hedera:testnet:ritual-subject-${randomUUID().slice(0, 8)}`;
   const subjectHash = createHmacSha256Pseudonymizer({
     pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
   }).didToHash(subjectDid);
@@ -1052,93 +1072,129 @@ test("ritual lifecycle completes once and logs bounded completion", async () => 
 
 test("leaderboard excludes tombstoned and respects opt-in visibility", async () => {
   const originalFetch = globalThis.fetch;
+  // Use per-run unique hashes so a failed assertion doesn't poison future runs.
+  const visibleHash = `hash-visible-${randomUUID()}`;
+  const tombstoneHash = `hash-tombstone-${randomUUID()}`;
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+
+  type DbLike = {
+    (table: string): {
+      where: (query: Record<string, unknown>) => { del: () => Promise<unknown> };
+      whereIn: (
+        column: string,
+        values: unknown[]
+      ) => { where: (query: Record<string, unknown>) => { del: () => Promise<unknown> } };
+      del: () => Promise<unknown>;
+      insert: (value: unknown) => Promise<unknown>;
+    };
+  };
+  type InjectResponseLike = { statusCode: number; json: () => unknown };
+  type AppLike = {
+    ready: () => Promise<unknown>;
+    close: () => Promise<unknown>;
+    inject: (opts: { method: string; url: string; payload?: unknown }) => Promise<InjectResponseLike>;
+  };
+
+  let db: DbLike | null = null;
+  let app: AppLike | null = null;
+
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       const hash = new URL(url).searchParams.get("subjectDidHash");
-      if (hash === "hash-tombstone") {
+      if (hash === tombstoneHash) {
         return makeJsonResponse({ restricted: false, tombstoned: true });
       }
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     return makeJsonResponse({}, 404);
   }) as typeof fetch;
-  const { buildServer } = await import("../server.js");
-  const { getDb } = await import("../db.js");
-  const db = await getDb();
-  const app = buildServer();
-  await app.ready();
-  const spaceId = randomUUID();
-  const now = new Date().toISOString();
-  await db("social_spaces").insert({
-    space_id: spaceId,
-    slug: `leaderboard-${spaceId.slice(0, 8)}`,
-    display_name: "Leaderboard Space",
-    description: "leaderboard test",
-    created_by_subject_did_hash: "hash-visible",
-    policy_pack_id: "space.default.v1",
-    created_at: now
-  });
-  await db("social_action_log").insert([
-    {
-      subject_did_hash: "hash-visible",
-      action_type: "social.post.create",
-      decision: "COMPLETE",
+
+  try {
+    const { buildServer } = (await import("../server.js")) as unknown as { buildServer: () => AppLike };
+    const { getDb } = (await import("../db.js")) as unknown as { getDb: () => Promise<DbLike> };
+    db = await getDb();
+    app = buildServer();
+    await app.ready();
+
+    await db("social_spaces").insert({
+      space_id: spaceId,
+      slug: `leaderboard-${spaceId.slice(0, 8)}`,
+      display_name: "Leaderboard Space",
+      description: "leaderboard test",
+      created_by_subject_did_hash: visibleHash,
+      policy_pack_id: "space.default.v1",
       created_at: now
-    },
-    {
-      subject_did_hash: "hash-tombstone",
-      action_type: "social.post.create",
-      decision: "COMPLETE",
-      created_at: now
+    });
+    await db("social_action_log").insert([
+      {
+        subject_did_hash: visibleHash,
+        action_type: "social.post.create",
+        decision: "COMPLETE",
+        created_at: now
+      },
+      {
+        subject_did_hash: tombstoneHash,
+        action_type: "social.post.create",
+        decision: "COMPLETE",
+        created_at: now
+      }
+    ]);
+    await db("social_profiles").insert({
+      profile_id: randomUUID(),
+      subject_did_hash: visibleHash,
+      handle_hash: `hh-${visibleHash}`,
+      handle: "visible",
+      display_name: "Visible User",
+      created_at: now,
+      updated_at: now
+    });
+    await db("social_space_profile_settings").insert({
+      space_id: spaceId,
+      subject_hash: visibleHash,
+      show_on_leaderboard: true,
+      show_on_presence: false,
+      presence_label: "Visible User",
+      updated_at: now
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/v1/social/spaces/${spaceId}/leaderboard?window=7d`
+    });
+    assert.equal(response.statusCode, 200);
+    const payload = response.json() as {
+      top_contributors: Array<{ identity?: { displayName?: string } }>;
+    };
+    assert.ok(payload.top_contributors.length >= 1);
+    assert.equal(
+      payload.top_contributors.some((entry) => entry.identity?.displayName === "Visible User"),
+      true
+    );
+  } finally {
+    try {
+      if (db) {
+        await db("social_space_profile_settings").where({ space_id: spaceId }).del();
+        await db("social_profiles").where({ subject_did_hash: visibleHash }).del();
+        await db("social_action_log")
+          .whereIn("subject_did_hash", [visibleHash, tombstoneHash])
+          .where({ action_type: "social.post.create", decision: "COMPLETE" })
+          .del();
+        await db("social_spaces").where({ space_id: spaceId }).del();
+      }
+    } finally {
+      await app?.close();
+      globalThis.fetch = originalFetch;
     }
-  ]);
-  await db("social_profiles").insert({
-    profile_id: randomUUID(),
-    subject_did_hash: "hash-visible",
-    handle_hash: "hh-visible",
-    handle: "visible",
-    display_name: "Visible User",
-    created_at: now,
-    updated_at: now
-  });
-  await db("social_space_profile_settings").insert({
-    space_id: spaceId,
-    subject_hash: "hash-visible",
-    show_on_leaderboard: true,
-    show_on_presence: false,
-    presence_label: "Visible User",
-    updated_at: now
-  });
-  const response = await app.inject({
-    method: "GET",
-    url: `/v1/social/spaces/${spaceId}/leaderboard?window=7d`
-  });
-  assert.equal(response.statusCode, 200);
-  const payload = response.json() as {
-    top_contributors: Array<{ identity?: { displayName?: string } }>;
-  };
-  assert.ok(payload.top_contributors.length >= 1);
-  assert.equal(
-    payload.top_contributors.some((entry) => entry.identity?.displayName === "Visible User"),
-    true
-  );
-  await db("social_space_profile_settings").where({ space_id: spaceId }).del();
-  await db("social_profiles").where({ subject_did_hash: "hash-visible" }).del();
-  await db("social_action_log")
-    .whereIn("subject_did_hash", ["hash-visible", "hash-tombstone"])
-    .where({ action_type: "social.post.create", decision: "COMPLETE" })
-    .del();
-  await db("social_spaces").where({ space_id: spaceId }).del();
-  await app.close();
-  globalThis.fetch = originalFetch;
+  }
 });
 
 test("hangout alias routes are policy-gated", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -1249,7 +1305,7 @@ test("challenge completion increments daily streak after verified evidence", asy
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -1338,7 +1394,7 @@ test("tombstone purge removes crew memberships and streak rows", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: true });
     }
     return makeJsonResponse({}, 404);
@@ -1438,7 +1494,7 @@ test("pulse returns crew, hangout, challenge-ending, and streak-risk cards", asy
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     return makeJsonResponse({}, 404);
@@ -1543,7 +1599,7 @@ test("pulse preferences toggles hide categories", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: false });
     }
     if (url.includes("/v1/requirements")) {
@@ -1656,7 +1712,7 @@ test("pulse returns empty cards for tombstoned subject", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async (input: string | URL) => {
     const url = String(input);
-    if (url.includes("/v1/internal/privacy/status")) {
+    if (url.includes("/v1/admin/privacy/status")) {
       return makeJsonResponse({ restricted: false, tombstoned: true });
     }
     return makeJsonResponse({}, 404);
@@ -1698,4 +1754,1352 @@ test("pulse returns empty cards for tombstoned subject", async () => {
   await db("social_spaces").where({ space_id: spaceId }).del();
   await app.close();
   globalThis.fetch = originalFetch;
+});
+
+test("banter restricted denies send but allows read", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: true, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const senderDid = "did:hedera:testnet:banter-restricted";
+  const senderHash = pseudo.didToHash(senderDid);
+  const peerHash = pseudo.didToHash("did:hedera:testnet:banter-peer");
+  const spaceId = randomUUID();
+  const threadId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `banter-r-${spaceId.slice(0, 8)}`,
+    display_name: "Banter Restricted",
+    description: "banter restricted test",
+    created_by_subject_did_hash: senderHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: senderHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_space_banter_threads").insert({
+    thread_id: threadId,
+    space_id: spaceId,
+    kind: "space_chat",
+    created_at: now,
+    updated_at: now
+  });
+  await db("social_banter_messages").insert({
+    message_id: randomUUID(),
+    thread_id: threadId,
+    author_subject_hash: peerHash,
+    body_text: "peer says hi",
+    body_hash: "hash",
+    visibility: "normal",
+    created_at: now
+  });
+  const restrictedPermissionToken = "perm-ban-restricted-12345";
+  await db("social_banter_permissions").insert({
+    permission_id: randomUUID(),
+    thread_id: threadId,
+    subject_hash: senderHash,
+    permission_hash: createHash("sha256").update(restrictedPermissionToken).digest("hex"),
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    created_at: now
+  });
+  const denySend = await app.inject({
+    method: "POST",
+    url: `/v1/social/banter/threads/${threadId}/send`,
+    payload: {
+      subjectDid: senderDid,
+      bodyText: "should fail when restricted",
+      permissionToken: restrictedPermissionToken,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-banter-send-restricted",
+      audience: "cuncta.action:banter.message.send"
+    }
+  });
+  assert.equal(denySend.statusCode, 403);
+  const read = await app.inject({
+    method: "GET",
+    url: `/v1/social/banter/threads/${threadId}/messages`
+  });
+  assert.equal(read.statusCode, 200);
+  const readPayload = read.json() as { messages?: unknown[] };
+  assert.equal((readPayload.messages ?? []).length, 1);
+  await db("social_banter_permissions").where({ thread_id: threadId }).del();
+  await db("social_banter_messages").where({ thread_id: threadId }).del();
+  await db("social_space_banter_threads").where({ thread_id: threadId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("banter tombstoned denies send and hides authored messages", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: true });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const senderDid = "did:hedera:testnet:banter-tombstone";
+  const senderHash = pseudo.didToHash(senderDid);
+  const peerHash = pseudo.didToHash("did:hedera:testnet:banter-peer2");
+  const spaceId = randomUUID();
+  const threadId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `banter-t-${spaceId.slice(0, 8)}`,
+    display_name: "Banter Tomb",
+    description: "banter tomb test",
+    created_by_subject_did_hash: senderHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: senderHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_space_banter_threads").insert({
+    thread_id: threadId,
+    space_id: spaceId,
+    kind: "space_chat",
+    created_at: now,
+    updated_at: now
+  });
+  const authoredMessageId = randomUUID();
+  await db("social_banter_messages").insert([
+    {
+      message_id: authoredMessageId,
+      thread_id: threadId,
+      author_subject_hash: senderHash,
+      body_text: "my old message",
+      body_hash: "hash-a",
+      visibility: "normal",
+      created_at: now
+    },
+    {
+      message_id: randomUUID(),
+      thread_id: threadId,
+      author_subject_hash: peerHash,
+      body_text: "other message",
+      body_hash: "hash-b",
+      visibility: "normal",
+      created_at: now
+    }
+  ]);
+  const tombPermissionToken = "perm-ban-tomb-12345";
+  await db("social_banter_permissions").insert({
+    permission_id: randomUUID(),
+    thread_id: threadId,
+    subject_hash: senderHash,
+    permission_hash: createHash("sha256").update(tombPermissionToken).digest("hex"),
+    expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    created_at: now
+  });
+  const denySend = await app.inject({
+    method: "POST",
+    url: `/v1/social/banter/threads/${threadId}/send`,
+    payload: {
+      subjectDid: senderDid,
+      bodyText: "should fail when tombstoned",
+      permissionToken: tombPermissionToken,
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-banter-send-tomb",
+      audience: "cuncta.action:banter.message.send"
+    }
+  });
+  assert.equal(denySend.statusCode, 403);
+  const read = await app.inject({
+    method: "GET",
+    url: `/v1/social/banter/threads/${threadId}/messages`
+  });
+  assert.equal(read.statusCode, 200);
+  const readPayload = read.json() as { messages?: Array<{ message_id?: string }> };
+  assert.equal(
+    (readPayload.messages ?? []).some((entry) => entry.message_id === authoredMessageId),
+    false
+  );
+  await db("social_banter_permissions").where({ thread_id: threadId }).del();
+  await db("social_banter_messages").where({ thread_id: threadId }).del();
+  await db("social_space_banter_threads").where({ thread_id: threadId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("banter moderator can remove message and non-moderator cannot", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.moderator" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      const bodyString = typeof init?.body === "string" ? init.body : "";
+      if (bodyString.includes("nonce-banter-mod-deny")) {
+        return makeJsonResponse({ decision: "DENY", reasons: ["policy_failed"] });
+      }
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const modDid = "did:hedera:testnet:banter-mod";
+  const userDid = "did:hedera:testnet:banter-user";
+  const modHash = pseudo.didToHash(modDid);
+  const userHash = pseudo.didToHash(userDid);
+  const spaceId = randomUUID();
+  const threadId = randomUUID();
+  const messageId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `banter-m-${spaceId.slice(0, 8)}`,
+    display_name: "Banter Moderate",
+    description: "banter moderate test",
+    created_by_subject_did_hash: modHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert([
+    { space_id: spaceId, subject_did_hash: modHash, status: "ACTIVE", joined_at: now },
+    { space_id: spaceId, subject_did_hash: userHash, status: "ACTIVE", joined_at: now }
+  ]);
+  await db("social_space_banter_threads").insert({
+    thread_id: threadId,
+    space_id: spaceId,
+    kind: "space_chat",
+    created_at: now,
+    updated_at: now
+  });
+  await db("social_banter_messages").insert({
+    message_id: messageId,
+    thread_id: threadId,
+    author_subject_hash: userHash,
+    body_text: "keep it clean",
+    body_hash: "hash-mod",
+    visibility: "normal",
+    created_at: now
+  });
+  const deny = await app.inject({
+    method: "POST",
+    url: `/v1/social/banter/messages/${messageId}/moderate`,
+    payload: {
+      subjectDid: userDid,
+      reasonCode: "abuse",
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-banter-mod-deny",
+      audience: "cuncta.action:banter.message.moderate"
+    }
+  });
+  assert.equal(deny.statusCode, 403);
+  const allow = await app.inject({
+    method: "POST",
+    url: `/v1/social/banter/messages/${messageId}/moderate`,
+    payload: {
+      subjectDid: modDid,
+      reasonCode: "abuse",
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-banter-mod-allow",
+      audience: "cuncta.action:banter.message.moderate"
+    }
+  });
+  assert.equal(allow.statusCode, 200);
+  const moderated = await db("social_banter_messages")
+    .where({ message_id: messageId })
+    .first();
+  assert.equal(moderated?.visibility, "removed_by_mod");
+  await db("social_banter_messages").where({ message_id: messageId }).del();
+  await db("social_space_banter_threads").where({ thread_id: threadId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("space status messages respect ttl cleanup", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.presence.mode_access" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const { config } = await import("../config.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:status-main";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `status-${spaceId.slice(0, 8)}`,
+    display_name: "Status Space",
+    description: "status ttl test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const staleTime = new Date(Date.now() - (config.BANTER_STATUS_TTL_SECONDS + 30) * 1000).toISOString();
+  await db("social_presence_status_messages").insert({
+    status_id: randomUUID(),
+    space_id: spaceId,
+    crew_id: null,
+    subject_hash: pseudo.didToHash("did:hedera:testnet:status-stale"),
+    status_text: "stale",
+    status_hash: "hash-stale",
+    mode: "quiet",
+    updated_at: staleTime
+  });
+  const setStatus = await app.inject({
+    method: "POST",
+    url: `/v1/social/spaces/${spaceId}/status`,
+    payload: {
+      subjectDid,
+      mode: "active",
+      statusText: "grinding challenge",
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-status-set",
+      audience: "cuncta.action:banter.status.set"
+    }
+  });
+  assert.equal(setStatus.statusCode, 200);
+  const getStatus = await app.inject({
+    method: "GET",
+    url: `/v1/social/spaces/${spaceId}/status?viewerDid=${encodeURIComponent(subjectDid)}`
+  });
+  assert.equal(getStatus.statusCode, 200);
+  const payload = getStatus.json() as {
+    counts?: { quiet?: number; active?: number; immersive?: number };
+    you?: { status_text?: string };
+  };
+  assert.equal(payload.counts?.quiet, 0);
+  assert.equal(payload.you?.status_text, "grinding challenge");
+  await db("social_presence_status_messages").where({ space_id: spaceId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("realtime publish requires broadcast permission", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:rt-no-broadcast";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `rt-nb-${spaceId.slice(0, 8)}`,
+    display_name: "Realtime NB",
+    description: "rt test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const tokenRes = await app.inject({
+    method: "POST",
+    url: "/v1/social/realtime/token",
+    payload: {
+      subjectDid,
+      channel: "presence",
+      spaceId,
+      canBroadcast: false,
+      presentation: "fake.presentation.token",
+      nonce: "nonce-rt-token-nb",
+      audience: "cuncta.action:presence.ping"
+    }
+  });
+  assert.equal(tokenRes.statusCode, 200);
+  const tokenPayload = tokenRes.json() as { permissionToken: string };
+  const publishRes = await app.inject({
+    method: "POST",
+    url: "/v1/social/realtime/publish",
+    payload: {
+      permissionToken: tokenPayload.permissionToken,
+      eventType: "presence.ping",
+      payload: { mode: "active" }
+    }
+  });
+  assert.equal(publishRes.statusCode, 403);
+  await db("social_realtime_permissions").where({ subject_hash: subjectHash }).del();
+  await db("social_realtime_events").where({ space_id: spaceId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("realtime publish applies rate limits", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const { config } = await import("../config.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:rt-rate";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `rt-rate-${spaceId.slice(0, 8)}`,
+    display_name: "Realtime Rate",
+    description: "rt test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const tokenRes = await app.inject({
+    method: "POST",
+    url: "/v1/social/realtime/token",
+    payload: {
+      subjectDid,
+      channel: "presence",
+      spaceId,
+      canBroadcast: true,
+      presentation: "fake.presentation.token",
+      nonce: "nonce-rt-token-rate",
+      audience: "cuncta.action:presence.ping"
+    }
+  });
+  assert.equal(tokenRes.statusCode, 200);
+  const tokenPayload = tokenRes.json() as { permissionToken: string };
+  let sawRateLimit = false;
+  for (let index = 0; index < config.REALTIME_PUBLISH_RATE_MAX_PER_WINDOW + 3; index += 1) {
+    const publishRes = await app.inject({
+      method: "POST",
+      url: "/v1/social/realtime/publish",
+      payload: {
+        permissionToken: tokenPayload.permissionToken,
+        eventType: "presence.ping",
+        payload: { seq: index }
+      }
+    });
+    if (publishRes.statusCode === 429) {
+      sawRateLimit = true;
+      break;
+    }
+  }
+  assert.equal(sawRateLimit, true);
+  await db("social_realtime_permissions").where({ subject_hash: subjectHash }).del();
+  await db("social_realtime_events").where({ space_id: spaceId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("realtime events support deterministic cursor pagination with after and limit", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.space.member" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:rt-cursor";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const spaceId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `rt-cursor-${spaceId.slice(0, 8)}`,
+    display_name: "Realtime Cursor",
+    description: "rt cursor test",
+    created_by_subject_did_hash: subjectHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: subjectHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const tokenRes = await app.inject({
+    method: "POST",
+    url: "/v1/social/realtime/token",
+    payload: {
+      subjectDid,
+      channel: "presence",
+      spaceId,
+      canBroadcast: true,
+      presentation: "fake.presentation.token",
+      nonce: "nonce-rt-token-cursor",
+      audience: "cuncta.action:presence.ping"
+    }
+  });
+  assert.equal(tokenRes.statusCode, 200);
+  const tokenPayload = tokenRes.json() as { permissionToken: string };
+  for (let index = 0; index < 3; index += 1) {
+    const publishRes = await app.inject({
+      method: "POST",
+      url: "/v1/social/realtime/publish",
+      payload: {
+        permissionToken: tokenPayload.permissionToken,
+        eventType: "presence.ping",
+        payload: { seq: index }
+      }
+    });
+    assert.equal(publishRes.statusCode, 200);
+  }
+  const page1 = await app.inject({
+    method: "GET",
+    url: `/v1/social/realtime/events?permissionToken=${encodeURIComponent(tokenPayload.permissionToken)}&limit=2`
+  });
+  assert.equal(page1.statusCode, 200);
+  const payload1 = page1.json() as {
+    events: Array<{ cursor?: string | null; payload?: { seq?: number } }>;
+    nextCursor?: string | null;
+  };
+  assert.equal(payload1.events.length, 2);
+  const c1 = Number(payload1.events[0]?.cursor ?? "0");
+  const c2 = Number(payload1.events[1]?.cursor ?? "0");
+  assert.ok(Number.isFinite(c1) && Number.isFinite(c2) && c2 > c1);
+  assert.equal(payload1.nextCursor, payload1.events[1]?.cursor ?? null);
+  const page2 = await app.inject({
+    method: "GET",
+    url: `/v1/social/realtime/events?permissionToken=${encodeURIComponent(
+      tokenPayload.permissionToken
+    )}&after=${encodeURIComponent(String(payload1.nextCursor ?? ""))}&limit=2`
+  });
+  assert.equal(page2.statusCode, 200);
+  const payload2 = page2.json() as { events: Array<{ cursor?: string | null; payload?: { seq?: number } }> };
+  assert.equal(payload2.events.length, 1);
+  const c3 = Number(payload2.events[0]?.cursor ?? "0");
+  assert.ok(Number.isFinite(c3) && c3 > c2);
+  const seqs = [...payload1.events, ...payload2.events].map((event) => event.payload?.seq);
+  assert.deepEqual(seqs, [0, 1, 2]);
+  await db("social_realtime_permissions").where({ subject_hash: subjectHash }).del();
+  await db("social_realtime_events").where({ space_id: spaceId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("post imageRefs validation denies cross-owner and space-mismatch refs", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.can_post" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const ownerDid = "did:hedera:testnet:image-owner";
+  const attackerDid = "did:hedera:testnet:image-attacker";
+  const ownerHash = pseudo.didToHash(ownerDid);
+  const attackerHash = pseudo.didToHash(attackerDid);
+  const stolenAssetId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_media_assets").insert({
+    asset_id: stolenAssetId,
+    owner_subject_hash: ownerHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${stolenAssetId}.jpg`,
+    thumbnail_object_key: `thumb/${stolenAssetId}.jpg`,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("owner-asset").digest("hex"),
+    status: "ACTIVE",
+    created_at: now,
+    finalized_at: now
+  });
+  const deniedCrossOwner = await app.inject({
+    method: "POST",
+    url: "/v1/social/post",
+    payload: {
+      subjectDid: attackerDid,
+      content: "cannot steal image",
+      imageRefs: [stolenAssetId],
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-image-cross-owner",
+      audience: "cuncta.action:social.post.create"
+    }
+  });
+  assert.equal(deniedCrossOwner.statusCode, 400);
+
+  const spaceA = randomUUID();
+  const spaceB = randomUUID();
+  await db("social_spaces").insert([
+    {
+      space_id: spaceA,
+      slug: `img-space-a-${spaceA.slice(0, 8)}`,
+      display_name: "Image Space A",
+      description: "test",
+      created_by_subject_did_hash: attackerHash,
+      policy_pack_id: "space.default.v1",
+      created_at: now
+    },
+    {
+      space_id: spaceB,
+      slug: `img-space-b-${spaceB.slice(0, 8)}`,
+      display_name: "Image Space B",
+      description: "test",
+      created_by_subject_did_hash: attackerHash,
+      policy_pack_id: "space.default.v1",
+      created_at: now
+    }
+  ]);
+  await db("social_space_memberships").insert({
+    space_id: spaceB,
+    subject_did_hash: attackerHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  const scopedAssetId = randomUUID();
+  await db("social_media_assets").insert({
+    asset_id: scopedAssetId,
+    owner_subject_hash: attackerHash,
+    space_id: spaceA,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${scopedAssetId}.jpg`,
+    thumbnail_object_key: null,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("scoped-asset").digest("hex"),
+    status: "ACTIVE",
+    created_at: now,
+    finalized_at: now
+  });
+  const deniedScopeMismatch = await app.inject({
+    method: "POST",
+    url: "/v1/social/space/post",
+    payload: {
+      subjectDid: attackerDid,
+      spaceId: spaceB,
+      content: "cannot cross-attach",
+      imageRefs: [scopedAssetId],
+      presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+      nonce: "nonce-image-space-mismatch",
+      audience: "cuncta.action:social.space.post.create"
+    }
+  });
+  assert.equal(deniedScopeMismatch.statusCode, 400);
+
+  await db("social_media_assets").whereIn("asset_id", [stolenAssetId, scopedAssetId]).del();
+  await db("social_space_memberships").whereIn("space_id", [spaceA, spaceB]).del();
+  await db("social_spaces").whereIn("space_id", [spaceA, spaceB]).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("feed redacts image refs for erased media assets", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectHash = pseudo.didToHash("did:hedera:testnet:feed-redact-author");
+  const assetId = randomUUID();
+  const postId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_media_assets").insert({
+    asset_id: assetId,
+    owner_subject_hash: subjectHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${assetId}.jpg`,
+    thumbnail_object_key: `thumb/${assetId}.jpg`,
+    mime_type: "image/jpeg",
+    byte_size: 4096,
+    sha256_hex: createHash("sha256").update("feed-redact").digest("hex"),
+    status: "ERASED",
+    created_at: now,
+    finalized_at: now,
+    erased_at: now,
+    deleted_at: now
+  });
+  await db("social_posts").insert({
+    post_id: postId,
+    author_subject_did_hash: subjectHash,
+    content_text: "post with erased media",
+    content_hash: hashCanonicalJson({ text: "post with erased media" }),
+    image_refs: JSON.stringify([assetId]),
+    created_at: now
+  });
+  const response = await app.inject({
+    method: "GET",
+    url: "/v1/social/feed"
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as {
+    posts?: Array<{ post_id?: string; image_refs?: string[]; image_refs_redacted_count?: number }>;
+  };
+  const post = (payload.posts ?? []).find((entry) => entry.post_id === postId);
+  assert.ok(post);
+  assert.deepEqual(post?.image_refs ?? [], []);
+  assert.equal(Number(post?.image_refs_redacted_count ?? 0), 1);
+  await db("social_posts").where({ post_id: postId }).del();
+  await db("social_media_assets").where({ asset_id: assetId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("media view request returns ok for authorized member and unavailable for unauthorized", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const ownerDid = "did:hedera:testnet:view-owner";
+  const memberDid = "did:hedera:testnet:view-member";
+  const strangerDid = "did:hedera:testnet:view-stranger";
+  const ownerHash = pseudo.didToHash(ownerDid);
+  const memberHash = pseudo.didToHash(memberDid);
+  const spaceId = randomUUID();
+  const spacePostId = randomUUID();
+  const assetId = randomUUID();
+  const now = new Date().toISOString();
+  await db("social_spaces").insert({
+    space_id: spaceId,
+    slug: `media-view-${spaceId.slice(0, 8)}`,
+    display_name: "Media View Space",
+    description: "view test",
+    created_by_subject_did_hash: ownerHash,
+    policy_pack_id: "space.default.v1",
+    created_at: now
+  });
+  await db("social_space_memberships").insert({
+    space_id: spaceId,
+    subject_did_hash: memberHash,
+    status: "ACTIVE",
+    joined_at: now
+  });
+  await db("social_media_assets").insert({
+    asset_id: assetId,
+    owner_subject_hash: ownerHash,
+    space_id: spaceId,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${assetId}.jpg`,
+    thumbnail_object_key: `thumb/${assetId}.jpg`,
+    mime_type: "image/jpeg",
+    byte_size: 4096,
+    sha256_hex: createHash("sha256").update("media-view-asset").digest("hex"),
+    status: "ACTIVE",
+    created_at: now,
+    finalized_at: now
+  });
+  await db("social_space_posts").insert({
+    space_post_id: spacePostId,
+    space_id: spaceId,
+    author_subject_did_hash: ownerHash,
+    content_text: "space post with image",
+    content_hash: hashCanonicalJson({ text: "space post with image" }),
+    image_refs: JSON.stringify([assetId]),
+    created_at: now
+  });
+  const authorized = await app.inject({
+    method: "POST",
+    url: "/v1/social/media/view/request",
+    payload: {
+      viewerDid: memberDid,
+      items: [
+        {
+          assetId,
+          context: {
+            kind: "spacePost",
+            spaceId,
+            postId: spacePostId
+          }
+        }
+      ]
+    }
+  });
+  assert.equal(authorized.statusCode, 200);
+  const okPayload = authorized.json() as {
+    results?: Array<{ status?: string; originalUrl?: string; thumbUrl?: string | null }>;
+  };
+  assert.equal(okPayload.results?.[0]?.status, "ok");
+  assert.ok((okPayload.results?.[0]?.originalUrl ?? "").length > 10);
+  assert.ok((okPayload.results?.[0]?.thumbUrl ?? "").length > 10);
+
+  const unauthorized = await app.inject({
+    method: "POST",
+    url: "/v1/social/media/view/request",
+    payload: {
+      viewerDid: strangerDid,
+      items: [
+        {
+          assetId,
+          context: {
+            kind: "spacePost",
+            spaceId,
+            postId: spacePostId
+          }
+        }
+      ]
+    }
+  });
+  assert.equal(unauthorized.statusCode, 200);
+  const deniedPayload = unauthorized.json() as { results?: Array<{ status?: string }> };
+  assert.equal(deniedPayload.results?.[0]?.status, "unavailable");
+
+  await db("social_space_posts").where({ space_post_id: spacePostId }).del();
+  await db("social_media_assets").where({ asset_id: assetId }).del();
+  await db("social_space_memberships").where({ space_id: spaceId }).del();
+  await db("social_spaces").where({ space_id: spaceId }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("media view fails closed when viewer privacy lookup times out and returns quickly", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (_input: string | URL, init?: RequestInit) => {
+    const signal = init?.signal;
+    return await new Promise<Response>((_resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new Error("privacy_aborted"));
+        return;
+      }
+      signal?.addEventListener(
+        "abort",
+        () => {
+          reject(new Error("privacy_aborted"));
+        },
+        { once: true }
+      );
+    });
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const app = buildServer();
+  await app.ready();
+  const startedAt = Date.now();
+  const response = await app.inject({
+    method: "POST",
+    url: "/v1/social/media/view/request",
+    payload: {
+      viewerDid: "did:hedera:testnet:viewer-timeout",
+      items: [
+        {
+          assetId: randomUUID(),
+          context: {
+            kind: "post",
+            postId: randomUUID()
+          }
+        }
+      ]
+    }
+  });
+  const elapsedMs = Date.now() - startedAt;
+  assert.equal(response.statusCode, 200);
+  const payload = response.json() as { results?: Array<{ status?: string }> };
+  assert.equal(payload.results?.[0]?.status, "unavailable");
+  assert.ok(
+    elapsedMs < 2_000,
+    `expected bounded timeout response, elapsedMs=${elapsedMs} timeoutMs=${process.env.ISSUER_PRIVACY_STATUS_TIMEOUT_MS}`
+  );
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("stale pending media uploads are cleaned up opportunistically", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.can_post" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const { config } = await import("../config.js");
+  const { mediaStorageAdapter, __setMediaUploadCleanupLastRunAtForTests } = await import("./social.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:stale-cleanup";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const staleAssetId = randomUUID();
+  const staleObjectKey = `original/${staleAssetId}.jpg`;
+  const staleCreatedAt = new Date(
+    Date.now() - (config.MEDIA_PRESIGN_TTL_SECONDS + 120) * 1000
+  ).toISOString();
+  await db("social_media_assets").insert({
+    asset_id: staleAssetId,
+    owner_subject_hash: subjectHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: staleObjectKey,
+    thumbnail_object_key: null,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("stale-asset").digest("hex"),
+    status: "PENDING",
+    created_at: staleCreatedAt
+  });
+  __setMediaUploadCleanupLastRunAtForTests(0);
+  const originalDelete = mediaStorageAdapter.deleteMediaObjects;
+  const deletedKeys: string[] = [];
+  mediaStorageAdapter.deleteMediaObjects = async (keys) => {
+    deletedKeys.push(...keys.filter((value): value is string => typeof value === "string"));
+  };
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/social/media/upload/request",
+      payload: {
+        subjectDid,
+        mimeType: "image/jpeg",
+        byteSize: 2048,
+        sha256Hex: createHash("sha256").update("fresh-upload").digest("hex"),
+        presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+        nonce: "nonce-stale-cleanup-trigger",
+        audience: "cuncta.action:social.post.create"
+      }
+    });
+    assert.equal(response.statusCode, 200);
+    const staleRow = await db("social_media_assets").where({ asset_id: staleAssetId }).first();
+    assert.equal(staleRow?.status, "ERASED");
+    assert.ok(staleRow?.erased_at);
+    assert.equal(deletedKeys.includes(staleObjectKey), true);
+  } finally {
+    mediaStorageAdapter.deleteMediaObjects = originalDelete;
+  }
+  await db("social_media_assets").where({ owner_subject_hash: subjectHash }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("stale cleanup delete does not block upload request when delete hangs", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.can_post" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const { config } = await import("../config.js");
+  const { mediaStorageAdapter, __setMediaUploadCleanupLastRunAtForTests } = await import("./social.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:stale-cleanup-hanging-delete";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const staleAssetId = randomUUID();
+  const staleCreatedAt = new Date(
+    Date.now() - (config.MEDIA_PRESIGN_TTL_SECONDS + 120) * 1000
+  ).toISOString();
+  await db("social_media_assets").insert({
+    asset_id: staleAssetId,
+    owner_subject_hash: subjectHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${staleAssetId}.jpg`,
+    thumbnail_object_key: null,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("stale-asset-hanging").digest("hex"),
+    status: "PENDING",
+    created_at: staleCreatedAt
+  });
+  __setMediaUploadCleanupLastRunAtForTests(0);
+  const originalDelete = mediaStorageAdapter.deleteMediaObjects;
+  mediaStorageAdapter.deleteMediaObjects = async () => new Promise<void>(() => undefined);
+  try {
+    const outcome = await Promise.race([
+      app
+        .inject({
+          method: "POST",
+          url: "/v1/social/media/upload/request",
+          payload: {
+            subjectDid,
+            mimeType: "image/jpeg",
+            byteSize: 2048,
+            sha256Hex: createHash("sha256").update("fresh-upload-hanging").digest("hex"),
+            presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+            nonce: "nonce-stale-cleanup-non-blocking",
+            audience: "cuncta.action:social.post.create"
+          }
+        })
+        .then((response) => ({ kind: "response" as const, response })),
+      new Promise<{ kind: "timeout" }>((resolve) => {
+        setTimeout(() => resolve({ kind: "timeout" }), 1500);
+      })
+    ]);
+    if (outcome.kind !== "response") {
+      assert.fail("upload request blocked on stale cleanup delete");
+    }
+    assert.equal(outcome.response.statusCode, 200);
+    const staleRow = await db("social_media_assets").where({ asset_id: staleAssetId }).first();
+    assert.equal(staleRow?.status, "ERASED");
+  } finally {
+    mediaStorageAdapter.deleteMediaObjects = originalDelete;
+  }
+  await db("social_media_assets").where({ owner_subject_hash: subjectHash }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("stale cleanup delete rejection is swallowed and does not create unhandled rejection", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/admin/privacy/status")) {
+      return makeJsonResponse({ restricted: false, tombstoned: false });
+    }
+    if (url.includes("/v1/requirements")) {
+      return makeJsonResponse({ requirements: [{ vct: "cuncta.social.can_post" }] });
+    }
+    if (url.includes("/v1/verify")) {
+      return makeJsonResponse({ decision: "ALLOW" });
+    }
+    return makeJsonResponse({}, 404);
+  }) as typeof fetch;
+  const { buildServer } = await import("../server.js");
+  const { getDb } = await import("../db.js");
+  const { config } = await import("../config.js");
+  const { mediaStorageAdapter, __setMediaUploadCleanupLastRunAtForTests } = await import("./social.js");
+  const db = await getDb();
+  const app = buildServer();
+  await app.ready();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:stale-cleanup-rejected-delete";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const staleAssetId = randomUUID();
+  const staleCreatedAt = new Date(
+    Date.now() - (config.MEDIA_PRESIGN_TTL_SECONDS + 120) * 1000
+  ).toISOString();
+  await db("social_media_assets").insert({
+    asset_id: staleAssetId,
+    owner_subject_hash: subjectHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${staleAssetId}.jpg`,
+    thumbnail_object_key: null,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("stale-asset-rejected").digest("hex"),
+    status: "PENDING",
+    created_at: staleCreatedAt
+  });
+  __setMediaUploadCleanupLastRunAtForTests(0);
+  const originalDelete = mediaStorageAdapter.deleteMediaObjects;
+  mediaStorageAdapter.deleteMediaObjects = async () => {
+    throw new Error("delete_failed_for_test");
+  };
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => {
+    unhandled.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/social/media/upload/request",
+      payload: {
+        subjectDid,
+        mimeType: "image/jpeg",
+        byteSize: 2048,
+        sha256Hex: createHash("sha256").update("fresh-upload-rejected").digest("hex"),
+        presentation: "eyJhbGciOiJub25lIn0.eyJzdWIiOiJkaWQifQ.signature",
+        nonce: "nonce-stale-cleanup-rejected",
+        audience: "cuncta.action:social.post.create"
+      }
+    });
+    assert.equal(response.statusCode, 200);
+    let staleRow:
+      | {
+          status?: string;
+          purge_pending?: boolean;
+          purge_attempt_count?: number;
+        }
+      | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      staleRow = await db("social_media_assets").where({ asset_id: staleAssetId }).first();
+      if (staleRow?.purge_pending) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    assert.equal(staleRow?.status, "ERASED");
+    assert.equal(staleRow?.purge_pending, true);
+    assert.ok(Number(staleRow?.purge_attempt_count ?? 0) >= 1);
+    assert.equal(unhandled.length, 0);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+    mediaStorageAdapter.deleteMediaObjects = originalDelete;
+  }
+  await db("social_media_assets").where({ owner_subject_hash: subjectHash }).del();
+  await app.close();
+  globalThis.fetch = originalFetch;
+});
+
+test("purge_pending media retry clears on later opportunistic cleanup", async () => {
+  const { getDb } = await import("../db.js");
+  const { mediaStorageAdapter, maybeCleanupStaleUploads, __setMediaUploadCleanupLastRunAtForTests } =
+    await import("./social.js");
+  const db = await getDb();
+  const pseudo = createHmacSha256Pseudonymizer({
+    pepper: process.env.PSEUDONYMIZER_PEPPER ?? "social-test-pepper-123456"
+  });
+  const subjectDid = "did:hedera:testnet:purge-pending-retry";
+  const subjectHash = pseudo.didToHash(subjectDid);
+  const assetId = randomUUID();
+  const nowIso = new Date().toISOString();
+  await db("social_media_assets").insert({
+    asset_id: assetId,
+    owner_subject_hash: subjectHash,
+    space_id: null,
+    media_kind: "image",
+    storage_provider: "s3",
+    object_key: `original/${assetId}.jpg`,
+    thumbnail_object_key: null,
+    mime_type: "image/jpeg",
+    byte_size: 2048,
+    sha256_hex: createHash("sha256").update("retry-asset").digest("hex"),
+    status: "ERASED",
+    created_at: nowIso,
+    erased_at: nowIso,
+    deleted_at: nowIso,
+    purge_pending: true,
+    purge_attempt_count: 1,
+    last_purge_attempt_at: nowIso
+  });
+  const originalDelete = mediaStorageAdapter.deleteMediaObjects;
+  let attempts = 0;
+  mediaStorageAdapter.deleteMediaObjects = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      throw new Error("retry_delete_first_attempt_fails");
+    }
+  };
+  __setMediaUploadCleanupLastRunAtForTests(0);
+  try {
+    await maybeCleanupStaleUploads({ force: true });
+    let afterFirst:
+      | {
+          purge_pending?: boolean;
+          purge_attempt_count?: number;
+        }
+      | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      afterFirst = await db("social_media_assets").where({ asset_id: assetId }).first();
+      if (Number(afterFirst?.purge_attempt_count ?? 0) >= 2) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    assert.equal(afterFirst?.purge_pending, true);
+    assert.ok(Number(afterFirst?.purge_attempt_count ?? 0) >= 2);
+
+    await maybeCleanupStaleUploads({ force: true, nowMs: Date.now() + 1 });
+    let afterSecond:
+      | {
+          purge_pending?: boolean;
+          purge_attempt_count?: number;
+        }
+      | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      afterSecond = await db("social_media_assets").where({ asset_id: assetId }).first();
+      if (afterSecond?.purge_pending === false && Number(afterSecond?.purge_attempt_count ?? 0) >= 3) break;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    assert.equal(afterSecond?.purge_pending, false);
+    assert.ok(Number(afterSecond?.purge_attempt_count ?? 0) >= 3);
+  } finally {
+    mediaStorageAdapter.deleteMediaObjects = originalDelete;
+  }
+  await db("social_media_assets").where({ asset_id: assetId }).del();
 });

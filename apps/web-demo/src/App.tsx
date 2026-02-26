@@ -144,6 +144,34 @@ type PulsePreferences = {
   notifyStreaks: boolean;
 };
 
+type CommandPlanResponse = {
+  action_plan: Array<{ intent: string; action_id: string; space_id?: string | null }>;
+  required_capabilities: Array<{ vct: string; label?: string }>;
+  ready_state: "READY" | "MISSING_PROOF" | "DENIED" | "NEEDS_REFINEMENT";
+  deny_reason?: string | null;
+  next_best_actions: string[];
+  feeQuote?: {
+    items?: Array<{
+      asset?: { kind?: "HBAR" | "HTS"; tokenId?: string | null; symbol?: string; decimals?: number };
+      amount?: string;
+      purpose?: string;
+    }>;
+  } | null;
+  feeScheduleFingerprint?: string | null;
+  feeQuoteFingerprint?: string | null;
+  paymentRequest?: {
+    instructions?: Array<{
+      to?: { accountId?: string };
+      asset?: { kind?: "HBAR" | "HTS"; tokenId?: string | null; symbol?: string; decimals?: number };
+      amount?: string;
+      memo?: string;
+      purpose?: string;
+    }>;
+  } | null;
+  paymentRequestFingerprint?: string | null;
+  paymentsConfigFingerprint?: string | null;
+};
+
 type FeedMode = "signal" | "flow";
 type FlowTrustLens = "verified_only" | "trusted_creator" | "space_members";
 type PostExplainResponse = {
@@ -309,6 +337,7 @@ const parseOnboardingStrategyList = (value?: string) => {
     .map((entry) => entry.trim())
     .filter((entry): entry is OnboardingStrategy => entry === "user_pays");
 };
+// CUNCTA supports self-funded onboarding only.
 
 const allowedOnboardingStrategies = parseOnboardingStrategyList(
   import.meta.env.VITE_ONBOARDING_STRATEGY_ALLOWED
@@ -404,8 +433,6 @@ export default function App() {
   const [testnetDemoOnlyConfirmed, setTestnetDemoOnlyConfirmed] = useState(false);
   const [payerAccountId, setPayerAccountId] = useState("");
   const [payerPrivateKey, setPayerPrivateKey] = useState("");
-  const [useOperatorFallback, setUseOperatorFallback] = useState(false);
-  const [sponsoredDisabled, setSponsoredDisabled] = useState(false);
   const [auraExplain, setAuraExplain] = useState<string>("");
   const [dsrToken, setDsrToken] = useState<string>("");
   const [dsrExport, setDsrExport] = useState<string>("");
@@ -469,6 +496,8 @@ export default function App() {
   const [checklist, setChecklist] = useState<boolean[]>(() => loadChecklist());
   const [theme, setTheme] = useState<"day" | "night">("day");
   const [showCommandOrb, setShowCommandOrb] = useState(false);
+  const [commandIntent, setCommandIntent] = useState("join hangout");
+  const [commandPlan, setCommandPlan] = useState<CommandPlanResponse | null>(null);
   const [showCapabilityExplain, setShowCapabilityExplain] = useState<string>("");
   const [entSpaceId, setEntSpaceId] = useState<string>("");
   const [entEmojiPackId, setEntEmojiPackId] = useState<string>("");
@@ -488,7 +517,6 @@ export default function App() {
     return buildHolderJwk(identity.privateKey, identity.publicKey);
   }, [identity]);
 
-  const allowSponsored = false;
   const allowUserPays =
     allowedOnboardingStrategies.length === 0 || allowedOnboardingStrategies.includes("user_pays");
   const currentSocialRequirement = socialRequirements?.requirements[0];
@@ -532,7 +560,6 @@ export default function App() {
   const createIdentity = async () => {
     setError("");
     setStatus("Creating identity...");
-    setSponsoredDisabled(false);
     try {
       const keypair = await generateKeypair();
       const publicKeyMultibase = toBase58Multibase(keypair.publicKey);
@@ -541,55 +568,7 @@ export default function App() {
       }
 
       let did: string | null = null;
-      if (onboardingStrategy === "sponsored") {
-        const requestResponse = await fetch(
-          `${services.appGateway}/v1/onboard/did/create/request`,
-          {
-            method: "POST",
-            headers: withDeviceHeaders({ "content-type": "application/json" }),
-            body: JSON.stringify({
-              network: "testnet",
-              publicKeyMultibase,
-              options: { topicManagement: "shared", includeServiceEndpoints: true }
-            })
-          }
-        );
-        if (!requestResponse.ok) {
-          const bodyText = await requestResponse.text();
-          let payload: { error?: string; message?: string } | null = null;
-          try {
-            payload = JSON.parse(bodyText) as { error?: string; message?: string };
-          } catch {
-            payload = null;
-          }
-          if (
-            requestResponse.status === 403 &&
-            payload?.error === "sponsored_onboarding_disabled"
-          ) {
-            setSponsoredDisabled(true);
-            setOnboardingStrategy("user_pays");
-            throw new Error("Sponsored onboarding disabled. Switch to self-funded.");
-          }
-          throw new Error(payload?.message ?? bodyText);
-        }
-        const requestPayload = await requestResponse.json();
-        const payloadToSign = fromBase64Url(requestPayload.signingRequest.payloadToSignB64u);
-        const signature = await signPayload(payloadToSign, keypair.privateKey);
-        const submitResponse = await fetch(`${services.appGateway}/v1/onboard/did/create/submit`, {
-          method: "POST",
-          headers: withDeviceHeaders({ "content-type": "application/json" }),
-          body: JSON.stringify({
-            state: requestPayload.state,
-            signatureB64u: toBase64Url(signature),
-            waitForVisibility: false
-          })
-        });
-        if (!submitResponse.ok) {
-          throw new Error(await submitResponse.text());
-        }
-        const submitPayload = await submitResponse.json();
-        did = submitPayload.did;
-      } else {
+      {
         setOnboardingMethodUsed("sdk_key_entry");
         const hashPackApi = (window as unknown as Record<string, unknown>).hashpack as
           | {
@@ -623,19 +602,7 @@ export default function App() {
         let effectivePayerId = payerId;
         let effectivePayerKey = payerKey;
         if (!effectivePayerId || !effectivePayerKey) {
-          if (!isTestnet) {
-            throw new Error("Self-funded onboarding requires payer credentials.");
-          }
-          if (!useOperatorFallback) {
-            throw new Error("Payer credentials required or enable testnet demo fallback.");
-          }
-          const operatorId = import.meta.env.VITE_HEDERA_OPERATOR_ID;
-          const operatorKey = import.meta.env.VITE_HEDERA_OPERATOR_PRIVATE_KEY;
-          if (!operatorId || !operatorKey) {
-            throw new Error("Missing VITE_HEDERA_OPERATOR_* for testnet fallback.");
-          }
-          effectivePayerId = operatorId;
-          effectivePayerKey = operatorKey;
+          throw new Error("Self-funded onboarding requires payer credentials.");
         }
         if (!effectivePayerId || !effectivePayerKey) {
           throw new Error("Payer account id + private key required for self-funded onboarding.");
@@ -693,9 +660,10 @@ export default function App() {
     setError("");
     setStatus("Requesting demo credential...");
     try {
-      const response = await fetch(`${services.appGateway}/v1/onboard/issue`, {
+      // Self-funded: credentials via issuer directly (dev /v1/issue; prod would use OID4VCI)
+      const response = await fetch(`${services.issuerService}/v1/issue`, {
         method: "POST",
-        headers: withDeviceHeaders({ "content-type": "application/json" }),
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           subjectDid: identity.did,
           vct: "cuncta.marketplace.seller_good_standing",
@@ -728,9 +696,10 @@ export default function App() {
     setError("");
     setStatus("Requesting social account credential...");
     try {
-      const response = await fetch(`${services.appGateway}/v1/onboard/issue`, {
+      // Self-funded: credentials via issuer directly (dev /v1/issue; prod would use OID4VCI)
+      const response = await fetch(`${services.issuerService}/v1/issue`, {
         method: "POST",
-        headers: withDeviceHeaders({ "content-type": "application/json" }),
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           subjectDid: identity.did,
           vct: "cuncta.social.account_active",
@@ -1614,6 +1583,25 @@ export default function App() {
     setPulseExplainOpen((prev) => ({ ...prev, [cardType]: !prev[cardType] }));
   };
 
+  const runCommandPlan = async () => {
+    setError("");
+    setStatus("Planning command...");
+    const response = await fetch(`${services.appGateway}/v1/command/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        intent: commandIntent,
+        spaceId: selectedSpaceId || undefined
+      })
+    });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    const payload = (await response.json()) as CommandPlanResponse;
+    setCommandPlan(payload);
+    setStatus(payload.ready_state === "READY" ? "Command ready." : "Command needs more proof.");
+  };
+
   const runPulseCta = async (spaceId: string, card: PulseCard) => {
     if (card.route === "open_crews") {
       await loadSpaceCrews(spaceId);
@@ -2291,17 +2279,6 @@ export default function App() {
               <input
                 type="radio"
                 name="onboarding-mode"
-                value="sponsored"
-                checked={onboardingStrategy === "sponsored"}
-                onChange={() => setOnboardingStrategy("sponsored")}
-                disabled={!allowSponsored}
-              />
-              <span>Sponsored onboarding disabled by policy</span>
-            </label>
-            <label className="row checkbox">
-              <input
-                type="radio"
-                name="onboarding-mode"
                 value="user_pays"
                 checked={onboardingStrategy === "user_pays"}
                 onChange={() => setOnboardingStrategy("user_pays")}
@@ -2310,9 +2287,7 @@ export default function App() {
               <span>Self-funded: bring your Hedera account</span>
             </label>
           </div>
-          {sponsoredDisabled && (
-            <div className="muted">Sponsored onboarding is disabled. Self-funded is required.</div>
-          )}
+          <div className="muted">CUNCTA supports self-funded onboarding only.</div>
           {onboardingStrategy === "user_pays" && (
             <div className="card stack">
               <div className="muted">
@@ -2350,16 +2325,6 @@ export default function App() {
                       placeholder="302e..."
                     />
                   </label>
-                  {!payerAccountId.trim() && !payerPrivateKey.trim() && (
-                    <label className="row checkbox">
-                      <input
-                        type="checkbox"
-                        checked={useOperatorFallback}
-                        onChange={(event) => setUseOperatorFallback(event.target.checked)}
-                      />
-                      <span>Use local testnet operator account for demo</span>
-                    </label>
-                  )}
                 </>
               )}
               <div className="muted">
@@ -3397,6 +3362,121 @@ export default function App() {
       {showCommandOrb && (
         <div className="command-orb-panel card stack">
           <strong>Command Orb</strong>
+          <label className="stack">
+            <span className="muted">Intent</span>
+            <input
+              value={commandIntent}
+              onChange={(event) => setCommandIntent(event.target.value)}
+              placeholder="join hangout"
+            />
+          </label>
+          <button className="btn secondary" onClick={runCommandPlan}>
+            Generate quick actions
+          </button>
+          {commandPlan && (
+            <div className="card stack">
+              <div className="row">
+                <strong>Quick Actions</strong>
+                <span className="badge">{commandPlan.ready_state}</span>
+                <button
+                  className="post-explain-icon"
+                  aria-label="Why denied"
+                  title={commandPlan.deny_reason ?? "No denial reason"}
+                >
+                  ?
+                </button>
+              </div>
+              {commandPlan.action_plan.map((entry, index) => (
+                <div key={`${entry.action_id}-${index}`} className="row">
+                  <span className="badge">{entry.action_id}</span>
+                  <span className="muted">{entry.intent}</span>
+                </div>
+              ))}
+              {commandPlan.required_capabilities.length > 0 && (
+                <div className="stack">
+                  <strong>Required capabilities</strong>
+                  {commandPlan.required_capabilities.map((entry) => (
+                    <span key={entry.vct} className="muted">
+                      {entry.label ?? entry.vct}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {commandPlan.next_best_actions.length > 0 && (
+                <div className="stack">
+                  <strong>Next best actions</strong>
+                  {commandPlan.next_best_actions.map((entry) => (
+                    <span key={entry} className="muted">
+                      {entry}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="stack">
+                <strong>Cost & Payment (Advisory)</strong>
+                {Array.isArray(commandPlan.feeQuote?.items) && commandPlan.feeQuote.items.length > 0 ? (
+                  <div className="stack">
+                    <span className="muted">Fee quote</span>
+                    {commandPlan.feeQuote.items.map((item, index) => (
+                      <span
+                        key={`${item.asset?.kind ?? "asset"}-${item.asset?.tokenId ?? "native"}-${index}`}
+                        className="muted"
+                      >
+                        {(item.asset?.kind ?? "ASSET").toUpperCase()}
+                        {item.asset?.kind === "HTS" && item.asset?.tokenId ? ` (${item.asset.tokenId})` : ""}
+                        {" · "}
+                        {item.amount ?? "0"}
+                        {item.purpose ? ` · ${item.purpose}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="muted">No fee quote provided.</span>
+                )}
+                {Array.isArray(commandPlan.paymentRequest?.instructions) &&
+                commandPlan.paymentRequest.instructions.length > 0 ? (
+                  <div className="stack">
+                    <span className="muted">Payment instructions</span>
+                    {commandPlan.paymentRequest.instructions.map((instruction, index) => (
+                      <span
+                        key={`${instruction.to?.accountId ?? "receiver"}-${instruction.asset?.tokenId ?? "native"}-${index}`}
+                        className="muted"
+                      >
+                        to {instruction.to?.accountId ?? "unknown"}
+                        {" · "}
+                        {(instruction.asset?.kind ?? "ASSET").toUpperCase()}
+                        {instruction.asset?.kind === "HTS" && instruction.asset?.tokenId
+                          ? ` (${instruction.asset.tokenId})`
+                          : ""}
+                        {" · "}
+                        {instruction.amount ?? "0"}
+                        {instruction.memo ? ` · memo: ${instruction.memo}` : ""}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="muted">Payment instructions unavailable (receiver not configured).</span>
+                )}
+                <details>
+                  <summary className="muted">Fingerprint details</summary>
+                  <div className="stack">
+                    <span className="muted">
+                      feeScheduleFingerprint: {commandPlan.feeScheduleFingerprint ?? "not provided"}
+                    </span>
+                    <span className="muted">
+                      feeQuoteFingerprint: {commandPlan.feeQuoteFingerprint ?? "not provided"}
+                    </span>
+                    <span className="muted">
+                      paymentRequestFingerprint: {commandPlan.paymentRequestFingerprint ?? "not provided"}
+                    </span>
+                    <span className="muted">
+                      paymentsConfigFingerprint: {commandPlan.paymentsConfigFingerprint ?? "not provided"}
+                    </span>
+                  </div>
+                </details>
+              </div>
+            </div>
+          )}
           <button className="btn secondary" onClick={createIdentity}>
             Create identity
           </button>

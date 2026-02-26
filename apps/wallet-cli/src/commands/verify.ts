@@ -1,30 +1,9 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { z } from "zod";
+import { loadWalletState } from "../walletStore.js";
 
 const envSchema = z.object({
   VERIFIER_SERVICE_BASE_URL: z.string().url()
 });
-
-type WalletState = {
-  lastPresentation?: {
-    action: string;
-    presentation: string;
-    nonce: string;
-    audience: string;
-  };
-};
-
-const walletStatePath = () => {
-  const dir = path.dirname(fileURLToPath(import.meta.url));
-  return path.join(dir, "..", "..", "wallet-state.json");
-};
-
-const loadWalletState = async (): Promise<WalletState> => {
-  const content = await readFile(walletStatePath(), "utf8");
-  return JSON.parse(content) as WalletState;
-};
 
 export const verify = async (action = "marketplace.list_item") => {
   const env = envSchema.parse(process.env);

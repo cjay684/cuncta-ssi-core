@@ -29,9 +29,8 @@ alter default privileges in schema public grant all privileges on sequences to d
 grant usage, select on all sequences in schema public to db_role_gateway, db_role_policy, db_role_verifier, db_role_issuer;
 alter default privileges in schema public grant usage, select on sequences to db_role_gateway, db_role_policy, db_role_verifier, db_role_issuer;
 
--- gateway role: sponsor budget only
-grant select, insert, update on table sponsor_budget_daily to db_role_gateway;
-grant select, insert, update on table sponsor_budget_events to db_role_gateway;
+-- gateway role: command/audit events only
+grant select, insert, delete on table command_center_audit_events to db_role_gateway;
 
 -- policy role
 grant select, insert, update on table policies to db_role_policy;

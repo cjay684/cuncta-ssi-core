@@ -9,7 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "lint": "eslint \"src/**/*.ts\"",
-    "test": "tsx src/pseudonymizer.test.ts && tsx src/serviceAuth.test.ts",
+    "test": "tsx src/pseudonymizer.test.ts && tsx src/serviceAuth.test.ts && tsx src/hederaFailure.test.ts && tsx src/oid/oid4vp.test.ts && tsx src/surfaceRegistry.test.ts && tsx src/surfaceRegistry.signature.test.ts && tsx src/surfaceRegistry.canon-version.test.ts && tsx src/surfaceRegistry.bundle-determinism.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

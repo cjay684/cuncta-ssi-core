@@ -63,6 +63,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.can_post",
     version: 3,
     rule_logic: {
+      purpose: "Capability to create social posts (anti-spam entitlement)",
       window_days: 7,
       signals: ["social.post_success", "social.reply_success"],
       score: { min_silver: 3, min_gold: 10 },
@@ -90,6 +91,7 @@ export async function up(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.trusted_creator",
     version: 2,
     rule_logic: {
+      purpose: "Capability stamp for trusted creators (feed/trust lens entitlement)",
       window_days: 30,
       signals: ["social.post_success", "social.reply_success"],
       score: { min_silver: 15, min_gold: 30 },
@@ -130,6 +132,7 @@ export async function down(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.can_post",
     version: 2,
     rule_logic: {
+      purpose: "Capability to create social posts (anti-spam entitlement)",
       window_days: 30,
       signals: ["social.post_success", "social.reply_success"],
       score: { min_silver: 1, min_gold: 6 },
@@ -153,6 +156,7 @@ export async function down(knex: Knex): Promise<void> {
     output_vct: "cuncta.social.trusted_creator",
     version: 1,
     rule_logic: {
+      purpose: "Capability stamp for trusted creators (feed/trust lens entitlement)",
       window_days: 30,
       signals: ["social.post_success", "social.reply_success"],
       score: { min_silver: 10, min_gold: 20 },

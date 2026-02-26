@@ -13,10 +13,22 @@ import { getDb } from "../db.js";
 import { metrics } from "../metrics.js";
 import { log } from "../log.js";
 import { requireServiceAuth } from "../auth.js";
+import {
+  buildMediaObjectKey,
+  createPresignedGet,
+  createPresignedUpload,
+  deleteMediaObjects,
+  generateThumbnail,
+  verifyUploadedObject
+} from "../mediaStorage.js";
 
 const pseudonymizer = createHmacSha256Pseudonymizer({ pepper: config.PSEUDONYMIZER_PEPPER });
 const textEncoder = new TextEncoder();
 const hashHex = (value: string) => createHash("sha256").update(value).digest("hex");
+export const mediaStorageAdapter = {
+  createPresignedGet,
+  deleteMediaObjects
+};
 
 const createServiceJwt = async (input: {
   audience: string;
@@ -50,6 +62,7 @@ const profileSchema = z.object({
 const postSchema = z.object({
   subjectDid: z.string().min(3),
   content: z.string().trim().min(1).max(4000),
+  imageRefs: z.array(z.string().uuid()).max(8).optional().default([]),
   presentation: z.string().min(10),
   nonce: z.string().min(10),
   audience: z.string().min(3)
@@ -111,9 +124,79 @@ const spacePostSchema = z.object({
   subjectDid: z.string().min(3),
   spaceId: z.string().uuid(),
   content: z.string().trim().min(1).max(4000),
+  imageRefs: z.array(z.string().uuid()).max(8).optional().default([]),
   presentation: z.string().min(10),
   nonce: z.string().min(10),
   audience: z.string().min(3)
+});
+
+const mediaUploadRequestSchema = z.object({
+  subjectDid: z.string().min(3),
+  spaceId: z.string().uuid().optional(),
+  mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+  byteSize: z.number().int().min(1024).max(config.MEDIA_MAX_UPLOAD_BYTES),
+  sha256Hex: z.string().trim().regex(/^[a-f0-9]{64}$/),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+
+const mediaUploadCompleteSchema = z.object({
+  subjectDid: z.string().min(3),
+  assetId: z.string().uuid(),
+  objectKey: z.string().trim().min(8).max(500),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+
+const mediaViewRequestSchema = z.object({
+  viewerDid: z.string().min(3).optional(),
+  items: z
+    .array(
+      z.object({
+        assetId: z.string().uuid(),
+        context: z.discriminatedUnion("kind", [
+          z.object({
+            kind: z.literal("post"),
+            postId: z.string().uuid()
+          }),
+          z.object({
+            kind: z.literal("spacePost"),
+            spaceId: z.string().uuid(),
+            postId: z.string().uuid()
+          })
+        ])
+      })
+    )
+    .min(1)
+    .max(20)
+});
+
+const realtimeTokenSchema = z.object({
+  subjectDid: z.string().min(3),
+  channel: z.enum(["presence", "banter", "hangout", "challenge"]),
+  spaceId: z.string().uuid(),
+  threadId: z.string().uuid().optional(),
+  sessionId: z.string().uuid().optional(),
+  challengeId: z.string().uuid().optional(),
+  canBroadcast: z.boolean().optional().default(false),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+
+const realtimePublishSchema = z.object({
+  permissionToken: z.string().min(16),
+  eventType: z.string().trim().min(3).max(80),
+  payload: z.unknown()
+});
+
+const realtimeEventsQuerySchema = z.object({
+  permissionToken: z.string().min(16),
+  since: z.string().datetime().optional(),
+  after: z.string().regex(/^\d+$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100)
 });
 
 const spaceModerateSchema = z.object({
@@ -371,6 +454,78 @@ const challengeEndSchema = z.object({
   nonce: z.string().min(10),
   audience: z.string().min(3)
 });
+const banterThreadCreateSchema = z.object({
+  subjectDid: z.string().min(3),
+  kind: z.enum(["space_chat", "challenge_chat", "hangout_chat", "crew_chat"]),
+  crewId: z.string().uuid().optional(),
+  challengeId: z.string().uuid().optional(),
+  hangoutSessionId: z.string().uuid().optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const banterThreadListQuerySchema = z.object({
+  kind: z.enum(["space_chat", "challenge_chat", "hangout_chat", "crew_chat"]).optional()
+});
+const banterThreadParamsSchema = z.object({
+  threadId: z.string().uuid()
+});
+const banterMessagesQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).default(50),
+  before: z.string().datetime().optional(),
+  viewerDid: z.string().min(3).optional()
+});
+const banterPermissionSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const banterSendSchema = z.object({
+  subjectDid: z.string().min(3),
+  bodyText: z.string().trim().min(1).max(280),
+  permissionToken: z.string().min(16),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const banterReactSchema = z.object({
+  subjectDid: z.string().min(3),
+  permissionToken: z.string().min(16),
+  emojiShortcode: z.string().trim().min(1).max(32).optional(),
+  emojiId: z.string().uuid().optional(),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const banterMessageParamsSchema = z.object({
+  messageId: z.string().uuid()
+});
+const banterDeleteOwnSchema = z.object({
+  subjectDid: z.string().min(3),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const banterModerateSchema = z.object({
+  subjectDid: z.string().min(3),
+  reasonCode: z.string().trim().min(2).max(64).default("banter_removed"),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const spaceStatusSetSchema = z.object({
+  subjectDid: z.string().min(3),
+  crewId: z.string().uuid().optional(),
+  mode: z.enum(["quiet", "active", "immersive"]).default("active"),
+  statusText: z.string().trim().min(1).max(80),
+  presentation: z.string().min(10),
+  nonce: z.string().min(10),
+  audience: z.string().min(3)
+});
+const spaceStatusQuerySchema = z.object({
+  viewerDid: z.string().min(3).optional()
+});
 const rankingsQuerySchema = z.object({
   type: z.enum(["contributors", "streaks"]).default("contributors")
 });
@@ -607,7 +762,14 @@ type FunnelAction =
   | "challenge_end"
   | "hangout_create"
   | "hangout_join"
-  | "hangout_end";
+  | "hangout_end"
+  | "media_view"
+  | "banter_thread_create"
+  | "banter_message_send"
+  | "banter_message_react"
+  | "banter_message_delete_own"
+  | "banter_message_moderate"
+  | "banter_status_set";
 type PrivacyStatus = { restricted: boolean; tombstoned: boolean };
 type VerifyResponse = {
   decision?: "ALLOW" | "DENY";
@@ -626,27 +788,11 @@ type RequirementsResponse = {
 type RequirementSummary = { vct: string; label: string };
 type SpaceModerationCaseStatus = "OPEN" | "ACK" | "RESOLVED";
 
-const requirementLabels: Record<string, string> = {
-  "cuncta.social.account_active": "Active social account",
-  "cuncta.social.can_post": "Ability to post",
-  "cuncta.social.can_comment": "Ability to reply",
-  "cuncta.social.trusted_creator": "Trusted Creator",
-  "cuncta.social.space.member": "Space member",
-  "cuncta.social.space.poster": "Space poster",
-  "cuncta.social.space.moderator": "Space moderator",
-  "cuncta.social.space.steward": "Space steward",
-  "cuncta.media.emoji_creator": "Emoji creator",
-  "cuncta.media.soundpack_creator": "Soundpack creator",
-  "cuncta.sync.watch_host": "Watch host",
-  "cuncta.presence.mode_access": "Presence mode access",
-  "cuncta.sync.scroll_host": "Scroll host",
-  "cuncta.sync.listen_host": "Listen host",
-  "cuncta.sync.session_participant": "Sync session participant",
-  "cuncta.sync.huddle_host": "Hangout host",
-  "cuncta.social.ritual_creator": "Ritual creator"
+// Policy service is the authoritative source of requirement labels (data-driven).
+const requirementLabel = (vct: string, label?: string) => {
+  const trimmed = typeof label === "string" ? label.trim() : "";
+  return trimmed.length ? trimmed : vct;
 };
-
-const requirementLabel = (vct: string, label?: string) => label ?? requirementLabels[vct] ?? vct;
 const tierRank: Record<string, number> = { bronze: 0, silver: 1, gold: 2 };
 
 const normalizeTier = (value: unknown) => {
@@ -667,14 +813,6 @@ const parseAuraState = (raw: unknown): Record<string, unknown> => {
     }
   }
   return {};
-};
-
-const inferAuraThreshold = (vct: string) => {
-  if (vct === "cuncta.social.space.poster") return "Bronze Aura tier or higher";
-  if (vct === "cuncta.social.space.moderator" || vct === "cuncta.social.trusted_creator") {
-    return "Silver Aura tier or higher";
-  }
-  return null;
 };
 
 const funnel: Record<
@@ -728,7 +866,14 @@ const funnel: Record<
   challenge_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
   hangout_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
   hangout_join: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
-  hangout_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 }
+  hangout_end: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  media_view: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_thread_create: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_message_send: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_message_react: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_message_delete_own: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_message_moderate: { attempts: 0, allowed: 0, denied: 0, completed: 0 },
+  banter_status_set: { attempts: 0, allowed: 0, denied: 0, completed: 0 }
 };
 
 const incAttempt = (action: FunnelAction) => {
@@ -757,8 +902,24 @@ type SyncSubscriber = {
 const syncSubscribers = new Map<string, Set<SyncSubscriber>>();
 const syncEventBuckets = new Map<string, { windowMs: number; count: number; startedAt: number }>();
 const presencePingBuckets = new Map<string, { count: number; startedAt: number }>();
+const banterMessageBuckets = new Map<
+  string,
+  { count: number; startedAt: number; cooldownUntil?: number }
+>();
+const realtimeBroadcastBuckets = new Map<string, { count: number; startedAt: number }>();
+const mediaViewBuckets = new Map<string, { count: number; startedAt: number }>();
+const MEDIA_VIEW_RATE_LIMIT_WINDOW_MS = 60_000;
+const MEDIA_VIEW_RATE_LIMIT_MAX = 60;
+const MAX_POST_IMAGE_REFS = 4;
+const MEDIA_UPLOAD_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const MEDIA_UPLOAD_CLEANUP_GRACE_SECONDS = 60;
+const MEDIA_UPLOAD_CLEANUP_BATCH_SIZE = 100;
+const MEDIA_PURGE_RETRY_BATCH_SIZE = 100;
 let syncEventLastRetentionPruneAt = 0;
 let presenceLastPruneAt = 0;
+let banterLastPruneAt = 0;
+let realtimeLastPruneAt = 0;
+let mediaUploadLastCleanupAt = 0;
 
 const addSyncSubscriber = (sessionId: string, subscriber: SyncSubscriber) => {
   const existing = syncSubscribers.get(sessionId) ?? new Set<SyncSubscriber>();
@@ -894,6 +1055,318 @@ const hasActiveSpaceMembership = async (spaceId: string, subjectDidHash: string)
   return Boolean(row);
 };
 
+const normalizeImageRefs = (imageRefs: string[]) => Array.from(new Set(imageRefs));
+
+const validateOwnedImageRefs = async (input: {
+  subjectDidHash: string;
+  imageRefs: string[];
+  spaceId?: string;
+}) => {
+  const dedupedRefs = normalizeImageRefs(input.imageRefs);
+  if (dedupedRefs.length === 0) return { ok: true as const, imageRefs: dedupedRefs };
+  if (dedupedRefs.length > MAX_POST_IMAGE_REFS) {
+    return { ok: false as const, imageRefs: dedupedRefs };
+  }
+  const db = await getDb();
+  const rows = await db.transaction(async (trx) => {
+    return (await trx("social_media_assets")
+      .whereIn("asset_id", dedupedRefs)
+      .forUpdate()
+      .select(
+        "asset_id",
+        "owner_subject_hash",
+        "space_id",
+        "status",
+        "erased_at",
+        "deleted_at",
+        "finalized_at",
+        "media_kind"
+      )) as Array<{
+      asset_id: string;
+      owner_subject_hash: string;
+      space_id: string | null;
+      status: string;
+      erased_at: string | null;
+      deleted_at: string | null;
+      finalized_at: string | null;
+      media_kind: string;
+    }>;
+  });
+  if (rows.length !== dedupedRefs.length) {
+    return { ok: false as const, imageRefs: dedupedRefs };
+  }
+  for (const row of rows) {
+    if (row.media_kind !== "image") return { ok: false as const, imageRefs: dedupedRefs };
+    if (row.owner_subject_hash !== input.subjectDidHash) {
+      return { ok: false as const, imageRefs: dedupedRefs };
+    }
+    if (row.status !== "ACTIVE" || !row.finalized_at || row.erased_at || row.deleted_at) {
+      return { ok: false as const, imageRefs: dedupedRefs };
+    }
+    if (input.spaceId) {
+      if (row.space_id !== input.spaceId) return { ok: false as const, imageRefs: dedupedRefs };
+    } else if (row.space_id) {
+      return { ok: false as const, imageRefs: dedupedRefs };
+    }
+  }
+  return { ok: true as const, imageRefs: dedupedRefs };
+};
+
+const isMediaAssetViewable = (row: {
+  status: string;
+  finalized_at: string | null;
+  erased_at: string | null;
+  deleted_at: string | null;
+  media_kind: string;
+}) =>
+  row.media_kind === "image" &&
+  row.status === "ACTIVE" &&
+  Boolean(row.finalized_at) &&
+  !row.erased_at &&
+  !row.deleted_at;
+
+const checkMediaViewRateLimit = (bucketKey: string) => {
+  const now = Date.now();
+  const bucket = mediaViewBuckets.get(bucketKey);
+  if (!bucket || now - bucket.startedAt >= MEDIA_VIEW_RATE_LIMIT_WINDOW_MS) {
+    mediaViewBuckets.set(bucketKey, { count: 1, startedAt: now });
+    return true;
+  }
+  if (bucket.count >= MEDIA_VIEW_RATE_LIMIT_MAX) return false;
+  bucket.count += 1;
+  return true;
+};
+
+const collectImageRefIds = (rows: Array<{ image_refs: unknown }>) => {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const refs = Array.isArray(row.image_refs) ? row.image_refs : [];
+    for (const ref of refs) {
+      if (typeof ref === "string" && ref.length > 0) ids.add(ref);
+    }
+  }
+  return Array.from(ids);
+};
+
+const loadViewableMediaAssetIds = async (assetIds: string[]) => {
+  if (assetIds.length === 0) return new Set<string>();
+  const rows = (await (await getDb())("social_media_assets")
+    .whereIn("asset_id", assetIds)
+    .andWhere({ status: "ACTIVE", media_kind: "image" })
+    .whereNotNull("finalized_at")
+    .whereNull("erased_at")
+    .whereNull("deleted_at")
+    .select("asset_id")) as Array<{ asset_id: string }>;
+  return new Set(rows.map((row) => row.asset_id));
+};
+
+const redactPostImageRefs = async <
+  T extends {
+    image_refs: unknown;
+  }
+>(
+  rows: T[]
+) => {
+  const viewableIds = await loadViewableMediaAssetIds(collectImageRefIds(rows));
+  return rows.map((row) => {
+    const originalRefs = Array.isArray(row.image_refs)
+      ? row.image_refs.filter((value): value is string => typeof value === "string")
+      : [];
+    const redactedRefs = originalRefs.filter((value) => viewableIds.has(value));
+    const redactedCount = originalRefs.length - redactedRefs.length;
+    return {
+      ...row,
+      image_refs: redactedRefs,
+      ...(redactedCount > 0
+        ? { image_refs_redacted: true, image_refs_redacted_count: redactedCount }
+        : {})
+    };
+  });
+};
+
+type PurgeDeleteEntry = {
+  assetId: string;
+  key: string | null | undefined;
+};
+
+const noteMediaPurgeAttempt = async (assetIds: string[], attemptedAt: string) => {
+  if (assetIds.length === 0) return;
+  const db = await getDb();
+  const maxAttempts = config.MEDIA_PURGE_MAX_ATTEMPTS;
+  await db("social_media_assets")
+    .whereIn("asset_id", assetIds)
+    .update({
+      last_purge_attempt_at: attemptedAt,
+      purge_attempt_count: db.raw("coalesce(purge_attempt_count, 0) + 1"),
+      purge_dead_lettered_at: db.raw(
+        "CASE WHEN purge_dead_lettered_at IS NULL AND coalesce(purge_attempt_count, 0) + 1 >= ? THEN ? ELSE purge_dead_lettered_at END",
+        [maxAttempts, attemptedAt]
+      ),
+      purge_dead_letter_reason: db.raw(
+        "CASE WHEN purge_dead_lettered_at IS NULL AND coalesce(purge_attempt_count, 0) + 1 >= ? THEN ? ELSE purge_dead_letter_reason END",
+        [maxAttempts, "max_attempts_exceeded"]
+      ),
+      purge_pending: db.raw(
+        "CASE WHEN coalesce(purge_attempt_count, 0) + 1 >= ? THEN false ELSE purge_pending END",
+        [maxAttempts]
+      )
+    });
+};
+
+const markMediaAssetsPurgePending = async (assetIds: string[]) => {
+  if (assetIds.length === 0) return;
+  await (await getDb())("social_media_assets").whereIn("asset_id", assetIds).update({
+    purge_pending: true
+  });
+};
+
+const clearMediaAssetsPurgePending = async (assetIds: string[]) => {
+  if (assetIds.length === 0) return;
+  await (await getDb())("social_media_assets").whereIn("asset_id", assetIds).update({
+    purge_pending: false
+  });
+};
+
+const queueBestEffortMediaDelete = (
+  entries: PurgeDeleteEntry[],
+  options: { source: "cleanup" | "tombstone" | "retry" }
+) => {
+  const ownersByKey = new Map<string, Set<string>>();
+  for (const entry of entries) {
+    if (!entry.assetId || typeof entry.key !== "string" || entry.key.length === 0) continue;
+    const owners = ownersByKey.get(entry.key) ?? new Set<string>();
+    owners.add(entry.assetId);
+    ownersByKey.set(entry.key, owners);
+  }
+  const keys = Array.from(ownersByKey.keys());
+  if (keys.length === 0) return;
+  void (async () => {
+    const attemptedAt = new Date().toISOString();
+    const attemptedAssetIds = Array.from(
+      new Set(keys.flatMap((key) => Array.from(ownersByKey.get(key) ?? [])))
+    );
+    await noteMediaPurgeAttempt(attemptedAssetIds, attemptedAt);
+    const settled = await Promise.allSettled(
+      keys.map((key) => mediaStorageAdapter.deleteMediaObjects([key]))
+    );
+    const failedAssetIds = new Set<string>();
+    const succeededAssetIds = new Set<string>();
+    for (let index = 0; index < settled.length; index += 1) {
+      const owners = ownersByKey.get(keys[index]) ?? new Set<string>();
+      if (settled[index].status === "rejected") {
+        for (const assetId of owners) failedAssetIds.add(assetId);
+      } else {
+        for (const assetId of owners) succeededAssetIds.add(assetId);
+      }
+    }
+    if (succeededAssetIds.size > 0) {
+      await clearMediaAssetsPurgePending(Array.from(succeededAssetIds));
+    }
+    if (failedAssetIds.size > 0) {
+      await markMediaAssetsPurgePending(Array.from(failedAssetIds));
+      log.warn("media_delete_best_effort_failed", {
+        source: options.source,
+        failedAssetCount: failedAssetIds.size
+      });
+    }
+  })().catch((error) => {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.warn("media_delete_best_effort_queue_error", {
+      source: options.source,
+      detail
+    });
+  });
+};
+
+const retryPendingMediaPurges = async (input: { ownerSubjectHash?: string } = {}) => {
+  const db = await getDb();
+  const rows = await db.transaction(async (trx) => {
+    let query = trx("social_media_assets")
+      .where({ purge_pending: true, media_kind: "image" })
+      .whereNull("purge_dead_lettered_at")
+      .whereNotNull("deleted_at");
+    if (input.ownerSubjectHash) {
+      query = query.andWhere({ owner_subject_hash: input.ownerSubjectHash });
+    }
+    return (await query
+      .orderBy("last_purge_attempt_at", "asc")
+      .orderBy("created_at", "asc")
+      .limit(MEDIA_PURGE_RETRY_BATCH_SIZE)
+      .forUpdate()
+      .select("asset_id", "object_key", "thumbnail_object_key")) as Array<{
+      asset_id: string;
+      object_key: string | null;
+      thumbnail_object_key: string | null;
+    }>;
+  });
+  if (rows.length > 0) {
+    queueBestEffortMediaDelete(
+      rows.flatMap((row) => [
+        { assetId: row.asset_id, key: row.object_key },
+        { assetId: row.asset_id, key: row.thumbnail_object_key }
+      ]),
+      { source: "retry" }
+    );
+  }
+};
+
+export const maybeCleanupStaleUploads = async (
+  input: { nowMs?: number; force?: boolean } = {}
+): Promise<number> => {
+  const nowMs = input.nowMs ?? Date.now();
+  if (!input.force && nowMs - mediaUploadLastCleanupAt < MEDIA_UPLOAD_CLEANUP_INTERVAL_MS) {
+    return 0;
+  }
+  mediaUploadLastCleanupAt = nowMs;
+  const nowIso = new Date(nowMs).toISOString();
+  await retryPendingMediaPurges();
+  const staleCutoffIso = new Date(
+    nowMs - (config.MEDIA_PRESIGN_TTL_SECONDS + MEDIA_UPLOAD_CLEANUP_GRACE_SECONDS) * 1000
+  ).toISOString();
+  const staleRows = await (await getDb()).transaction(async (trx) => {
+    const pendingRows = (await trx("social_media_assets")
+      .where({ status: "PENDING", media_kind: "image" })
+      .whereNull("erased_at")
+      .whereNull("deleted_at")
+      .where("created_at", "<", staleCutoffIso)
+      .orderBy("created_at", "asc")
+      .limit(MEDIA_UPLOAD_CLEANUP_BATCH_SIZE)
+      .forUpdate()
+      .select("asset_id", "object_key", "thumbnail_object_key")) as Array<{
+      asset_id: string;
+      object_key: string | null;
+      thumbnail_object_key: string | null;
+    }>;
+    if (!pendingRows.length) return [];
+    await trx("social_media_assets")
+      .whereIn(
+        "asset_id",
+        pendingRows.map((row) => row.asset_id)
+      )
+      .andWhere({ status: "PENDING" })
+      .update({
+        status: "ERASED",
+        erased_at: nowIso,
+        deleted_at: nowIso
+      });
+    return pendingRows;
+  });
+  if (staleRows.length > 0) {
+    queueBestEffortMediaDelete(
+      staleRows.flatMap((row) => [
+        { assetId: row.asset_id, key: row.object_key },
+        { assetId: row.asset_id, key: row.thumbnail_object_key }
+      ]),
+      { source: "cleanup" }
+    );
+  }
+  return staleRows.length;
+};
+
+export const __setMediaUploadCleanupLastRunAtForTests = (value: number) => {
+  mediaUploadLastCleanupAt = value;
+};
+
 const pruneExpiredPresenceRows = async () => {
   const nowMs = Date.now();
   if (nowMs - presenceLastPruneAt < 30_000) return;
@@ -973,6 +1446,226 @@ const isCrewMember = async (crewId: string, subjectHash: string) => {
   return Boolean(row);
 };
 
+type BanterThreadKind = "space_chat" | "challenge_chat" | "hangout_chat" | "crew_chat";
+type BanterThreadRow = {
+  thread_id: string;
+  space_id: string;
+  kind: BanterThreadKind;
+  crew_id: string | null;
+  challenge_id: string | null;
+  hangout_session_id: string | null;
+  created_at: string;
+  updated_at: string;
+  archived_at: string | null;
+};
+
+const getBanterThread = async (threadId: string) =>
+  ((await (await getDb())("social_space_banter_threads")
+    .where({ thread_id: threadId })
+    .whereNull("archived_at")
+    .first()) as BanterThreadRow | undefined) ?? null;
+
+const mintBanterPermissionToken = async (input: { threadId: string; subjectHash: string }) => {
+  const permissionId = randomUUID();
+  const rawToken = randomBytes(32).toString("base64url");
+  const permissionHash = hashHex(rawToken);
+  const expiresAt = new Date(Date.now() + config.BANTER_PERMISSION_TTL_SECONDS * 1000).toISOString();
+  await (
+    await getDb()
+  )("social_banter_permissions").insert({
+    permission_id: permissionId,
+    thread_id: input.threadId,
+    subject_hash: input.subjectHash,
+    permission_hash: permissionHash,
+    expires_at: expiresAt,
+    created_at: new Date().toISOString()
+  });
+  return { token: rawToken, expiresAt };
+};
+
+const mintRealtimePermissionToken = async (input: {
+  subjectHash: string;
+  channel: "presence" | "banter" | "hangout" | "challenge";
+  spaceId: string;
+  threadId?: string;
+  sessionId?: string;
+  challengeId?: string;
+  canBroadcast: boolean;
+}) => {
+  const permissionId = randomUUID();
+  const rawToken = randomBytes(32).toString("base64url");
+  const permissionHash = hashHex(rawToken);
+  const expiresAt = new Date(Date.now() + config.REALTIME_PERMISSION_TTL_SECONDS * 1000).toISOString();
+  await (
+    await getDb()
+  )("social_realtime_permissions").insert({
+    permission_id: permissionId,
+    subject_hash: input.subjectHash,
+    channel: input.channel,
+    space_id: input.spaceId,
+    thread_id: input.threadId ?? null,
+    session_id: input.sessionId ?? null,
+    challenge_id: input.challengeId ?? null,
+    can_broadcast: input.canBroadcast,
+    permission_hash: permissionHash,
+    expires_at: expiresAt,
+    created_at: new Date().toISOString()
+  });
+  return { token: rawToken, expiresAt };
+};
+
+const validateRealtimePermission = async (input: { permissionToken: string }) => {
+  const permissionHash = hashHex(input.permissionToken);
+  const row = await (await getDb())("social_realtime_permissions")
+    .where({ permission_hash: permissionHash })
+    .first();
+  if (!row) return { ok: false as const, reason: "permission_invalid" };
+  if (new Date(String(row.expires_at)).getTime() <= Date.now()) {
+    return { ok: false as const, reason: "permission_expired" };
+  }
+  const privacy = await checkWriterPrivacy(String(row.subject_hash));
+  if (privacy.restricted || privacy.tombstoned) {
+    return { ok: false as const, reason: "privacy_restricted" };
+  }
+  return {
+    ok: true as const,
+    permission: {
+      subjectHash: String(row.subject_hash),
+      channel: String(row.channel),
+      spaceId: String(row.space_id),
+      threadId: row.thread_id ? String(row.thread_id) : null,
+      sessionId: row.session_id ? String(row.session_id) : null,
+      challengeId: row.challenge_id ? String(row.challenge_id) : null,
+      canBroadcast: Boolean(row.can_broadcast)
+    }
+  };
+};
+
+const checkRealtimeBroadcastRate = (permissionHash: string) => {
+  const now = Date.now();
+  const windowMs = config.REALTIME_PUBLISH_RATE_WINDOW_SECONDS * 1000;
+  const bucket = realtimeBroadcastBuckets.get(permissionHash);
+  if (!bucket || now - bucket.startedAt >= windowMs) {
+    realtimeBroadcastBuckets.set(permissionHash, { count: 1, startedAt: now });
+    return true;
+  }
+  if (bucket.count >= config.REALTIME_PUBLISH_RATE_MAX_PER_WINDOW) {
+    return false;
+  }
+  bucket.count += 1;
+  return true;
+};
+
+const pruneRealtimeEvents = async () => {
+  const now = Date.now();
+  if (now - realtimeLastPruneAt < 60_000) return;
+  realtimeLastPruneAt = now;
+  const cutoff = new Date(now - config.REALTIME_EVENTS_RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await (await getDb())("social_realtime_events").where("created_at", "<", cutoff).del();
+};
+
+const publishRealtimeEvent = async (input: {
+  channel: "presence" | "banter" | "hangout" | "challenge";
+  spaceId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  threadId?: string | null;
+  sessionId?: string | null;
+  challengeId?: string | null;
+}) => {
+  await pruneRealtimeEvents().catch(() => undefined);
+  const eventId = randomUUID();
+  const createdAt = new Date().toISOString();
+  const inserted = (await (
+    await getDb()
+  )("social_realtime_events")
+    .insert({
+      event_id: eventId,
+      channel: input.channel,
+      space_id: input.spaceId,
+      thread_id: input.threadId ?? null,
+      session_id: input.sessionId ?? null,
+      challenge_id: input.challengeId ?? null,
+      event_type: input.eventType,
+      payload_json: input.payload,
+      created_at: createdAt
+    })
+    .returning(["event_id", "created_at", "event_cursor"])) as Array<{
+    event_id: string;
+    created_at: string;
+    event_cursor: string | number | bigint | null;
+  }>;
+  const row = inserted[0];
+  return {
+    eventId: row?.event_id ?? eventId,
+    createdAt: row?.created_at ?? createdAt,
+    cursor: row?.event_cursor === null || row?.event_cursor === undefined ? null : String(row.event_cursor)
+  };
+};
+
+const validateBanterPermission = async (input: {
+  threadId: string;
+  subjectHash: string;
+  permissionToken: string;
+}) => {
+  const permissionHash = hashHex(input.permissionToken);
+  const row = await (await getDb())("social_banter_permissions")
+    .where({ permission_hash: permissionHash, thread_id: input.threadId, subject_hash: input.subjectHash })
+    .first();
+  if (!row) return { ok: false as const, reason: "permission_invalid" };
+  if (new Date(String(row.expires_at)).getTime() <= Date.now()) {
+    return { ok: false as const, reason: "permission_expired" };
+  }
+  return { ok: true as const };
+};
+
+const pruneExpiredBanterRows = async () => {
+  const nowMs = Date.now();
+  if (nowMs - banterLastPruneAt < 30_000) return;
+  banterLastPruneAt = nowMs;
+  const db = await getDb();
+  const messageCutoff = new Date(nowMs - config.BANTER_MESSAGE_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString();
+  const statusCutoff = new Date(nowMs - config.BANTER_STATUS_TTL_SECONDS * 1000).toISOString();
+  await db("social_banter_messages").where("created_at", "<", messageCutoff).del();
+  await db("social_presence_status_messages").where("updated_at", "<", statusCutoff).del();
+  await db("social_banter_permissions").where("expires_at", "<", new Date(nowMs).toISOString()).del();
+};
+
+const checkBanterRateLimit = (
+  input: {
+    subjectHash: string;
+    threadId: string;
+    socialTier: "bronze" | "silver" | "gold";
+    moderator: boolean;
+  }
+) => {
+  const key = `${input.threadId}:${input.subjectHash}`;
+  const now = Date.now();
+  const current = banterMessageBuckets.get(key);
+  const windowMs = config.BANTER_RATE_WINDOW_SECONDS * 1000;
+  const baseLimit =
+    input.socialTier === "gold"
+      ? config.BANTER_RATE_GOLD_PER_WINDOW
+      : input.socialTier === "silver"
+        ? config.BANTER_RATE_SILVER_PER_WINDOW
+        : config.BANTER_RATE_BRONZE_PER_WINDOW;
+  const limit = input.moderator ? Math.max(baseLimit, config.BANTER_RATE_GOLD_PER_WINDOW) : baseLimit;
+  if (current?.cooldownUntil && now < current.cooldownUntil) {
+    return { ok: false as const, reason: "cooldown" };
+  }
+  if (!current || now - current.startedAt >= windowMs) {
+    banterMessageBuckets.set(key, { count: 1, startedAt: now });
+    return { ok: true as const };
+  }
+  if (current.count >= limit) {
+    current.cooldownUntil = now + config.BANTER_RATE_COOLDOWN_SECONDS * 1000;
+    return { ok: false as const, reason: "rate_limited" };
+  }
+  current.count += 1;
+  return { ok: true as const };
+};
+
 const startOfUtcDay = (input: Date) => {
   const next = new Date(input);
   next.setUTCHours(0, 0, 0, 0);
@@ -1046,11 +1739,30 @@ const applyStreakCompletion = async (input: {
 const buildLeaderboard = async (spaceId: string, windowDays: number) => {
   const db = await getDb();
   const since = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
+
+  // Space leaderboard must be space-scoped (not global). We don't persist `space_id` on
+  // `social_action_log`, so we scope by known space participants (members + profile settings).
+  const participantHashes = new Set<string>();
+  const membershipRows = (await db("social_space_memberships")
+    .where({ space_id: spaceId })
+    .whereIn("status", ["ACTIVE"])
+    .select("subject_did_hash")) as Array<{ subject_did_hash: string }>;
+  for (const row of membershipRows) participantHashes.add(String(row.subject_did_hash));
+  const settingsRows = (await db("social_space_profile_settings")
+    .where({ space_id: spaceId })
+    .select("subject_hash")) as Array<{ subject_hash: string }>;
+  for (const row of settingsRows) participantHashes.add(String(row.subject_hash));
+  const participants = Array.from(participantHashes);
+  if (participants.length === 0) {
+    return [];
+  }
+
   const signals = (await db("social_action_log")
     .whereIn("action_type", ["social.post.create", "social.reply.create", "ritual.complete"])
     .andWhere({ decision: "COMPLETE" })
     .andWhere("created_at", ">=", since)
     .whereNotNull("subject_did_hash")
+    .whereIn("subject_did_hash", participants)
     .select("subject_did_hash", "action_type", "created_at")) as Array<{
     subject_did_hash: string;
     action_type: string;
@@ -1498,12 +2210,38 @@ const getPrivacyStatus = async (subjectDidHash: string): Promise<PrivacyStatus> 
     ttlSeconds: config.SERVICE_JWT_TTL_SECONDS,
     scope: ["issuer:privacy_status"]
   });
-  const url = new URL("/v1/internal/privacy/status", config.ISSUER_SERVICE_BASE_URL);
+  const url = new URL("/v1/admin/privacy/status", config.ISSUER_SERVICE_BASE_URL);
   url.searchParams.set("subjectDidHash", subjectDidHash);
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort("issuer_privacy_status_timeout");
+  }, config.ISSUER_PRIVACY_STATUS_TIMEOUT_MS);
+  timeout.unref?.();
+  let timedOut = false;
+  controller.signal.addEventListener(
+    "abort",
+    () => {
+      if (controller.signal.reason === "issuer_privacy_status_timeout") {
+        timedOut = true;
+      }
+    },
+    { once: true }
+  );
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (timedOut) {
+      throw new Error("issuer_privacy_status_timeout");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!response.ok) {
     throw new Error("issuer_privacy_status_unavailable");
   }
@@ -1588,12 +2326,25 @@ const logAction = async (input: {
 const purgeSubjectDataOnTombstone = async (subjectDidHash: string) => {
   const db = await getDb();
   const now = new Date().toISOString();
+  const erasedSubjectHash = hashHex(`erased:${subjectDidHash}`);
+  const mediaRows = (await db("social_media_assets")
+    .where({ owner_subject_hash: subjectDidHash })
+    .whereNull("erased_at")
+    .select("asset_id", "object_key", "thumbnail_object_key")) as Array<{
+    asset_id: string;
+    object_key: string | null;
+    thumbnail_object_key: string | null;
+  }>;
   await db.transaction(async (trx) => {
     await trx("social_profiles")
       .where({ subject_did_hash: subjectDidHash })
       .whereNull("deleted_at")
       .update({ deleted_at: now, updated_at: now, bio: null });
     await trx("social_posts")
+      .where({ author_subject_did_hash: subjectDidHash })
+      .whereNull("deleted_at")
+      .update({ deleted_at: now, content_text: "[erased]" });
+    await trx("social_space_posts")
       .where({ author_subject_did_hash: subjectDidHash })
       .whereNull("deleted_at")
       .update({ deleted_at: now, content_text: "[erased]" });
@@ -1609,29 +2360,44 @@ const purgeSubjectDataOnTombstone = async (subjectDidHash: string) => {
       .update({ deleted_at: now, status: "ERASED" });
     await trx("media_emoji_packs")
       .where({ owner_subject_hash: subjectDidHash })
-      .update({ published_at: null });
+      .update({ owner_subject_hash: erasedSubjectHash, published_at: null });
+    await trx("media_sound_assets")
+      .where({ creator_subject_hash: subjectDidHash })
+      .update({ creator_subject_hash: erasedSubjectHash });
     await trx("media_soundpacks")
       .where({ owner_subject_hash: subjectDidHash })
-      .update({ published_at: null });
+      .update({ owner_subject_hash: erasedSubjectHash, published_at: null });
+    await trx("media_soundpack_activations")
+      .where({ activated_by_subject_hash: subjectDidHash })
+      .update({ activated_by_subject_hash: erasedSubjectHash, deactivated_at: now });
     await trx("presence_space_states").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_presence_pings").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_profile_settings").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_spaces")
+      .where({ created_by_subject_did_hash: subjectDidHash })
+      .update({ created_by_subject_did_hash: erasedSubjectHash });
+    await trx("social_space_memberships")
+      .where({ subject_did_hash: subjectDidHash })
+      .update({ subject_did_hash: erasedSubjectHash, status: "LEFT", left_at: now });
     await trx("presence_invite_events")
       .where({ inviter_hash: subjectDidHash })
-      .update({ status: "ERASED" });
+      .update({ inviter_hash: erasedSubjectHash, status: "ERASED" });
     await trx("presence_invite_events")
       .where({ invitee_hash: subjectDidHash })
-      .update({ status: "ERASED" });
+      .update({ invitee_hash: erasedSubjectHash, status: "ERASED" });
     await trx("sync_watch_sessions")
       .where({ host_hash: subjectDidHash })
-      .update({ status: "ENDED", ended_at: now });
+      .update({ host_hash: erasedSubjectHash, status: "ENDED", ended_at: now });
     await trx("sync_watch_participants")
       .where({ subject_hash: subjectDidHash })
       .update({ left_at: now });
     await trx("sync_sessions")
       .where({ host_subject_did_hash: subjectDidHash })
-      .where({ status: "ACTIVE" })
-      .update({ status: "ENDED", ended_at: now });
+      .update({
+        host_subject_did_hash: erasedSubjectHash,
+        status: db.raw("CASE WHEN status = ? THEN ? ELSE status END", ["ACTIVE", "ENDED"]),
+        ended_at: db.raw("CASE WHEN ended_at IS NULL THEN ? ELSE ended_at END", [now])
+      });
     await trx("sync_session_participants")
       .where({ subject_did_hash: subjectDidHash })
       .whereNull("left_at")
@@ -1640,28 +2406,76 @@ const purgeSubjectDataOnTombstone = async (subjectDidHash: string) => {
     await trx("sync_session_events")
       .where({ actor_subject_did_hash: subjectDidHash })
       .update({
-        actor_subject_did_hash: hashHex(`erased:${subjectDidHash}`)
+        actor_subject_did_hash: erasedSubjectHash
       });
     await trx("sync_session_reports")
       .where({ reporter_subject_did_hash: subjectDidHash })
       .update({
-        reporter_subject_did_hash: hashHex(`erased:${subjectDidHash}`)
+        reporter_subject_did_hash: erasedSubjectHash
       });
+    await trx("social_reports")
+      .where({ reporter_subject_did_hash: subjectDidHash })
+      .update({ reporter_subject_did_hash: erasedSubjectHash });
+    await trx("social_action_log")
+      .where({ subject_did_hash: subjectDidHash })
+      .update({ subject_did_hash: erasedSubjectHash });
+    await trx("social_actions_log")
+      .where({ subject_did_hash: subjectDidHash })
+      .update({ subject_did_hash: erasedSubjectHash });
     await trx("social_space_ritual_participants").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_rituals")
-      .where({ created_by_subject_hash: subjectDidHash, status: "ACTIVE" })
-      .update({ status: "ENDED", closed_at: now });
+      .where({ created_by_subject_hash: subjectDidHash })
+      .update({
+        created_by_subject_hash: erasedSubjectHash,
+        status: db.raw("CASE WHEN status = ? THEN ? ELSE status END", ["ACTIVE", "ENDED"]),
+        closed_at: db.raw("CASE WHEN closed_at IS NULL THEN ? ELSE closed_at END", [now])
+      });
     await trx("social_space_crew_members").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_crews")
       .where({ created_by_subject_hash: subjectDidHash })
-      .update({ archived_at: now });
+      .update({ created_by_subject_hash: erasedSubjectHash, archived_at: now });
     await trx("social_space_challenge_participation").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_challenges")
-      .where({ created_by_subject_hash: subjectDidHash, status: "ACTIVE" })
-      .update({ status: "ENDED", ended_at: now });
+      .where({ created_by_subject_hash: subjectDidHash })
+      .update({
+        created_by_subject_hash: erasedSubjectHash,
+        status: db.raw("CASE WHEN status = ? THEN ? ELSE status END", ["ACTIVE", "ENDED"]),
+        ended_at: db.raw("CASE WHEN ended_at IS NULL THEN ? ELSE ended_at END", [now])
+      });
     await trx("social_space_streaks").where({ subject_hash: subjectDidHash }).del();
     await trx("social_space_pulse_preferences").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_space_member_restrictions")
+      .where({ subject_did_hash: subjectDidHash })
+      .update({ subject_did_hash: erasedSubjectHash });
+    await trx("social_space_moderation_actions")
+      .where({ moderator_subject_did_hash: subjectDidHash })
+      .update({ moderator_subject_did_hash: erasedSubjectHash });
+    await trx("social_space_moderation_actions")
+      .where({ target_subject_did_hash: subjectDidHash })
+      .update({ target_subject_did_hash: erasedSubjectHash });
+    await trx("social_banter_messages")
+      .where({ author_subject_hash: subjectDidHash })
+      .update({
+        body_text: null,
+        visibility: "tombstoned",
+        deleted_at: now
+      });
+    await trx("social_presence_status_messages").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_banter_reactions").where({ reactor_subject_hash: subjectDidHash }).del();
+    await trx("social_banter_permissions").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_realtime_permissions").where({ subject_hash: subjectDidHash }).del();
+    await trx("social_media_assets")
+      .where({ owner_subject_hash: subjectDidHash })
+      .update({ status: "ERASED", erased_at: now, deleted_at: now });
   });
+  queueBestEffortMediaDelete(
+    mediaRows.flatMap((row) => [
+      { assetId: row.asset_id, key: row.object_key },
+      { assetId: row.asset_id, key: row.thumbnail_object_key }
+    ]),
+    { source: "tombstone" }
+  );
+  await retryPendingMediaPurges({ ownerSubjectHash: subjectDidHash });
 };
 
 const checkWriterPrivacy = async (subjectDidHash: string) => {
@@ -1847,28 +2661,6 @@ const getSpaceMemberCount = async (spaceId: string) => {
 const summarizeRequirementLabels = (requirements: RequirementSummary[]) =>
   requirements.map((entry) => entry.label).join(", ");
 
-const buildAuraThresholdSummary = (requirements: RequirementSummary[]) => {
-  const thresholds = Array.from(
-    new Set(
-      requirements
-        .map((entry) => inferAuraThreshold(entry.vct))
-        .filter(
-          (value): value is Exclude<ReturnType<typeof inferAuraThreshold>, null> =>
-            typeof value === "string" && value.length > 0
-        )
-    )
-  );
-  return thresholds;
-};
-
-const inferFloorTierFromRequirements = (requirements: RequirementSummary[]) => {
-  const needsSilver = requirements.some(
-    (entry) =>
-      entry.vct === "cuncta.social.trusted_creator" || entry.vct === "cuncta.social.space.moderator"
-  );
-  return needsSilver ? "silver" : "bronze";
-};
-
 const getFlowThresholdTier = (strict: boolean) => {
   const configured = strict
     ? (process.env.SOCIAL_FLOW_STRICT_MIN_TRUST_TIER ?? "silver")
@@ -1876,18 +2668,18 @@ const getFlowThresholdTier = (strict: boolean) => {
   return normalizeTier(configured);
 };
 
-const getSpaceFlowThresholdTier = (strict: boolean, baselineFloor: string) => {
+const getSpaceFlowThresholdTier = (strict: boolean) => {
   const configured = strict
     ? (process.env.SOCIAL_SPACE_FLOW_STRICT_MIN_TRUST_TIER ?? "silver")
-    : (process.env.SOCIAL_SPACE_FLOW_MIN_TRUST_TIER ?? baselineFloor);
-  const configuredTier = normalizeTier(configured);
-  return tierRank[configuredTier] >= tierRank[baselineFloor] ? configuredTier : baselineFloor;
+    : (process.env.SOCIAL_SPACE_FLOW_MIN_TRUST_TIER ?? "bronze");
+  return normalizeTier(configured);
 };
 
 const getFlowAntiGaming = async () => {
   const db = await getDb();
+  // Data-driven: derive anti-gaming parameters from enabled Aura rules, not seeded rule IDs.
   const rows = (await db("aura_rules")
-    .whereIn("rule_id", ["social.can_post.v2", "social.trusted_creator.v1"])
+    .where({ enabled: true })
     .select("rule_logic")) as Array<{ rule_logic: unknown }>;
   let perCounterpartyCap = 3;
   let collusionClusterThreshold = 0.8;
@@ -2127,6 +2919,17 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
+    const imageValidation = await validateOwnedImageRefs({
+      subjectDidHash,
+      imageRefs: body.imageRefs
+    });
+    if (!imageValidation.ok) {
+      return reply.code(400).send(
+        makeErrorResponse("invalid_request", "One or more image refs are invalid for this post", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
 
     const postId = randomUUID();
     const now = new Date().toISOString();
@@ -2137,6 +2940,7 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       author_subject_did_hash: subjectDidHash,
       content_text: body.content,
       content_hash: hashHex(body.content),
+      image_refs: imageValidation.imageRefs,
       created_at: now
     });
     await logAction({
@@ -2471,7 +3275,6 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
-
     const now = new Date().toISOString();
     await (
       await getDb()
@@ -2575,6 +3378,18 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       );
     }
     if (gate.denied) return reply.code(403).send(gate.denied);
+    const imageValidation = await validateOwnedImageRefs({
+      subjectDidHash,
+      imageRefs: body.imageRefs,
+      spaceId: body.spaceId
+    });
+    if (!imageValidation.ok) {
+      return reply.code(400).send(
+        makeErrorResponse("invalid_request", "One or more image refs are invalid for this post", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
 
     const now = new Date().toISOString();
     const spacePostId = randomUUID();
@@ -2586,6 +3401,7 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       author_subject_did_hash: subjectDidHash,
       content_text: body.content,
       content_hash: hashHex(body.content),
+      image_refs: imageValidation.imageRefs,
       created_at: now
     });
     await logAction({
@@ -2787,9 +3603,14 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       .whereNull("deleted_at")
       .orderBy("created_at", "desc")
       .limit(query.limit);
+    const redactedRows = await redactPostImageRefs(rows as Array<{ image_refs: unknown }>);
+    const redactedById = new Map(
+      redactedRows.map((row) => [String((row as { space_post_id?: string }).space_post_id ?? ""), row])
+    );
     const privacyCache = new Map<string, PrivacyStatus>();
     const posts: Array<Record<string, unknown>> = [];
     for (const row of rows) {
+      const redactedRow = redactedById.get(String(row.space_post_id));
       const authorHash = String(row.author_subject_did_hash);
       let privacy = privacyCache.get(authorHash);
       if (!privacy) {
@@ -2806,6 +3627,13 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         space_post_id: row.space_post_id,
         content_text: row.content_text,
         content_hash: row.content_hash,
+        image_refs: Array.isArray(redactedRow?.image_refs) ? redactedRow.image_refs : [],
+        ...(redactedRow?.image_refs_redacted_count
+          ? {
+              image_refs_redacted: true,
+              image_refs_redacted_count: redactedRow.image_refs_redacted_count
+            }
+          : {}),
         created_at: row.created_at,
         trust_stamps: ["Space Poster"]
       });
@@ -2854,8 +3682,8 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
     const postRequirements = await getActionRequirementSummary(policyPack.post_action_id, {
       space_id: query.spaceId
     }).catch(() => []);
-    const baselineFloor = inferFloorTierFromRequirements(postRequirements);
-    const minTier = getSpaceFlowThresholdTier(query.safety === "strict", baselineFloor);
+    void postRequirements;
+    const minTier = getSpaceFlowThresholdTier(query.safety === "strict");
     const minTierRank = tierRank[minTier] ?? 0;
     const antiGaming = await getFlowAntiGaming();
     const maxPerAuthor = Math.max(2, Math.min(6, antiGaming.perCounterpartyCap));
@@ -2941,14 +3769,16 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       return true;
     });
     const diversified = diversifyByAuthor(filtered, query.limit);
-    const posts = diversified.map((entry) => ({
+    const flowRows = diversified.map((entry) => ({
       space_post_id: entry.row.space_post_id,
       content_text: entry.row.content_text,
       content_hash: entry.row.content_hash,
+      image_refs: Array.isArray(entry.row.image_refs) ? entry.row.image_refs : [],
       created_at: entry.row.created_at,
       trust_stamps: [tierLabel(entry.tier)],
       explain_available: true
     }));
+    const posts = await redactPostImageRefs(flowRows);
     return reply.send({
       mode: "space_flow",
       trust: query.trust ?? null,
@@ -3103,9 +3933,10 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       post_requirements: postRequirements,
       moderation_requirements: moderateRequirements,
       aura_thresholds: {
-        join: buildAuraThresholdSummary(joinRequirements),
-        post: buildAuraThresholdSummary(postRequirements),
-        moderate: buildAuraThresholdSummary(moderateRequirements)
+        // Customer-ready, data-driven: surface policy requirements (labels) instead of hardcoded tier thresholds.
+        join: joinRequirements.map((r) => r.label),
+        post: postRequirements.map((r) => r.label),
+        moderate: moderateRequirements.map((r) => r.label)
       },
       governance: {
         pack: {
@@ -3127,11 +3958,7 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
             version: moderatePolicy?.policyVersion ?? null
           }
         },
-        trust_floor: {
-          join: inferFloorTierFromRequirements(joinRequirements),
-          post: inferFloorTierFromRequirements(postRequirements),
-          moderate: inferFloorTierFromRequirements(moderateRequirements)
-        },
+        trust_floor: { join: null, post: null, moderate: null },
         pinning: {
           join: Boolean(policyPack.pinned_policy_hash_join ?? policyPack.join_policy_hash),
           post: Boolean(policyPack.pinned_policy_hash_post ?? policyPack.post_policy_hash),
@@ -3201,11 +4028,7 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
           version: moderatePolicy?.policyVersion ?? null
         }
       },
-      trust_floor: {
-        join: inferFloorTierFromRequirements(joinRequirements),
-        post: inferFloorTierFromRequirements(postRequirements),
-        moderate: inferFloorTierFromRequirements(moderateRequirements)
-      },
+      trust_floor: { join: null, post: null, moderate: null },
       pinning: {
         join: Boolean(policyPack.pinned_policy_hash_join ?? policyPack.join_policy_hash),
         post: Boolean(policyPack.pinned_policy_hash_post ?? policyPack.post_policy_hash),
@@ -3939,6 +4762,16 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       })
       .onConflict(["challenge_id", "subject_hash"])
       .ignore();
+    await publishRealtimeEvent({
+      channel: "challenge",
+      spaceId: challenge.space_id,
+      challengeId: params.challengeId,
+      eventType: "challenge.join",
+      payload: {
+        challengeId: params.challengeId,
+        actorSubjectHash: subjectDidHash
+      }
+    }).catch(() => undefined);
     incCompleted("challenge_join");
     return reply.send({ decision: "ALLOW" });
   });
@@ -4029,6 +4862,17 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       policyId: gate.allowMeta?.policyId,
       policyVersion: gate.allowMeta?.policyVersion
     }).catch(() => undefined);
+    await publishRealtimeEvent({
+      channel: "challenge",
+      spaceId: challenge.space_id,
+      challengeId: params.challengeId,
+      eventType: "challenge.complete",
+      payload: {
+        challengeId: params.challengeId,
+        actorSubjectHash: subjectDidHash,
+        completedAt: nowIso
+      }
+    }).catch(() => undefined);
     incCompleted("challenge_complete");
     return reply.send({ decision: "ALLOW" });
   });
@@ -4100,6 +4944,588 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         current_count: Number(row.current_count ?? 0),
         best_count: Number(row.best_count ?? 0)
       }))
+    });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/banter/threads", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = banterThreadCreateSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const space = await getSpaceById(spaceId);
+    if (!space) return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    if (!(await hasActiveSpaceMembership(spaceId, subjectDidHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (body.kind === "crew_chat") {
+      if (!body.crewId) {
+        return reply.code(400).send(makeErrorResponse("invalid_request", "crewId required"));
+      }
+      const crew = await getCrewById(body.crewId);
+      if (!crew || crew.space_id !== spaceId) {
+        return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+      }
+      if (!(await isCrewMember(body.crewId, subjectDidHash))) {
+        return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+      }
+    }
+    if (body.kind === "challenge_chat") {
+      if (!body.challengeId) {
+        return reply.code(400).send(makeErrorResponse("invalid_request", "challengeId required"));
+      }
+      const challenge = (await (await getDb())("social_space_challenges")
+        .where({ challenge_id: body.challengeId })
+        .first()) as { space_id: string; status: string; crew_id: string | null } | undefined;
+      if (!challenge || challenge.space_id !== spaceId || challenge.status !== "ACTIVE") {
+        return reply.code(404).send(makeErrorResponse("invalid_request", "Challenge not found"));
+      }
+      if (challenge.crew_id && !(await isCrewMember(challenge.crew_id, subjectDidHash))) {
+        return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+      }
+    }
+    if (body.kind === "hangout_chat") {
+      if (!body.hangoutSessionId) {
+        return reply
+          .code(400)
+          .send(makeErrorResponse("invalid_request", "hangoutSessionId required"));
+      }
+      const session = await getSyncSession(body.hangoutSessionId);
+      if (!session || session.space_id !== spaceId || session.kind !== "huddle") {
+        return reply.code(404).send(makeErrorResponse("invalid_request", "Hangout not found"));
+      }
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId: "banter.thread.create",
+      actionType: "banter_thread_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const db = await getDb();
+    let existingQuery = db("social_space_banter_threads")
+      .where({ space_id: spaceId, kind: body.kind })
+      .whereNull("archived_at");
+    existingQuery = body.crewId
+      ? existingQuery.andWhere({ crew_id: body.crewId })
+      : existingQuery.whereNull("crew_id");
+    existingQuery = body.challengeId
+      ? existingQuery.andWhere({ challenge_id: body.challengeId })
+      : existingQuery.whereNull("challenge_id");
+    existingQuery = body.hangoutSessionId
+      ? existingQuery.andWhere({ hangout_session_id: body.hangoutSessionId })
+      : existingQuery.whereNull("hangout_session_id");
+    const existing = (await existingQuery.first()) as { thread_id: string } | undefined;
+    if (existing?.thread_id) {
+      return reply.send({ decision: "ALLOW", threadId: existing.thread_id, reused: true });
+    }
+    const threadId = randomUUID();
+    const now = new Date().toISOString();
+    await db("social_space_banter_threads").insert({
+      thread_id: threadId,
+      space_id: spaceId,
+      kind: body.kind,
+      crew_id: body.crewId ?? null,
+      challenge_id: body.challengeId ?? null,
+      hangout_session_id: body.hangoutSessionId ?? null,
+      created_at: now,
+      updated_at: now
+    });
+    incCompleted("banter_thread_create");
+    return reply.send({ decision: "ALLOW", threadId, reused: false });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/banter/threads", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await pruneExpiredBanterRows().catch(() => undefined);
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = banterThreadListQuerySchema.parse(request.query ?? {});
+    const space = await getSpaceById(spaceId);
+    if (!space) return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+    const db = await getDb();
+    let rowsQuery = db("social_space_banter_threads")
+      .where({ space_id: spaceId })
+      .whereNull("archived_at")
+      .orderBy("updated_at", "desc")
+      .select(
+        "thread_id",
+        "kind",
+        "crew_id",
+        "challenge_id",
+        "hangout_session_id",
+        "created_at",
+        "updated_at"
+      );
+    if (query.kind) rowsQuery = rowsQuery.andWhere({ kind: query.kind });
+    const rows = (await rowsQuery) as Array<{
+      thread_id: string;
+      kind: BanterThreadKind;
+      crew_id: string | null;
+      challenge_id: string | null;
+      hangout_session_id: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    const threadIds = rows.map((row) => row.thread_id);
+    const countRows: Array<{ thread_id: string; count: string }> =
+      threadIds.length === 0
+        ? []
+        : ((await db("social_banter_messages")
+            .whereIn("thread_id", threadIds)
+            .whereNull("deleted_at")
+            .andWhere({ visibility: "normal" })
+            .groupBy("thread_id")
+            .select("thread_id")
+            .count<{ thread_id: string; count: string }>("message_id as count")) as unknown as Array<{
+            thread_id: string;
+            count: string;
+          }>);
+    const countByThread = new Map(countRows.map((row) => [row.thread_id, Number(row.count ?? 0)]));
+    return reply.send({
+      spaceId,
+      threads: rows.map((row) => ({
+        thread_id: row.thread_id,
+        kind: row.kind,
+        crew_id: row.crew_id,
+        challenge_id: row.challenge_id,
+        hangout_session_id: row.hangout_session_id,
+        message_count: countByThread.get(row.thread_id) ?? 0,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      }))
+    });
+  });
+
+  app.get("/v1/social/banter/threads/:threadId", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { threadId } = banterThreadParamsSchema.parse(request.params ?? {});
+    const thread = await getBanterThread(threadId);
+    if (!thread) return reply.code(404).send(makeErrorResponse("invalid_request", "Thread not found"));
+    return reply.send({
+      thread_id: thread.thread_id,
+      space_id: thread.space_id,
+      kind: thread.kind,
+      crew_id: thread.crew_id,
+      challenge_id: thread.challenge_id,
+      hangout_session_id: thread.hangout_session_id,
+      created_at: thread.created_at,
+      updated_at: thread.updated_at
+    });
+  });
+
+  app.post("/v1/social/banter/threads/:threadId/permission", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { threadId } = banterThreadParamsSchema.parse(request.params ?? {});
+    const body = banterPermissionSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    const thread = await getBanterThread(threadId);
+    if (!thread) return reply.code(404).send(makeErrorResponse("invalid_request", "Thread not found"));
+    if (!(await hasActiveSpaceMembership(thread.space_id, subjectHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.thread.read",
+      actionType: "banter_thread_create",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: thread.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const permission = await mintBanterPermissionToken({ threadId, subjectHash });
+    return reply.send({
+      decision: "ALLOW",
+      threadId,
+      permissionToken: permission.token,
+      expiresAt: permission.expiresAt
+    });
+  });
+
+  app.get("/v1/social/banter/threads/:threadId/messages", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await pruneExpiredBanterRows().catch(() => undefined);
+    const { threadId } = banterThreadParamsSchema.parse(request.params ?? {});
+    const query = banterMessagesQuerySchema.parse(request.query ?? {});
+    const thread = await getBanterThread(threadId);
+    if (!thread) return reply.code(404).send(makeErrorResponse("invalid_request", "Thread not found"));
+    const db = await getDb();
+    let messagesQuery = db("social_banter_messages")
+      .where({ thread_id: threadId, visibility: "normal" })
+      .whereNull("deleted_at")
+      .orderBy("created_at", "desc")
+      .limit(query.limit)
+      .select("message_id", "thread_id", "body_text", "created_at", "visibility");
+    if (query.before) {
+      messagesQuery = messagesQuery.andWhere("created_at", "<", query.before);
+    }
+    const messages = (await messagesQuery) as Array<{
+      message_id: string;
+      thread_id: string;
+      body_text: string | null;
+      created_at: string;
+      visibility: string;
+    }>;
+    const messageIds = messages.map((entry) => entry.message_id);
+    const reactionRows: Array<{ message_id: string; count: string }> =
+      messageIds.length === 0
+        ? []
+        : ((await db("social_banter_reactions")
+            .whereIn("message_id", messageIds)
+            .groupBy("message_id")
+            .select("message_id")
+            .count<{ message_id: string; count: string }>(
+              "reactor_subject_hash as count"
+            )) as unknown as Array<{
+            message_id: string;
+            count: string;
+          }>);
+    const reactionCountByMessage = new Map(
+      reactionRows.map((entry) => [entry.message_id, Number(entry.count ?? 0)])
+    );
+    return reply.send({
+      thread_id: threadId,
+      messages: messages.reverse().map((entry) => ({
+        message_id: entry.message_id,
+        body_text: entry.body_text,
+        created_at: entry.created_at,
+        visibility: entry.visibility,
+        reaction_count: reactionCountByMessage.get(entry.message_id) ?? 0
+      }))
+    });
+  });
+
+  app.post("/v1/social/banter/threads/:threadId/send", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await pruneExpiredBanterRows().catch(() => undefined);
+    const { threadId } = banterThreadParamsSchema.parse(request.params ?? {});
+    const body = banterSendSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    const thread = await getBanterThread(threadId);
+    if (!thread) return reply.code(404).send(makeErrorResponse("invalid_request", "Thread not found"));
+    if (!(await hasActiveSpaceMembership(thread.space_id, subjectHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (thread.kind === "crew_chat" && thread.crew_id && !(await isCrewMember(thread.crew_id, subjectHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+    }
+    const permission = await validateBanterPermission({
+      threadId,
+      subjectHash,
+      permissionToken: body.permissionToken
+    });
+    if (!permission.ok) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", permission.reason));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.message.send",
+      actionType: "banter_message_send",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: thread.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const tier = await resolveSubjectTier(subjectHash, thread.space_id);
+    const rate = checkBanterRateLimit({
+      subjectHash,
+      threadId,
+      socialTier: tier as "bronze" | "silver" | "gold",
+      moderator: false
+    });
+    if (!rate.ok) {
+      return reply.code(429).send(makeErrorResponse("rate_limited", "Banter cooldown active"));
+    }
+    const messageId = randomUUID();
+    const now = new Date().toISOString();
+    const bodyText = body.bodyText.trim();
+    await (await getDb())("social_banter_messages").insert({
+      message_id: messageId,
+      thread_id: threadId,
+      author_subject_hash: subjectHash,
+      body_text: bodyText,
+      body_hash: hashHex(bodyText),
+      created_at: now,
+      visibility: "normal"
+    });
+    await (await getDb())("social_space_banter_threads")
+      .where({ thread_id: threadId })
+      .update({ updated_at: now });
+    await publishRealtimeEvent({
+      channel: "banter",
+      spaceId: thread.space_id,
+      threadId,
+      challengeId: thread.challenge_id,
+      sessionId: thread.hangout_session_id,
+      eventType: "banter.message.new",
+      payload: {
+        threadId,
+        messageId,
+        createdAt: now,
+        actorSubjectHash: subjectHash
+      }
+    }).catch(() => undefined);
+    incCompleted("banter_message_send");
+    return reply.send({ decision: "ALLOW", messageId, createdAt: now });
+  });
+
+  app.post("/v1/social/banter/messages/:messageId/react", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { messageId } = banterMessageParamsSchema.parse(request.params ?? {});
+    const body = banterReactSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    const message = (await (await getDb())("social_banter_messages as messages")
+      .join("social_space_banter_threads as threads", "messages.thread_id", "threads.thread_id")
+      .where("messages.message_id", messageId)
+      .select(
+        "messages.message_id",
+        "messages.thread_id",
+        "threads.space_id",
+        "messages.deleted_at",
+        "messages.visibility"
+      )
+      .first()) as
+      | {
+          message_id: string;
+          thread_id: string;
+          space_id: string;
+          deleted_at: string | null;
+          visibility: string;
+        }
+      | undefined;
+    if (!message) return reply.code(404).send(makeErrorResponse("invalid_request", "Message not found"));
+    if (message.deleted_at || message.visibility !== "normal") {
+      return reply.code(409).send(makeErrorResponse("invalid_request", "Message unavailable"));
+    }
+    if (!(await hasActiveSpaceMembership(message.space_id, subjectHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const permission = await validateBanterPermission({
+      threadId: message.thread_id,
+      subjectHash,
+      permissionToken: body.permissionToken
+    });
+    if (!permission.ok) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", permission.reason));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.message.react",
+      actionType: "banter_message_react",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: message.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const now = new Date().toISOString();
+    await (
+      await getDb()
+    )("social_banter_reactions")
+      .insert({
+        message_id: messageId,
+        reactor_subject_hash: subjectHash,
+        emoji_id: body.emojiId ?? null,
+        emoji_shortcode: body.emojiShortcode ?? null,
+        created_at: now
+      })
+      .onConflict(["message_id", "reactor_subject_hash"])
+      .merge({
+        emoji_id: body.emojiId ?? null,
+        emoji_shortcode: body.emojiShortcode ?? null,
+        created_at: now
+      });
+    incCompleted("banter_message_react");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/banter/messages/:messageId/delete", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { messageId } = banterMessageParamsSchema.parse(request.params ?? {});
+    const body = banterDeleteOwnSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    const message = (await (await getDb())("social_banter_messages as messages")
+      .join("social_space_banter_threads as threads", "messages.thread_id", "threads.thread_id")
+      .where("messages.message_id", messageId)
+      .select("messages.author_subject_hash", "threads.space_id")
+      .first()) as
+      | {
+          author_subject_hash: string;
+          space_id: string;
+        }
+      | undefined;
+    if (!message) return reply.code(404).send(makeErrorResponse("invalid_request", "Message not found"));
+    if (message.author_subject_hash !== subjectHash) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Own message required"));
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.message.delete_own",
+      actionType: "banter_message_delete_own",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: message.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (await getDb())("social_banter_messages").where({ message_id: messageId }).update({
+      body_text: null,
+      deleted_at: new Date().toISOString()
+    });
+    incCompleted("banter_message_delete_own");
+    return reply.send({ decision: "ALLOW" });
+  });
+
+  app.post("/v1/social/banter/messages/:messageId/moderate", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const { messageId } = banterMessageParamsSchema.parse(request.params ?? {});
+    const body = banterModerateSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    const message = (await (await getDb())("social_banter_messages as messages")
+      .join("social_space_banter_threads as threads", "messages.thread_id", "threads.thread_id")
+      .where("messages.message_id", messageId)
+      .select("threads.space_id")
+      .first()) as { space_id: string } | undefined;
+    if (!message) return reply.code(404).send(makeErrorResponse("invalid_request", "Message not found"));
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.message.moderate",
+      actionType: "banter_message_moderate",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: message.space_id }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    await (await getDb())("social_banter_messages").where({ message_id: messageId }).update({
+      body_text: null,
+      visibility: "removed_by_mod",
+      deleted_at: new Date().toISOString()
+    });
+    incCompleted("banter_message_moderate");
+    return reply.send({ decision: "ALLOW", reasonCode: body.reasonCode });
+  });
+
+  app.post("/v1/social/spaces/:spaceId/status", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await pruneExpiredBanterRows().catch(() => undefined);
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const body = spaceStatusSetSchema.parse(request.body ?? {});
+    const subjectHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(spaceId, subjectHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    if (body.crewId) {
+      const crew = await getCrewById(body.crewId);
+      if (!crew || crew.space_id !== spaceId) {
+        return reply.code(404).send(makeErrorResponse("invalid_request", "Crew not found"));
+      }
+      if (!(await isCrewMember(body.crewId, subjectHash))) {
+        return reply.code(403).send(makeErrorResponse("invalid_request", "Crew membership required"));
+      }
+    }
+    const gate = await verifyAndGate({
+      subjectDidHash: subjectHash,
+      actionId: "banter.status.set",
+      actionType: "banter_status_set",
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(makeErrorResponse("requirements_unavailable", "Requirements unavailable"));
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const now = new Date().toISOString();
+    await (await getDb())("social_presence_status_messages")
+      .where({
+        space_id: spaceId,
+        subject_hash: subjectHash,
+        crew_id: body.crewId ?? null
+      })
+      .del();
+    await (await getDb())("social_presence_status_messages").insert({
+      status_id: randomUUID(),
+      space_id: spaceId,
+      crew_id: body.crewId ?? null,
+      subject_hash: subjectHash,
+      status_text: body.statusText.trim(),
+      status_hash: hashHex(body.statusText.trim()),
+      mode: body.mode,
+      updated_at: now
+    });
+    incCompleted("banter_status_set");
+    return reply.send({ decision: "ALLOW", spaceId, updatedAt: now });
+  });
+
+  app.get("/v1/social/spaces/:spaceId/status", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await pruneExpiredBanterRows().catch(() => undefined);
+    const { spaceId } = spaceParamsSchema.parse(request.params ?? {});
+    const query = spaceStatusQuerySchema.parse(request.query ?? {});
+    const cutoff = new Date(Date.now() - config.BANTER_STATUS_TTL_SECONDS * 1000).toISOString();
+    const rows = (await (await getDb())("social_presence_status_messages")
+      .where({ space_id: spaceId })
+      .andWhere("updated_at", ">=", cutoff)
+      .select("subject_hash", "mode", "status_text", "updated_at")) as Array<{
+      subject_hash: string;
+      mode: string;
+      status_text: string;
+      updated_at: string;
+    }>;
+    const counts = { quiet: 0, active: 0, immersive: 0 };
+    for (const row of rows) {
+      if (row.mode === "quiet") counts.quiet += 1;
+      else if (row.mode === "immersive") counts.immersive += 1;
+      else counts.active += 1;
+    }
+    const viewerHash = query.viewerDid ? pseudonymizer.didToHash(query.viewerDid) : null;
+    const own = viewerHash
+      ? rows.find((row) => row.subject_hash === viewerHash)
+      : undefined;
+    return reply.send({
+      spaceId,
+      counts,
+      you: own
+        ? {
+            mode: own.mode,
+            status_text: own.status_text,
+            updated_at: own.updated_at
+          }
+        : null
     });
   });
 
@@ -4492,7 +5918,14 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       .limit(query.limit);
     const tombstoneCache = new Map<string, boolean>();
     const postIds: string[] = [];
-    const visiblePosts: Array<Record<string, unknown>> = [];
+    const visiblePostRows: Array<{
+      post_id: string;
+      content_text: string;
+      content_hash: string;
+      image_refs: string[];
+      created_at: string;
+      replies: Array<Record<string, unknown>>;
+    }> = [];
     for (const post of posts) {
       const authorHash = String(post.author_subject_did_hash);
       let tombstoned = tombstoneCache.get(authorHash);
@@ -4509,14 +5942,16 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         continue;
       }
       postIds.push(String(post.post_id));
-      visiblePosts.push({
+      visiblePostRows.push({
         post_id: post.post_id,
         content_text: post.content_text,
         content_hash: post.content_hash,
+        image_refs: Array.isArray(post.image_refs) ? post.image_refs : [],
         created_at: post.created_at,
         replies: []
       });
     }
+    const visiblePosts = await redactPostImageRefs(visiblePostRows);
     const replies = postIds.length
       ? await db("social_replies")
           .whereIn("post_id", postIds)
@@ -4700,10 +6135,11 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
     });
 
     const diversified = diversifyByAuthor(filtered, query.limit);
-    const posts = diversified.map((entry) => ({
+    const flowRows = diversified.map((entry) => ({
       post_id: entry.row.post_id,
       content_text: entry.row.content_text,
       content_hash: entry.row.content_hash,
+      image_refs: Array.isArray(entry.row.image_refs) ? entry.row.image_refs : [],
       created_at: entry.row.created_at,
       trust_stamps: [
         entry.tier === "gold"
@@ -4714,6 +6150,7 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       ],
       explain_available: true
     }));
+    const posts = await redactPostImageRefs(flowRows);
     return reply.send({
       mode: "flow",
       trust: query.trust ?? null,
@@ -4785,6 +6222,513 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         capability: (tierRank[tier] ?? 0) >= tierRank.silver ? "trusted_creator" : "can_post",
         domain: sharedSpaceId ? `space:${sharedSpaceId}` : "social"
       }
+    });
+  });
+
+  app.post("/v1/social/media/upload/request", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await maybeCleanupStaleUploads().catch(() => undefined);
+    const body = mediaUploadRequestSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    let gate: Awaited<ReturnType<typeof verifyAndGate>> | null = null;
+    if (body.spaceId) {
+      const space = await getSpaceById(body.spaceId);
+      if (!space) return reply.code(404).send(makeErrorResponse("invalid_request", "Space not found"));
+      const policyPack = await getSpacePolicyPack(space.policy_pack_id);
+      if (!policyPack) {
+        return reply
+          .code(409)
+          .send(makeErrorResponse("invalid_request", "Space policy pack unavailable"));
+      }
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: policyPack.post_action_id,
+        actionType: "space_post",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience,
+        pinnedPolicyHash: policyPack.pinned_policy_hash_post ?? policyPack.post_policy_hash ?? null,
+        context: { space_id: body.spaceId }
+      }).catch(() => null);
+    } else {
+      gate = await verifyAndGate({
+        subjectDidHash,
+        actionId: "social.post.create",
+        actionType: "post",
+        presentation: body.presentation,
+        nonce: body.nonce,
+        audience: body.audience
+      }).catch(() => null);
+    }
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const assetId = randomUUID();
+    const objectKey = buildMediaObjectKey({
+      ownerSubjectHash: subjectDidHash,
+      mimeType: body.mimeType,
+      kind: "original"
+    });
+    const presigned = await createPresignedUpload({
+      objectKey,
+      mimeType: body.mimeType,
+      ownerSubjectHash: subjectDidHash,
+      sha256Hex: body.sha256Hex,
+      byteSize: body.byteSize
+    });
+    await (
+      await getDb()
+    )("social_media_assets").insert({
+      asset_id: assetId,
+      owner_subject_hash: subjectDidHash,
+      space_id: body.spaceId ?? null,
+      media_kind: "image",
+      storage_provider: config.MEDIA_STORAGE_PROVIDER,
+      object_key: objectKey,
+      mime_type: body.mimeType,
+      byte_size: body.byteSize,
+      sha256_hex: body.sha256Hex,
+      status: "PENDING",
+      created_at: new Date().toISOString()
+    });
+    return reply.send({
+      decision: "ALLOW",
+      assetId,
+      objectKey,
+      uploadUrl: presigned.uploadUrl,
+      requiredHeaders: presigned.requiredHeaders
+    });
+  });
+
+  app.post("/v1/social/media/upload/complete", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    await maybeCleanupStaleUploads().catch(() => undefined);
+    const body = mediaUploadCompleteSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    const row = await (await getDb())("social_media_assets")
+      .where({
+        asset_id: body.assetId,
+        owner_subject_hash: subjectDidHash,
+        object_key: body.objectKey,
+        media_kind: "image"
+      })
+      .first();
+    if (!row) return reply.code(404).send(makeErrorResponse("invalid_request", "Upload not found"));
+    const verified = await verifyUploadedObject({
+      objectKey: body.objectKey,
+      expectedMimeType: String(row.mime_type),
+      expectedSha256Hex: String(row.sha256_hex),
+      expectedByteSize: Number(row.byte_size)
+    }).catch(() => null);
+    if (!verified?.ok) {
+      return reply.code(409).send(
+        makeErrorResponse("invalid_request", "Uploaded object failed verification", {
+          devMode: config.DEV_MODE,
+          debug: config.DEV_MODE
+            ? {
+                cause: `media_verify_failed:${JSON.stringify({
+                  expected: {
+                    mimeType: String(row.mime_type),
+                    sha256Hex: String(row.sha256_hex),
+                    byteSize: Number(row.byte_size)
+                  },
+                  observed: verified
+                })}`
+              }
+            : undefined
+        })
+      );
+    }
+    const thumbKey = await generateThumbnail({
+      sourceObjectKey: String(row.object_key),
+      ownerSubjectHash: subjectDidHash,
+      mimeType: String(row.mime_type)
+    }).catch(() => null);
+    await (await getDb())("social_media_assets")
+      .where({ asset_id: body.assetId })
+      .update({
+        status: "ACTIVE",
+        thumbnail_object_key: thumbKey,
+        finalized_at: new Date().toISOString()
+      });
+    return reply.send({
+      decision: "ALLOW",
+      assetId: body.assetId,
+      imageRef: body.assetId,
+      thumbnailObjectKey: thumbKey
+    });
+  });
+
+  app.post("/v1/social/media/view/request", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const bucketKey = request.ip || "unknown";
+    if (!checkMediaViewRateLimit(bucketKey)) {
+      return reply.code(429).send(makeErrorResponse("rate_limited", "Media view rate limit exceeded"));
+    }
+    const body = mediaViewRequestSchema.parse(request.body ?? {});
+    const viewerDidHash = body.viewerDid ? pseudonymizer.didToHash(body.viewerDid) : null;
+    const unavailable = (assetId: string) => ({ assetId, status: "unavailable" as const });
+    if (viewerDidHash) {
+      const privacy = await getPrivacyStatus(viewerDidHash).catch(() => null);
+      if (!privacy || privacy.tombstoned) {
+        return reply.send({
+          results: body.items.map((item) => unavailable(item.assetId))
+        });
+      }
+    }
+
+    const db = await getDb();
+    const uniqueAssetIds = Array.from(new Set(body.items.map((item) => item.assetId)));
+    const assetRows = (await db("social_media_assets")
+      .whereIn("asset_id", uniqueAssetIds)
+      .select(
+        "asset_id",
+        "object_key",
+        "thumbnail_object_key",
+        "status",
+        "finalized_at",
+        "erased_at",
+        "deleted_at",
+        "media_kind"
+      )) as Array<{
+      asset_id: string;
+      object_key: string;
+      thumbnail_object_key: string | null;
+      status: string;
+      finalized_at: string | null;
+      erased_at: string | null;
+      deleted_at: string | null;
+      media_kind: string;
+    }>;
+    const assetsById = new Map(assetRows.map((row) => [row.asset_id, row]));
+
+    const postIds = Array.from(
+      new Set(body.items.filter((item) => item.context.kind === "post").map((item) => item.context.postId))
+    );
+    const postRows = postIds.length
+      ? ((await db("social_posts")
+          .whereIn("post_id", postIds)
+          .whereNull("deleted_at")
+          .select("post_id", "image_refs", "author_subject_did_hash")) as Array<{
+          post_id: string;
+          image_refs: unknown;
+          author_subject_did_hash: string;
+        }>)
+      : [];
+    const postsById = new Map(postRows.map((row) => [row.post_id, row]));
+
+    const spacePostIds = Array.from(
+      new Set(
+        body.items
+          .filter((item) => item.context.kind === "spacePost")
+          .map((item) => item.context.postId)
+      )
+    );
+    const spacePostRows = spacePostIds.length
+      ? ((await db("social_space_posts")
+          .whereIn("space_post_id", spacePostIds)
+          .whereNull("deleted_at")
+          .select("space_post_id", "space_id", "image_refs", "author_subject_did_hash")) as Array<{
+          space_post_id: string;
+          space_id: string;
+          image_refs: unknown;
+          author_subject_did_hash: string;
+        }>)
+      : [];
+    const spacePostsById = new Map(spacePostRows.map((row) => [row.space_post_id, row]));
+    const spaceIds = Array.from(
+      new Set(
+        body.items.flatMap((item) =>
+          item.context.kind === "spacePost" ? [item.context.spaceId] : []
+        )
+      )
+    );
+    const spaces = spaceIds.length
+      ? ((await db("social_spaces")
+          .whereIn("space_id", spaceIds)
+          .whereNull("archived_at")
+          .select("space_id", "policy_pack_id")) as Array<{ space_id: string; policy_pack_id: string }>)
+      : [];
+    const spacesById = new Map(spaces.map((space) => [space.space_id, space]));
+    const policyPackIds = Array.from(new Set(spaces.map((space) => space.policy_pack_id)));
+    const policyRows = policyPackIds.length
+      ? ((await db("social_space_policy_packs")
+          .whereIn("policy_pack_id", policyPackIds)
+          .select("policy_pack_id", "visibility")) as Array<{
+          policy_pack_id: string;
+          visibility: string;
+        }>)
+      : [];
+    const visibilityByPolicyPack = new Map(
+      policyRows.map((row) => [row.policy_pack_id, row.visibility ?? "members"])
+    );
+
+    const authorHashes = Array.from(
+      new Set([
+        ...postRows.map((row) => row.author_subject_did_hash),
+        ...spacePostRows.map((row) => row.author_subject_did_hash)
+      ])
+    );
+    const authorPrivacy = new Map<string, PrivacyStatus | null>();
+    await Promise.all(
+      authorHashes.map(async (authorHash) => {
+        const privacy = await getPrivacyStatus(authorHash).catch(() => null);
+        authorPrivacy.set(authorHash, privacy);
+      })
+    );
+
+    const membershipCache = new Map<string, boolean>();
+    const canReadSpace = async (spaceId: string) => {
+      if (!viewerDidHash) return false;
+      const key = `${spaceId}:${viewerDidHash}`;
+      const cached = membershipCache.get(key);
+      if (cached !== undefined) return cached;
+      const allowed = await hasActiveSpaceMembership(spaceId, viewerDidHash);
+      membershipCache.set(key, allowed);
+      return allowed;
+    };
+
+    const expiresIn = config.MEDIA_PRESIGN_TTL_SECONDS;
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    const results: Array<
+      | {
+          assetId: string;
+          status: "ok";
+          originalUrl: string;
+          thumbUrl: string | null;
+          expiresAt: string;
+        }
+      | {
+          assetId: string;
+          status: "unavailable";
+        }
+    > = [];
+
+    for (const item of body.items) {
+      const asset = assetsById.get(item.assetId);
+      if (!asset || !isMediaAssetViewable(asset)) {
+        results.push(unavailable(item.assetId));
+        continue;
+      }
+      if (item.context.kind === "post") {
+        const post = postsById.get(item.context.postId);
+        const refs = Array.isArray(post?.image_refs) ? post.image_refs : [];
+        const privacy = post ? authorPrivacy.get(post.author_subject_did_hash) : null;
+        if (!post || !privacy || privacy.tombstoned || !refs.includes(item.assetId)) {
+          results.push(unavailable(item.assetId));
+          continue;
+        }
+      } else {
+        const spacePost = spacePostsById.get(item.context.postId);
+        const refs = Array.isArray(spacePost?.image_refs) ? spacePost.image_refs : [];
+        const space = spacesById.get(item.context.spaceId);
+        const visibility = space ? visibilityByPolicyPack.get(space.policy_pack_id) ?? "members" : "members";
+        const privacy = spacePost ? authorPrivacy.get(spacePost.author_subject_did_hash) : null;
+        const viewerRestricted = viewerDidHash
+          ? await isSpaceMemberRestricted(item.context.spaceId, viewerDidHash)
+          : false;
+        const canReadMembersSpace =
+          visibility !== "members" ? true : await canReadSpace(item.context.spaceId);
+        if (
+          !spacePost ||
+          !space ||
+          spacePost.space_id !== item.context.spaceId ||
+          !privacy ||
+          privacy?.restricted ||
+          privacy?.tombstoned ||
+          viewerRestricted ||
+          !canReadMembersSpace ||
+          !refs.includes(item.assetId)
+        ) {
+          results.push(unavailable(item.assetId));
+          continue;
+        }
+      }
+      const original = await mediaStorageAdapter
+        .createPresignedGet({
+          objectKey: asset.object_key,
+          expiresInSeconds: expiresIn
+        })
+        .catch(() => null);
+      if (!original?.url) {
+        results.push(unavailable(item.assetId));
+        continue;
+      }
+      const thumb = asset.thumbnail_object_key
+        ? await mediaStorageAdapter
+            .createPresignedGet({
+              objectKey: asset.thumbnail_object_key,
+              expiresInSeconds: expiresIn
+            })
+            .catch(() => null)
+        : null;
+      results.push({
+        assetId: item.assetId,
+        status: "ok",
+        originalUrl: original.url,
+        thumbUrl: thumb?.url ?? null,
+        expiresAt
+      });
+    }
+
+    return reply.send({ results });
+  });
+
+  app.post("/v1/social/realtime/token", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = realtimeTokenSchema.parse(request.body ?? {});
+    const subjectDidHash = pseudonymizer.didToHash(body.subjectDid);
+    if (!(await hasActiveSpaceMembership(body.spaceId, subjectDidHash))) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Space membership required"));
+    }
+    const actionId =
+      body.channel === "presence"
+        ? "presence.ping"
+        : body.channel === "banter"
+          ? "banter.message.send"
+          : body.channel === "hangout"
+            ? "sync.huddle.join_session"
+            : "challenge.join";
+    const actionType: FunnelAction =
+      body.channel === "presence"
+        ? "presence_ping"
+        : body.channel === "banter"
+          ? "banter_message_send"
+          : body.channel === "hangout"
+            ? "hangout_join"
+            : "challenge_join";
+    const gate = await verifyAndGate({
+      subjectDidHash,
+      actionId,
+      actionType,
+      presentation: body.presentation,
+      nonce: body.nonce,
+      audience: body.audience,
+      context: { space_id: body.spaceId }
+    }).catch(() => null);
+    if (!gate) {
+      return reply.code(503).send(
+        makeErrorResponse("requirements_unavailable", "Requirements unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    if (gate.denied) return reply.code(403).send(gate.denied);
+    const token = await mintRealtimePermissionToken({
+      subjectHash: subjectDidHash,
+      channel: body.channel,
+      spaceId: body.spaceId,
+      threadId: body.threadId,
+      sessionId: body.sessionId,
+      challengeId: body.challengeId,
+      canBroadcast: body.canBroadcast
+    });
+    return reply.send({
+      decision: "ALLOW",
+      permissionToken: token.token,
+      expiresAt: token.expiresAt
+    });
+  });
+
+  app.post("/v1/social/realtime/publish", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const body = realtimePublishSchema.parse(request.body ?? {});
+    const permissionHash = hashHex(body.permissionToken);
+    if (!checkRealtimeBroadcastRate(permissionHash)) {
+      return reply
+        .code(429)
+        .send(makeErrorResponse("rate_limited", "Realtime publish rate limit exceeded"));
+    }
+    const permission = await validateRealtimePermission({ permissionToken: body.permissionToken });
+    if (!permission.ok) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", `Realtime permission denied: ${permission.reason}`));
+    }
+    if (!permission.permission.canBroadcast) {
+      return reply.code(403).send(makeErrorResponse("invalid_request", "Broadcast not permitted"));
+    }
+    const payloadString = JSON.stringify(body.payload ?? null);
+    if (Buffer.byteLength(payloadString, "utf8") > config.REALTIME_EVENT_MAX_PAYLOAD_BYTES) {
+      return reply.code(413).send(makeErrorResponse("invalid_request", "Realtime payload too large"));
+    }
+    const event = await publishRealtimeEvent({
+      channel: permission.permission.channel as "presence" | "banter" | "hangout" | "challenge",
+      spaceId: permission.permission.spaceId,
+      threadId: permission.permission.threadId,
+      sessionId: permission.permission.sessionId,
+      challengeId: permission.permission.challengeId,
+      eventType: body.eventType,
+      payload: {
+        ...((body.payload ?? {}) as Record<string, unknown>),
+        actor_subject_hash: permission.permission.subjectHash
+      }
+    });
+    return reply.send({
+      decision: "ALLOW",
+      eventId: event.eventId,
+      createdAt: event.createdAt,
+      cursor: event.cursor
+    });
+  });
+
+  app.get("/v1/social/realtime/events", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requiredScopes: ["social:proxy"] });
+    if (reply.sent) return;
+    const query = realtimeEventsQuerySchema.parse(request.query ?? {});
+    const permission = await validateRealtimePermission({ permissionToken: query.permissionToken });
+    if (!permission.ok) {
+      return reply
+        .code(403)
+        .send(makeErrorResponse("invalid_request", `Realtime permission denied: ${permission.reason}`));
+    }
+    const db = await getDb();
+    const rows = (await db("social_realtime_events")
+      .where({ channel: permission.permission.channel, space_id: permission.permission.spaceId })
+      .modify((builder) => {
+        if (permission.permission.threadId) builder.andWhere("thread_id", permission.permission.threadId);
+        if (permission.permission.sessionId) builder.andWhere("session_id", permission.permission.sessionId);
+        if (permission.permission.challengeId) {
+          builder.andWhere("challenge_id", permission.permission.challengeId);
+        }
+      })
+      .modify((builder) => {
+        if (query.after) {
+          builder.andWhere("event_cursor", ">", query.after);
+          return;
+        }
+        if (query.since) builder.andWhere("created_at", ">", query.since);
+      })
+      .orderBy("event_cursor", "asc")
+      .limit(query.limit)) as Array<{
+      event_id: string;
+      event_cursor: string | number | bigint | null;
+      channel: string;
+      event_type: string;
+      payload_json: unknown;
+      created_at: string;
+    }>;
+    const events = rows.map((row) => ({
+      eventId: row.event_id,
+      cursor: row.event_cursor === null || row.event_cursor === undefined ? null : String(row.event_cursor),
+      channel: row.channel,
+      eventType: row.event_type,
+      payload: row.payload_json ?? {},
+      createdAt: row.created_at
+    }));
+    return reply.send({
+      events,
+      nextCursor: events.length > 0 ? events[events.length - 1]?.cursor ?? null : null
     });
   });
 
@@ -5415,6 +7359,17 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         .merge({ mode: body.mode, updated_at: now });
     }
     await pruneExpiredPresenceRows().catch(() => undefined);
+    await publishRealtimeEvent({
+      channel: "presence",
+      spaceId,
+      eventType: "presence.ping",
+      payload: {
+        actorSubjectHash: subjectDidHash,
+        mode: body.mode ?? "active",
+        crewId: body.crewId ?? null,
+        observedAt: now
+      }
+    }).catch(() => undefined);
     incCompleted("presence_ping");
     return reply.send({
       decision: "ALLOW",
@@ -6241,6 +8196,16 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
       .whereNull("left_at")
       .count<{ count: string }>("session_id as count")
       .first();
+    await publishRealtimeEvent({
+      channel: "hangout",
+      spaceId: body.spaceId,
+      sessionId: body.sessionId,
+      eventType: "hangout.join",
+      payload: {
+        sessionId: body.sessionId,
+        actorSubjectHash: subjectDidHash
+      }
+    }).catch(() => undefined);
     incCompleted("hangout_join");
     return reply.send({
       decision: "ALLOW",
@@ -6317,6 +8282,17 @@ export const registerSocialRoutes = (app: FastifyInstance) => {
         created_at: now
       });
     });
+    await publishRealtimeEvent({
+      channel: "hangout",
+      spaceId: body.spaceId,
+      sessionId: body.sessionId,
+      eventType: "hangout.end",
+      payload: {
+        sessionId: body.sessionId,
+        endedBy: endedByModerator ? "moderator" : "host",
+        actorSubjectHash: subjectDidHash
+      }
+    }).catch(() => undefined);
     incCompleted("hangout_end");
     return reply.send({
       decision: "ALLOW",

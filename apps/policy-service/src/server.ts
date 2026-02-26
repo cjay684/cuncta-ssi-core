@@ -8,6 +8,9 @@ import { metrics } from "./metrics.js";
 import { makeErrorResponse } from "@cuncta/shared";
 import { config } from "./config.js";
 import net from "node:net";
+import { loadZkStatementRegistry } from "@cuncta/zk-registry";
+import { getDb } from "./db.js";
+import { PolicyLogicSchema } from "./policy/evaluate.js";
 
 const isPrivateAddress = (value?: string) => {
   if (!value) return false;
@@ -105,6 +108,28 @@ export const buildServer = () => {
 
   registerHealthRoutes(app);
   registerPolicyRoutes(app);
+
+  app.addHook("onReady", async () => {
+    // Fail fast (production posture only): ensure that enabled policies don't reference
+    // unknown/unavailable ZK statements when the ZK track is enabled.
+    if (config.NODE_ENV !== "production" || !config.ALLOW_EXPERIMENTAL_ZK) return;
+    const registry = await loadZkStatementRegistry();
+    const db = await getDb();
+    const policies = (await db("policies")
+      .select("policy_id", "logic")
+      .where({ enabled: true })) as Array<{ policy_id: string; logic: unknown }>;
+    for (const row of policies) {
+      const logic = PolicyLogicSchema.safeParse(row.logic);
+      if (!logic.success) continue;
+      for (const req of logic.data.requirements) {
+        for (const pred of req.zk_predicates ?? []) {
+          const st = registry.get(pred.id);
+          if (!st) throw new Error(`policy_references_unknown_zk_statement:${row.policy_id}:${pred.id}`);
+          if (!st.available) throw new Error(`policy_references_unavailable_zk_statement:${row.policy_id}:${pred.id}`);
+        }
+      }
+    }
+  });
 
   return app;
 };

@@ -191,6 +191,14 @@ const fetchStatusList = async (listUrl: string) => {
 };
 
 const loadEncodedList = async (listUrl: string) => {
+  if (config.STATUS_LIST_STRICT_MODE) {
+    metrics.incCounter("status_list_cache_miss_total");
+    const encodedList = await fetchStatusList(listUrl);
+    // Keep cache populated for observability/testing, but do not use it for correctness decisions
+    // while strict mode is enabled.
+    setCacheEntry(listUrl, { encodedList, fetchedAt: Date.now() });
+    return encodedList;
+  }
   const now = Date.now();
   const cached = statusListCache.get(listUrl);
   if (cached && isCacheFresh(cached, now)) {
@@ -199,25 +207,50 @@ const loadEncodedList = async (listUrl: string) => {
     return cached.encodedList;
   }
   metrics.incCounter("status_list_cache_miss_total");
-  try {
-    const encodedList = await fetchStatusList(listUrl);
-    setCacheEntry(listUrl, { encodedList, fetchedAt: Date.now() });
-    return encodedList;
-  } catch (error) {
-    const fallback = statusListCache.get(listUrl);
-    const fallbackNow = Date.now();
-    if (fallback && isCacheFresh(fallback, fallbackNow)) {
-      metrics.incCounter("status_list_cache_hit_total");
-      touchCacheEntry(listUrl, fallback);
-      return fallback.encodedList;
-    }
-    throw error;
-  }
+  const encodedList = await fetchStatusList(listUrl);
+  setCacheEntry(listUrl, { encodedList, fetchedAt: Date.now() });
+  return encodedList;
 };
 
 export const verifyStatusListEntry = async (status: Record<string, unknown>) => {
-  const listCredential = status.statusListCredential as string | undefined;
-  const index = status.statusListIndex as string | undefined;
+  // Backward/forward compatible parsing:
+  // - Current internal shape (W3C BitstringStatusListEntry-style):
+  //     { statusListCredential, statusListIndex, ... }
+  // - Token-style shape (OAuth status list style):
+  //     { status_list: { uri, idx } }
+  // - Namespaced internal profile:
+  //     { cuncta_bitstring: { statusListCredential, statusListIndex, ... } }
+  const from = (value: unknown): { listCredential?: string; index?: string } => {
+    if (!value || typeof value !== "object") return {};
+    const v = value as Record<string, unknown>;
+    const listCredential = typeof v.statusListCredential === "string" ? v.statusListCredential : undefined;
+    const index =
+      typeof v.statusListIndex === "string"
+        ? v.statusListIndex
+        : typeof v.statusListIndex === "number" && Number.isInteger(v.statusListIndex)
+          ? String(v.statusListIndex)
+          : undefined;
+    return { listCredential, index };
+  };
+
+  const direct = from(status);
+  const namespaced = from((status as Record<string, unknown>).cuncta_bitstring);
+  const tokenStyle = (() => {
+    const raw = (status as Record<string, unknown>).status_list;
+    if (!raw || typeof raw !== "object") return {};
+    const sl = raw as Record<string, unknown>;
+    const listCredential = typeof sl.uri === "string" ? sl.uri : undefined;
+    const index =
+      typeof sl.idx === "string"
+        ? sl.idx
+        : typeof sl.idx === "number" && Number.isInteger(sl.idx)
+          ? String(sl.idx)
+          : undefined;
+    return { listCredential, index };
+  })();
+
+  const listCredential = direct.listCredential ?? namespaced.listCredential ?? tokenStyle.listCredential;
+  const index = direct.index ?? namespaced.index ?? tokenStyle.index;
   if (!listCredential || !index) {
     return { valid: false, reason: "missing_status_fields" };
   }

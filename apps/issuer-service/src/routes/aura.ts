@@ -12,6 +12,15 @@ import { makeErrorResponse } from "@cuncta/shared";
 import { getPrivacyStatus } from "../privacy/restrictions.js";
 import { getDidHashes, getLookupHashes } from "../pseudonymizer.js";
 import { ensureAuraRuleIntegrity } from "../aura/auraIntegrity.js";
+import { writeAuditLog } from "../audit.js";
+import { checkCapabilityEligibility } from "../aura/capabilityEligibility.js";
+
+const resetSchema = z.object({
+  subjectDid: z.string().min(3),
+  domain: z.string().min(1).max(120),
+  output_vct: z.string().min(3).optional(),
+  reason: z.string().trim().min(3).max(200).optional()
+});
 
 const claimSchema = z.object({
   subjectDid: z.string().min(3),
@@ -42,6 +51,90 @@ const checkAuraClaimRateLimit = async (lookupHashes: string[], subjectHash: stri
 };
 
 export const registerAuraRoutes = (app: FastifyInstance) => {
+  // Admin-only recovery hook: reset capability history for a given domain (non-punitive; minimizes stored state).
+  // This is intentionally NOT a global scoring override.
+  app.post("/v1/admin/aura/reset", async (request, reply) => {
+    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:aura_admin"] });
+    if (reply.sent) return;
+    const body = resetSchema.parse(request.body ?? {});
+    const hashes = getDidHashes(body.subjectDid);
+    const subjectHash = hashes.primary;
+    const lookupHashes = getLookupHashes(hashes);
+    const privacy = await getPrivacyStatus(hashes);
+    if (privacy.tombstoned) {
+      return reply.code(410).send(makeErrorResponse("not_found", "Subject erased", { devMode: config.DEV_MODE }));
+    }
+    const db = await getDb();
+    await db.transaction(async (trx) => {
+      await trx("aura_state")
+        .whereIn("subject_did_hash", lookupHashes)
+        .andWhere({ domain: body.domain })
+        .del();
+      await trx("aura_issuance_queue")
+        .whereIn("subject_did_hash", lookupHashes)
+        .andWhere({ domain: body.domain })
+        .modify((qb) => {
+          if (body.output_vct) qb.andWhere({ output_vct: body.output_vct });
+        })
+        .del();
+      await trx("aura_signals")
+        .whereIn("subject_did_hash", lookupHashes)
+        .andWhere({ domain: body.domain })
+        .del();
+    });
+
+    const requestId = (request as { requestId?: string }).requestId;
+    const reasonHash = body.reason ? hashCanonicalJson({ reason: body.reason }) : null;
+    await writeAuditLog("aura_reset", {
+      entityId: subjectHash,
+      requestId,
+      subject_did_hash: subjectHash,
+      domain: body.domain,
+      output_vct: body.output_vct ?? null,
+      reason_hash: reasonHash
+    });
+
+    const anchorPayloadHash = hashCanonicalJson({
+      event: "AURA_RESET",
+      subjectHash,
+      domain: body.domain,
+      outputVct: body.output_vct ?? null,
+      at: new Date().toISOString(),
+      reasonHash
+    });
+    if (!config.ANCHOR_AUTH_SECRET) {
+      return reply.code(503).send(
+        makeErrorResponse("internal_error", "Anchor auth unavailable", {
+          devMode: config.DEV_MODE
+        })
+      );
+    }
+    await db("anchor_outbox")
+      .insert({
+        outbox_id: randomUUID(),
+        event_type: "AURA_RESET",
+        payload_hash: anchorPayloadHash,
+        payload_meta: {
+          subject_did_hash: subjectHash,
+          domain_hash: sha256Hex(body.domain),
+          output_vct_hash: body.output_vct ? sha256Hex(body.output_vct) : null,
+          ...signAnchorMeta(config.ANCHOR_AUTH_SECRET, {
+            payloadHash: anchorPayloadHash,
+            eventType: "AURA_RESET"
+          })
+        },
+        status: "PENDING",
+        attempts: 0,
+        next_retry_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .onConflict("payload_hash")
+      .ignore();
+
+    return reply.send({ ok: true });
+  });
+
   app.post("/v1/aura/claim", async (request, reply) => {
     await requireServiceAuth(request, reply, { requiredScopes: ["issuer:aura_claim"] });
     if (reply.sent) return;
@@ -95,6 +188,12 @@ export const registerAuraRoutes = (app: FastifyInstance) => {
       }
       return { row, claimed };
     });
+    const resetQueueToPending = async (queueId: string) => {
+      await db("aura_issuance_queue").where({ queue_id: queueId }).update({
+        status: "PENDING",
+        updated_at: new Date().toISOString()
+      });
+    };
     if (!queueResult) {
       return reply.code(404).send(
         makeErrorResponse("aura_not_ready", "Aura not ready", {
@@ -123,6 +222,7 @@ export const registerAuraRoutes = (app: FastifyInstance) => {
 
     const rule = await db("aura_rules").where({ rule_id: queue.rule_id, enabled: true }).first();
     if (!rule) {
+      await resetQueueToPending(queue.queue_id);
       return reply.code(404).send(
         makeErrorResponse("internal_error", "Aura rule missing", {
           devMode: config.DEV_MODE
@@ -132,6 +232,7 @@ export const registerAuraRoutes = (app: FastifyInstance) => {
     try {
       await ensureAuraRuleIntegrity(rule);
     } catch {
+      await resetQueueToPending(queue.queue_id);
       return reply.code(503).send(
         makeErrorResponse("aura_integrity_failed", "Aura rules unavailable", {
           devMode: config.DEV_MODE
@@ -139,27 +240,27 @@ export const registerAuraRoutes = (app: FastifyInstance) => {
       );
     }
 
-    const stateRow = await db("aura_state")
-      .whereIn("subject_did_hash", lookupHashes)
-      .andWhere({ domain: queue.domain })
-      .first();
-    if (!stateRow) {
+    const eligibility = await checkCapabilityEligibility({
+      subjectLookupHashes: lookupHashes,
+      domain: String(queue.domain),
+      outputVct: body.output_vct
+    }).catch(() => ({ eligible: false as const }));
+    if (!eligibility.eligible) {
+      await resetQueueToPending(queue.queue_id);
       return reply.code(404).send(
-        makeErrorResponse("internal_error", "Aura state missing", {
+        makeErrorResponse("aura_not_ready", "Aura not ready", {
           devMode: config.DEV_MODE
         })
       );
     }
-
-    const state =
-      typeof stateRow.state === "string"
-        ? (JSON.parse(stateRow.state) as Record<string, unknown>)
-        : (stateRow.state as Record<string, unknown>);
+    const domainValue = String(queue.domain);
+    const spaceId = domainValue.startsWith("space:") ? domainValue.slice("space:".length) : null;
     const context = {
-      tier: String(state.tier ?? "bronze"),
-      domain: String(queue.domain),
-      score: Number(state.score ?? 0),
-      diversity: Number(state.diversity ?? 0),
+      tier: String(eligibility.state.tier),
+      domain: domainValue,
+      space_id: spaceId ?? domainValue,
+      score: Number(eligibility.state.score ?? 0),
+      diversity: Number(eligibility.state.diversity ?? 0),
       now: new Date().toISOString()
     };
     const ruleLogic =

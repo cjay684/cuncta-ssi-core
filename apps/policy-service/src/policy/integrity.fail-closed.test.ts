@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { exportJWK, generateKeyPair } from "jose";
 
 const run = async () => {
+  // Keep tests deterministic regardless of developer `.env`.
+  process.env.HEDERA_NETWORK = "testnet";
+  process.env.ALLOW_MAINNET = "false";
+
   const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
   const jwk = await exportJWK(privateKey);
   jwk.kid = "policy-test-1";

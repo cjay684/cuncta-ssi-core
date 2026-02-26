@@ -9,6 +9,7 @@ const requiresDb = (file) => {
   return (
     normalized.endsWith("/invariants.test.ts") ||
     normalized.endsWith("/policy/evaluate.test.ts") ||
+    normalized.endsWith("/policy/capability.audit.test.ts") ||
     normalized.endsWith("/routes/requirements.test.ts") ||
     normalized.endsWith("/routes/policy.integrity.test.ts")
   );

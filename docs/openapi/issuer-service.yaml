@@ -61,7 +61,7 @@ paths:
       responses:
         "200":
           description: Issued credential
-  /v1/internal/issue:
+  /v1/admin/issue:
     post:
       summary: Issue credential (service JWT required)
       security:

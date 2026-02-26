@@ -43,9 +43,11 @@ const run = async () => {
   await db("aura_state").del();
   await db("aura_signals").del();
   await db("aura_issuance_queue").del();
+  await db("aura_rules").update({ enabled: false });
   await db("obligation_events").del();
   await db("obligations_executions").del();
   await db("rate_limit_events").del();
+  await db("command_center_audit_events").del();
   await db("issuance_events").del();
   await db("status_lists").where({ status_list_id: "dsr_test" }).del();
 
@@ -125,6 +127,29 @@ const run = async () => {
     action_id: "aura.claim",
     created_at: new Date().toISOString()
   });
+  await db("command_center_audit_events").insert([
+    {
+      id: "11111111-1111-4111-8111-111111111111",
+      created_at: new Date().toISOString(),
+      subject_hash: didHash,
+      event_type: "command_plan_requested",
+      payload_json: {}
+    },
+    {
+      id: "22222222-2222-4222-8222-222222222222",
+      created_at: new Date().toISOString(),
+      subject_hash: legacyHash,
+      event_type: "command_plan_requested",
+      payload_json: {}
+    },
+    {
+      id: "33333333-3333-4333-8333-333333333333",
+      created_at: new Date().toISOString(),
+      subject_hash: "unrelated_subject_hash",
+      event_type: "command_plan_requested",
+      payload_json: {}
+    }
+  ]);
 
   const requestResponse = await app.inject({
     method: "POST",
@@ -211,6 +236,14 @@ const run = async () => {
   const restrictPayload = restrictResponse.json() as { nextToken?: string };
   assert.ok(restrictPayload.nextToken, "restrict should return next token");
   activeToken = restrictPayload.nextToken as string;
+  const restrictAuditPrimary = await db("command_center_audit_events")
+    .where({ subject_hash: didHash })
+    .first();
+  const restrictAuditLegacy = await db("command_center_audit_events")
+    .where({ subject_hash: legacyHash })
+    .first();
+  assert.ok(restrictAuditPrimary, "restrict should not delete command audit rows");
+  assert.ok(restrictAuditLegacy, "restrict should not delete legacy command audit rows");
 
   const eraseResponse = await app.inject({
     method: "POST",
@@ -230,6 +263,14 @@ const run = async () => {
   assert.equal(signalRow, undefined);
   const issuanceRow = await db("issuance_events").where({ event_id: "evt_dsr_1" }).first();
   assert.equal(issuanceRow?.subject_did_hash ?? null, null);
+  const auditPrimary = await db("command_center_audit_events").where({ subject_hash: didHash }).first();
+  const auditLegacy = await db("command_center_audit_events").where({ subject_hash: legacyHash }).first();
+  const auditUnrelated = await db("command_center_audit_events")
+    .where({ subject_hash: "unrelated_subject_hash" })
+    .first();
+  assert.equal(auditPrimary, undefined);
+  assert.equal(auditLegacy, undefined);
+  assert.ok(auditUnrelated, "erase should not delete unrelated command audit rows");
 
   await db("aura_signals").insert({
     subject_did_hash: didHash,

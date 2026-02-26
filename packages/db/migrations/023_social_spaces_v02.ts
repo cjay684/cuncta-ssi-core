@@ -473,10 +473,11 @@ export async function up(knex: Knex): Promise<void> {
 
   await upsertAuraRule(knex, {
     rule_id: "social.space.member.v1",
-    domain: "*",
+    domain: "space:*",
     output_vct: "cuncta.social.space.member",
     version: 1,
     rule_logic: {
+      purpose: "Capability to join a specific Space (membership entitlement)",
       window_days: 30,
       signals: ["social.space.join_success"],
       score: { min_silver: 1, min_gold: 2 },
@@ -495,10 +496,11 @@ export async function up(knex: Knex): Promise<void> {
   });
   await upsertAuraRule(knex, {
     rule_id: "social.space.poster.v1",
-    domain: "*",
+    domain: "space:*",
     output_vct: "cuncta.social.space.poster",
     version: 1,
     rule_logic: {
+      purpose: "Capability to post in a specific Space (anti-abuse entitlement)",
       window_days: 30,
       signals: ["social.space.post_success"],
       score: { min_silver: 1, min_gold: 5 },
@@ -518,10 +520,11 @@ export async function up(knex: Knex): Promise<void> {
   });
   await upsertAuraRule(knex, {
     rule_id: "social.space.moderator.v1",
-    domain: "*",
+    domain: "space:*",
     output_vct: "cuncta.social.space.moderator",
     version: 1,
     rule_logic: {
+      purpose: "Capability to moderate a specific Space (moderation entitlement)",
       window_days: 45,
       signals: ["social.space.post_success", "social.space.join_success"],
       score: { min_silver: 8, min_gold: 15 },
@@ -540,10 +543,11 @@ export async function up(knex: Knex): Promise<void> {
   });
   await upsertAuraRule(knex, {
     rule_id: "social.space.steward.v1",
-    domain: "*",
+    domain: "space:*",
     output_vct: "cuncta.social.space.steward",
     version: 1,
     rule_logic: {
+      purpose: "Capability to steward a specific Space (high-trust entitlement)",
       window_days: 60,
       signals: ["social.space.post_success", "social.space.join_success"],
       score: { min_silver: 12, min_gold: 20 },

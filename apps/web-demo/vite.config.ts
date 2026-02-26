@@ -11,7 +11,9 @@ export default defineConfig({
     })
   ],
   define: {
-    global: "globalThis"
+    global: "globalThis",
+    // Customer builds must not include CI-only fallback code paths.
+    __CI_TEST_BUILD__: false
   },
   resolve: {
     alias: {
