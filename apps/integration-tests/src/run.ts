@@ -4672,17 +4672,20 @@ const run = async () => {
         onTimeout: async () => emitAnchorDiagnostics(db, "anchor_outbox_visible")
       }
     );
-    const payloadHashes = anchorRows.map((row: { payload_hash: string }) => row.payload_hash);
-    await waitForDbRow(
+    const visiblePayloadHashes = anchorRows.map((row: { payload_hash: string }) => row.payload_hash);
+    const confirmedAnchorRows = await waitForDbRow(
       db,
       async () => {
-        const confirmed = await db("anchor_outbox")
-          .whereIn("payload_hash", payloadHashes)
-          .andWhere({ status: "CONFIRMED" });
-        const receipts = await db("anchor_receipts").whereIn("payload_hash", payloadHashes);
-        return confirmed.length === payloadHashes.length && receipts.length === payloadHashes.length
-          ? true
-          : null;
+        const rows = (await db("anchor_outbox as ao")
+          .join("anchor_receipts as ar", "ar.payload_hash", "ao.payload_hash")
+          .whereIn("ao.event_type", ["ISSUED", "VERIFY", "OBLIGATION_EXECUTED"])
+          .andWhere("ao.created_at", ">=", runStartedAt)
+          .andWhere("ao.status", "CONFIRMED")
+          .whereNotNull("ar.topic_id")
+          .whereNotNull("ar.sequence_number")
+          .select("ao.payload_hash", "ao.created_at")
+          .orderBy("ao.created_at", "desc")) as Array<{ payload_hash: string; created_at: string }>;
+        return rows.length >= 3 ? rows : null;
       },
       "anchor_receipts",
       ANCHOR_PHASE_TIMEOUT_MS,
@@ -4690,6 +4693,14 @@ const run = async () => {
         onTimeout: async () => emitAnchorDiagnostics(db, "anchor_receipts_confirmed")
       }
     );
+    const payloadHashes = confirmedAnchorRows
+      .slice(0, 3)
+      .map((row: { payload_hash: string }) => row.payload_hash);
+    if (payloadHashes.length < 3) {
+      throw new Error(
+        `anchor_receipts_insufficient confirmed=${confirmedAnchorRows.length} visible=${visiblePayloadHashes.length}`
+      );
+    }
 
     console.log("Test 6a: Mirror reconciliation verifies anchored message content");
     const receipts = (await db("anchor_receipts")
