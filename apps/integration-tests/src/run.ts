@@ -3613,8 +3613,13 @@ const run = async () => {
 
     const pseudonymizer = createHmacSha256Pseudonymizer({ pepper: PSEUDONYMIZER_PEPPER });
     const subjectHash = pseudonymizer.didToHash(holderDid);
+    const marketplaceRuleOutputVct = String(requirement.vct ?? "").trim();
     const marketplaceRules = await db("aura_rules")
-      .where({ domain: "marketplace", enabled: true })
+      .where({
+        domain: "marketplace",
+        enabled: true,
+        output_vct: marketplaceRuleOutputVct
+      })
       .orderBy("updated_at", "desc");
     if (marketplaceRules.length !== 1) {
       await emitAnchorDiagnostics(db, "aura_rule_resolution_marketplace");
@@ -3622,7 +3627,7 @@ const run = async () => {
         await emitSocialTimeoutDiagnostics(db, "aura_rule_resolution_marketplace");
       }
       throw new Error(
-        `Expected exactly one enabled marketplace aura rule; found ${marketplaceRules.length}`
+        `Expected exactly one enabled marketplace aura rule for output_vct=${marketplaceRuleOutputVct}; found ${marketplaceRules.length}`
       );
     }
     const marketplaceRule = marketplaceRules[0] as {
