@@ -2,6 +2,7 @@ import { strict as assert } from "node:assert";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { createFileVault } from "../core/vault/fileVault.js";
+import { resolveVaultKey } from "../core/vault/fileVault.js";
 import { loadConfig } from "../core/config.js";
 import {
   applyDisclosureSelection,
@@ -95,7 +96,8 @@ await run("relying party first seen and hash change", async () => {
   process.env.WALLET_VAULT_KEY = "abababababababababababababababababababababababababababababababab";
   const config = loadConfig();
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test-6");
-  const vault = createFileVault({ baseDir, keyMaterial: config.WALLET_VAULT_KEY });
+  const keyMaterial = await resolveVaultKey(config);
+  const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   const status1 = await checkRelyingPartyStatus(vault, { aud: "cuncta.action:demo" });
   assert.equal(status1.firstSeen, true);

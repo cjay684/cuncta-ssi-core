@@ -76,7 +76,7 @@ await run("mainnet requires ALLOW_MAINNET", async () => {
 
 await run("vault encrypts at rest", async () => {
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test");
-  const keyMaterial = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  const keyMaterial = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
   const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   const state = await vault.getState();

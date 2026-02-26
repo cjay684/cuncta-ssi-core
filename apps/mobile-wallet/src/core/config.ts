@@ -13,7 +13,7 @@ const envSchema = z.object({
   NODE_ENV: z.string().optional(),
   ALLOW_MAINNET: z.preprocess((value) => value === "true", z.boolean()).default(false),
   WALLET_ALLOW_SOFTWARE_KEYS: z.preprocess((value) => value === "true", z.boolean()).default(false),
-  WALLET_VAULT_KEY: z.string().min(32),
+  WALLET_VAULT_KEY: z.string().min(32).optional(),
   WALLET_DEVICE_ID: z.string().optional(),
   USER_PAYS_MAX_FEE_TINYBARS: z.preprocess((value) => {
     if (value === undefined || value === null || value === "") return 50_000_000;
@@ -34,7 +34,9 @@ export const loadConfig = (): WalletConfig => {
   if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
     throw new Error("ALLOW_MAINNET must be true when HEDERA_NETWORK=mainnet.");
   }
-  validateVaultKeyMaterial(parsed.WALLET_VAULT_KEY);
+  if (parsed.WALLET_VAULT_KEY) {
+    validateVaultKeyMaterial(parsed.WALLET_VAULT_KEY);
+  }
   return { ...parsed, WALLET_BUILD_MODE: buildMode, deviceId };
 };
 
@@ -48,7 +50,7 @@ export const assertSoftwareKeysAllowed = (config: WalletConfig) => {
   }
 };
 
-const validateVaultKeyMaterial = (value: string) => {
+export const validateVaultKeyMaterial = (value: string) => {
   const trimmed = value.trim();
   if (/^[a-fA-F0-9]+$/.test(trimmed)) {
     if (trimmed.length !== 64) {

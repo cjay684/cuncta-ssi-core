@@ -1,6 +1,6 @@
 import path from "node:path";
 import { loadConfig, assertSoftwareKeysAllowed } from "./core/config.js";
-import { createFileVault } from "./core/vault/fileVault.js";
+import { createFileVault, resolveVaultKey } from "./core/vault/fileVault.js";
 import { getCredential } from "./core/vault/records.js";
 import { createGatewayClient } from "./core/gateway/client.js";
 import { buildKbJwtBinding, buildVerifyRequest } from "./core/presentation/index.js";
@@ -42,9 +42,10 @@ const parseDisclosureSelection = (
 const main = async () => {
   const config = loadConfig();
   assertSoftwareKeysAllowed(config);
+  const vaultKey = await resolveVaultKey(config);
   const vault = createFileVault({
     baseDir: path.resolve(process.cwd(), "apps", "mobile-wallet"),
-    keyMaterial: config.WALLET_VAULT_KEY
+    keyMaterial: vaultKey
   });
   await vault.init();
 

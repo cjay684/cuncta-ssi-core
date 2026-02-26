@@ -3,6 +3,7 @@ import path from "node:path";
 import { rm } from "node:fs/promises";
 import { loadConfig } from "../core/config.js";
 import { createFileVault } from "../core/vault/fileVault.js";
+import { resolveVaultKey } from "../core/vault/fileVault.js";
 import { addCredential } from "../core/vault/records.js";
 import {
   buildKbJwtBinding,
@@ -40,7 +41,8 @@ await run("credential stored encrypted", async () => {
   process.env.WALLET_VAULT_KEY = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
   const config = loadConfig();
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test-2");
-  const vault = createFileVault({ baseDir, keyMaterial: config.WALLET_VAULT_KEY });
+  const keyMaterial = await resolveVaultKey(config);
+  const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   await addCredential(vault, {
     sdJwt: "sdjwt.test.credential",
@@ -61,7 +63,8 @@ await run("kbjwt binding contains expected claims", async () => {
   process.env.WALLET_VAULT_KEY = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
   const config = loadConfig();
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test-3");
-  const vault = createFileVault({ baseDir, keyMaterial: config.WALLET_VAULT_KEY });
+  const keyMaterial = await resolveVaultKey(config);
+  const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   const keyManager = createSoftwareKeyManager({ config, vault });
   const holderKeyRef = await keyManager.generateHolderKeypair();
@@ -92,7 +95,8 @@ await run("kbjwt signature verifies with embedded jwk", async () => {
   process.env.WALLET_VAULT_KEY = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
   const config = loadConfig();
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test-4");
-  const vault = createFileVault({ baseDir, keyMaterial: config.WALLET_VAULT_KEY });
+  const keyMaterial = await resolveVaultKey(config);
+  const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   const keyManager = createSoftwareKeyManager({ config, vault });
   const holderKeyRef = await keyManager.generateHolderKeypair();
@@ -137,7 +141,8 @@ await run("kbjwt sd_hash matches presentation hash", async () => {
   process.env.WALLET_VAULT_KEY = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
   const config = loadConfig();
   const baseDir = path.resolve(process.cwd(), "apps", "mobile-wallet", ".tmp-test-5");
-  const vault = createFileVault({ baseDir, keyMaterial: config.WALLET_VAULT_KEY });
+  const keyMaterial = await resolveVaultKey(config);
+  const vault = createFileVault({ baseDir, keyMaterial });
   await vault.init();
   const keyManager = createSoftwareKeyManager({ config, vault });
   const holderKeyRef = await keyManager.generateHolderKeypair();
