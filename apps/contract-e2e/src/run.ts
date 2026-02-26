@@ -3,7 +3,21 @@ import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { presentSdJwtVc } from "@cuncta/sdjwt";
 import { SignJWT, importJWK } from "jose";
-import { base58btc } from "multiformats/bases/base58";
+
+const createIssuerAdminToken = async () => {
+  const secret = process.env.SERVICE_JWT_SECRET_ISSUER ?? process.env.SERVICE_JWT_SECRET;
+  const audience = process.env.SERVICE_JWT_AUDIENCE_ISSUER ?? "cuncta.service.issuer";
+  if (!secret || secret.length < 32) {
+    throw new Error("SERVICE_JWT_SECRET_ISSUER or SERVICE_JWT_SECRET required for issuer admin");
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ scope: ["issuer:internal_issue"] })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + 120)
+    .setAudience(audience)
+    .sign(new TextEncoder().encode(secret));
+};
 import { getPublicKey, hashes, sign } from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
 
@@ -16,9 +30,11 @@ dotenv.config({ path: path.join(repoRoot, ".env") });
 
 const REQUIRED_ENV = [
   "APP_GATEWAY_BASE_URL",
+  "ISSUER_SERVICE_BASE_URL",
   "HEDERA_NETWORK",
   "RUN_TESTNET_INTEGRATION",
-  "CONTRACT_E2E_ADMIN_TOKEN"
+  "CONTRACT_E2E_ADMIN_TOKEN",
+  "SERVICE_JWT_SECRET"
 ];
 const missing = REQUIRED_ENV.filter(
   (name) => !process.env[name] || String(process.env[name]).trim().length === 0
@@ -34,10 +50,11 @@ if (process.env.HEDERA_NETWORK !== "testnet") {
 }
 
 const APP_GATEWAY_BASE_URL = process.env.APP_GATEWAY_BASE_URL!;
+const ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL!;
 const ACTION = process.env.CONTRACT_ACTION ?? "marketplace.list_item";
 const DEFAULT_VCT = process.env.CONTRACT_VCT ?? "cuncta.marketplace.seller_good_standing";
 const DEVICE_ID = process.env.CONTRACT_DEVICE_ID ?? "contract-e2e-device";
-const ONBOARDING_MODE = process.env.CONTRACT_ONBOARDING_MODE ?? "sponsored";
+const ONBOARDING_MODE = process.env.CONTRACT_ONBOARDING_MODE ?? "self-funded";
 const ADMIN_TOKEN = process.env.CONTRACT_E2E_ADMIN_TOKEN!;
 const HTTP_TIMEOUT_MS = Number(process.env.CONTRACT_HTTP_TIMEOUT_MS ?? 15000);
 const HTTP_RETRY_MAX = Number(process.env.CONTRACT_HTTP_RETRY_MAX ?? 2);
@@ -46,6 +63,27 @@ const REVOKE_WAIT_MAX_MS = Number(process.env.CONTRACT_REVOKE_WAIT_MAX_MS ?? 180
 const REVOKE_POLL_INTERVAL_MS = Number(process.env.CONTRACT_REVOKE_POLL_INTERVAL_MS ?? 5000);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitFor = async <T>(
+  label: string,
+  conditionFn: () => Promise<{ done: boolean; value?: T; lastResponse?: unknown }>,
+  opts: { timeoutMs: number; intervalMs: number }
+): Promise<T> => {
+  const started = Date.now();
+  let last: { done: boolean; value?: T; lastResponse?: unknown } = { done: false };
+  while (Date.now() - started < opts.timeoutMs) {
+    last = await conditionFn();
+    if (last.done) return last.value as T;
+    await sleep(Math.min(opts.intervalMs, opts.timeoutMs - (Date.now() - started)));
+  }
+  const diagnostic = {
+    label,
+    elapsedMs: Date.now() - started,
+    timeoutMs: opts.timeoutMs,
+    lastResponse: last.lastResponse ?? "no_response"
+  };
+  throw new Error(`waitFor_timeout: ${JSON.stringify(diagnostic)}`);
+};
 
 const toBase64Url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 const fromBase64Url = (value: string) => new Uint8Array(Buffer.from(value, "base64url"));
@@ -188,36 +226,29 @@ const parseHolderKeysFromEnv = async () => {
   return { did, jwk: parsed, publicJwk, cryptoKey, publicKey };
 };
 
-const createDidViaGateway = async (input: {
-  publicKeyMultibase: string;
-  privateKey: Uint8Array;
+const issueCredentialViaIssuer = async (input: {
+  subjectDid: string;
+  vct: string;
+  claims: Record<string, unknown>;
 }) => {
-  const requestPayload = await postJson<{
-    state: string;
-    signingRequest: {
-      publicKeyMultibase: string;
-      payloadToSignB64u: string;
-    };
-  }>("/v1/onboard/did/create/request", {
-    network: "testnet",
-    publicKeyMultibase: input.publicKeyMultibase,
-    options: { topicManagement: "shared", includeServiceEndpoints: true }
+  const token = await createIssuerAdminToken();
+  const response = await fetch(new URL("/v1/admin/issue", ISSUER_SERVICE_BASE_URL), {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify({
+      subjectDid: input.subjectDid,
+      vct: input.vct,
+      claims: input.claims
+    })
   });
-
-  if (requestPayload.signingRequest.publicKeyMultibase !== input.publicKeyMultibase) {
-    throw new Error("publicKeyMultibase mismatch in signing request");
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`issuer admin issue failed: ${response.status} ${text}`);
   }
-  const payloadToSign = fromBase64Url(requestPayload.signingRequest.payloadToSignB64u);
-  const signature = await sign(payloadToSign, input.privateKey);
-  const submitPayload = await postJson<{
-    did: string;
-    hedera: { topicId: string; transactionId: string };
-  }>("/v1/onboard/did/create/submit", {
-    state: requestPayload.state,
-    signatureB64u: toBase64Url(signature),
-    waitForVisibility: false
-  });
-  return submitPayload.did;
+  return (await response.json()) as { credential: string; eventId?: string; credentialFingerprint?: string };
 };
 
 const buildClaimsFromRequirements = (requirement: {
@@ -432,13 +463,14 @@ const waitForExpiry = async (expiresAt: string) => {
   if (Number.isNaN(expiryMs)) {
     throw new Error("invalid_expires_at");
   }
-  const now = Date.now();
-  const waitMs = expiryMs - now + 1000;
-  if (waitMs <= 0) return;
-  if (waitMs > NONCE_EXPIRE_WAIT_MAX_MS) {
-    throw new Error(`expiry_wait_too_long_ms:${waitMs}`);
-  }
-  await sleep(waitMs);
+  return await waitFor(
+    "nonce_expired",
+    async () => {
+      const now = Date.now();
+      return { done: now >= expiryMs, lastResponse: { now, expiryMs, expiresAt } };
+    },
+    { timeoutMs: NONCE_EXPIRE_WAIT_MAX_MS, intervalMs: 1000 }
+  );
 };
 
 const waitForRevocation = async (input: {
@@ -448,32 +480,37 @@ const waitForRevocation = async (input: {
   holderKey: CryptoKey;
   disclose: string[];
 }) => {
-  const started = Date.now();
-  while (Date.now() - started < REVOKE_WAIT_MAX_MS) {
-    const requirements = await getRequirements(input.action);
-    const presentation = await buildPresentation({
-      sdJwt: input.sdJwt,
-      disclose: input.disclose,
-      nonce: requirements.challenge.nonce,
-      audience: requirements.challenge.audience,
-      holderJwk: input.holderJwk,
-      holderKey: input.holderKey
-    });
-    const response = await verifyPresentation({
-      action: input.action,
-      presentation,
-      nonce: requirements.challenge.nonce,
-      audience: requirements.challenge.audience
-    });
-    if (response.json && typeof response.json === "object") {
-      const decision = (response.json as { decision?: string }).decision;
+  await waitFor(
+    "revocation_visible",
+    async () => {
+      const requirements = await getRequirements(input.action);
+      const presentation = await buildPresentation({
+        sdJwt: input.sdJwt,
+        disclose: input.disclose,
+        nonce: requirements.challenge.nonce,
+        audience: requirements.challenge.audience,
+        holderJwk: input.holderJwk,
+        holderKey: input.holderKey
+      });
+      const response = await verifyPresentation({
+        action: input.action,
+        presentation,
+        nonce: requirements.challenge.nonce,
+        audience: requirements.challenge.audience
+      });
+      const decision =
+        response.json && typeof response.json === "object"
+          ? (response.json as { decision?: string }).decision
+          : undefined;
       if (decision === "DENY") {
-        return;
+        return { done: true, lastResponse: response };
       }
-    }
-    await sleep(REVOKE_POLL_INTERVAL_MS);
-  }
-  throw new Error("revocation_wait_timeout");
+      // On timeout we want enough context to see if it's "still ALLOW" vs request failure.
+      const health = await fetchWithRetry(new URL("/healthz", APP_GATEWAY_BASE_URL), { method: "GET" });
+      return { done: false, lastResponse: { decision, verify: response, healthStatus: health.status } };
+    },
+    { timeoutMs: REVOKE_WAIT_MAX_MS, intervalMs: REVOKE_POLL_INTERVAL_MS }
+  );
 };
 
 const runTest = async (name: string, fn: () => Promise<void>) => {
@@ -489,21 +526,18 @@ const runTest = async (name: string, fn: () => Promise<void>) => {
 };
 
 const main = async () => {
-  if (ONBOARDING_MODE !== "sponsored" && ONBOARDING_MODE !== "self-funded") {
-    throw new Error("CONTRACT_ONBOARDING_MODE must be sponsored or self-funded");
-  }
-  if (ONBOARDING_MODE === "self-funded") {
-    const missingSelfFunded = ["HEDERA_PAYER_ACCOUNT_ID", "HEDERA_PAYER_PRIVATE_KEY"].filter(
-      (name) => !process.env[name] || String(process.env[name]).trim().length === 0
+  if (ONBOARDING_MODE === "sponsored") {
+    throw new Error(
+      "CONTRACT_ONBOARDING_MODE=sponsored is not supported. CUNCTA supports self-funded onboarding only. Set CONTRACT_ONBOARDING_MODE=self-funded."
     );
-    if (missingSelfFunded.length) {
-      throw new Error(`Missing self-funded env vars: ${missingSelfFunded.join(", ")}`);
-    }
+  }
+  if (ONBOARDING_MODE !== "self-funded") {
+    throw new Error("CONTRACT_ONBOARDING_MODE must be self-funded");
   }
   const holderFromEnv = await parseHolderKeysFromEnv();
-  if (ONBOARDING_MODE === "self-funded" && !holderFromEnv) {
+  if (!holderFromEnv) {
     throw new Error(
-      "Self-funded mode requires CONTRACT_TEST_DID and CONTRACT_TEST_HOLDER_JWK (no gateway DID creation)."
+      "Self-funded mode requires CONTRACT_TEST_DID and CONTRACT_TEST_HOLDER_JWK (pre-created DID with holder keys)."
     );
   }
   const results: boolean[] = [];
@@ -534,16 +568,10 @@ const main = async () => {
   if (!results.every(Boolean)) {
     process.exit(1);
   }
-  const generatedKeys = holderFromEnv
-    ? null
-    : await generateEd25519KeyPair(`holder-${randomUUID()}`);
-  const holderKeys = holderFromEnv ?? generatedKeys!;
-  const holderDid =
-    holderFromEnv?.did ??
-    (await createDidViaGateway({
-      publicKeyMultibase: base58btc.encode(generatedKeys!.publicKey),
-      privateKey: generatedKeys!.privateKey
-    }));
+  const holderKeys = holderFromEnv ?? (() => {
+    throw new Error("holderFromEnv required");
+  })();
+  const holderDid = holderFromEnv.did;
 
   const requirementsSeed = await getRequirements(ACTION);
   if (!requirementsSeed.requirements.length) {
@@ -556,12 +584,8 @@ const main = async () => {
   const vct = requirement.vct ?? DEFAULT_VCT;
   const claims = buildClaimsFromRequirements(requirement);
   const denyClaims = buildDenyClaimsFromRequirements(requirement);
-  const issueResult = await postJson<{
-    credential: string;
-    eventId: string;
-    credentialFingerprint: string;
-  }>("/v1/onboard/issue", { subjectDid: holderDid, vct, claims });
-  const denyIssueResult = await postJson<{ credential: string }>("/v1/onboard/issue", {
+  const issueResult = await issueCredentialViaIssuer({ subjectDid: holderDid, vct, claims });
+  const denyIssueResult = await issueCredentialViaIssuer({
     subjectDid: holderDid,
     vct,
     claims: denyClaims

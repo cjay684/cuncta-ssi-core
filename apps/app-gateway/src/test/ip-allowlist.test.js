@@ -16,9 +16,6 @@ const setupEnv = () => {
   process.env.SERVICE_JWT_AUDIENCE = "cuncta-internal";
   process.env.PSEUDONYMIZER_PEPPER = "pepper-test-123456";
   process.env.USER_PAYS_HANDOFF_SECRET = "user-pays-handoff-secret-12345678901234567890";
-  process.env.SPONSOR_MAX_DID_CREATES_PER_DAY = "1000";
-  process.env.SPONSOR_MAX_ISSUES_PER_DAY = "1000";
-  process.env.SPONSOR_KILL_SWITCH = "false";
   process.env.CONTRACT_E2E_ENABLED = "true";
   process.env.CONTRACT_E2E_ADMIN_TOKEN = "contract-e2e-admin-token";
 };
