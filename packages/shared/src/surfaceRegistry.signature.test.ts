@@ -80,11 +80,16 @@ const run = async () => {
 
   {
     const { bundle, publicKeyEnv } = makeSignedBundle(registry);
+    const tamperedSignature = (() => {
+      const first = bundle.signature.signature[0] ?? "A";
+      const replacement = first === "A" ? "B" : "A";
+      return `${replacement}${bundle.signature.signature.slice(1)}`;
+    })();
     const invalidSig = {
       ...bundle,
       signature: {
         ...bundle.signature,
-        signature: bundle.signature.signature.slice(0, -1) + (bundle.signature.signature.endsWith("A") ? "B" : "A")
+        signature: tamperedSignature
       }
     };
     await assert.rejects(
