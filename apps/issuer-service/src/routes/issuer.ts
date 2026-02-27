@@ -14,9 +14,10 @@ import {
   getOid4vciTokenJwks
 } from "../oid4vci/tokenSigning.js";
 import { verifyOid4vciProofJwtEdDSA } from "../oid4vci/proofJwt.js";
-import { issueDiBbsCredential } from "@cuncta/di-bbs";
-import { getIssuerDiBbsKeyPair } from "../diBbs/keyPair.js";
-import { getZkStatementsForCredentialConfig, listIssuableCredentialConfigs } from "@cuncta/zk-registry";
+import {
+  getZkStatementsForCredentialConfig,
+  listIssuableCredentialConfigs
+} from "@cuncta/zk-registry";
 import { getDb } from "../db.js";
 import { verifyAuraRuleIntegrity } from "../aura/auraIntegrity.js";
 import { parseRuleLogic, ruleAppliesToDomain } from "../aura/ruleContract.js";
@@ -102,7 +103,10 @@ const parseTokenBody = (body: unknown) => {
   return {};
 };
 
-export const buildOid4vciIssuerMetadata = async (input: { issuerBaseUrl: string; allowExperimentalZk: boolean }) => {
+export const buildOid4vciIssuerMetadata = async (input: {
+  issuerBaseUrl: string;
+  allowExperimentalZk: boolean;
+}) => {
   const issuerBaseUrl = input.issuerBaseUrl.replace(/\/$/, "");
   const credentialConfigurationsSupported: Record<string, unknown> = {};
   let issuer_bbs_public_key_b64u: string | undefined = undefined;
@@ -113,11 +117,17 @@ export const buildOid4vciIssuerMetadata = async (input: { issuerBaseUrl: string;
     const db = await getDb();
     const rules = await db("aura_rules").where({ enabled: true });
     const vcts = Array.from(
-      new Set((rules as Array<Record<string, unknown>>).map((r) => String(r.output_vct ?? "").trim()).filter(Boolean))
+      new Set(
+        (rules as Array<Record<string, unknown>>)
+          .map((r) => String(r.output_vct ?? "").trim())
+          .filter(Boolean)
+      )
     );
     const purposeLimitsByVct = new Map<string, Record<string, unknown>>();
     if (vcts.length) {
-      const ctRows = await db("credential_types").whereIn("vct", vcts).select("vct", "purpose_limits");
+      const ctRows = await db("credential_types")
+        .whereIn("vct", vcts)
+        .select("vct", "purpose_limits");
       for (const row of ctRows as Array<{ vct: string; purpose_limits?: unknown }>) {
         const raw = row.purpose_limits;
         if (!raw) continue;
@@ -217,7 +227,9 @@ export const buildOid4vciIssuerMetadata = async (input: { issuerBaseUrl: string;
 export const registerIssuerRoutes = (app: FastifyInstance) => {
   // Internal helper: one-time offer challenges for Aura capability offers (used by gateway).
   app.post("/v1/internal/oid4vci/offer-challenge", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_offer_challenge"] });
+    await requireServiceAuth(request, reply, {
+      requiredScopes: ["issuer:oid4vci_offer_challenge"]
+    });
     if (reply.sent) return;
     const created = await createOfferChallenge();
     return reply.send({
@@ -518,9 +530,10 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
         // Validate the scope against the current enabled rule contract (fail closed).
         const resolved = resolveCredentialConfig(vct);
         const db = await getDb();
-        const enabledRules = (await db("aura_rules").where({ enabled: true, output_vct: resolved.vct })) as Array<
-          Record<string, unknown>
-        >;
+        const enabledRules = (await db("aura_rules").where({
+          enabled: true,
+          output_vct: resolved.vct
+        })) as Array<Record<string, unknown>>;
         const matched = enabledRules.filter((r) =>
           ruleAppliesToDomain(String(r.domain ?? ""), derivedDomain)
         );
@@ -562,9 +575,9 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
         try {
           // Not verified here; issuer just minted it.
           const parts = accessToken.split(".");
-          const payload = JSON.parse(Buffer.from(parts[1] ?? "", "base64url").toString("utf8")) as
-            | Record<string, unknown>
-            | null;
+          const payload = JSON.parse(
+            Buffer.from(parts[1] ?? "", "base64url").toString("utf8")
+          ) as Record<string, unknown> | null;
           return payload ?? {};
         } catch {
           return {};
@@ -802,7 +815,8 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
                 : "";
             const db = await getDb();
             const ctRow = await db("credential_types").where({ vct: resolved.vct }).first();
-            const purposeLimitsRaw = (ctRow as { purpose_limits?: unknown } | undefined)?.purpose_limits;
+            const purposeLimitsRaw = (ctRow as { purpose_limits?: unknown } | undefined)
+              ?.purpose_limits;
             let purposeLimits: Record<string, unknown> | null = null;
             if (typeof purposeLimitsRaw === "string") {
               try {
@@ -861,7 +875,9 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
               new Set(issuable.flatMap((s) => s.definition.issuer_contract.required_claims))
             );
             const allowedSchemesList = issuable
-              .map((s) => s.definition.credential_requirements.commitment_scheme_versions_allowed ?? [])
+              .map(
+                (s) => s.definition.credential_requirements.commitment_scheme_versions_allowed ?? []
+              )
               .filter((v) => v.length > 0);
             const allowedSchemes =
               allowedSchemesList.length === 0
@@ -887,7 +903,8 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
               }
             }
             if (allowedSchemes) {
-              const scheme = typeof c.commitment_scheme_version === "string" ? c.commitment_scheme_version : "";
+              const scheme =
+                typeof c.commitment_scheme_version === "string" ? c.commitment_scheme_version : "";
               if (!scheme) {
                 return reply.code(400).send(
                   makeErrorResponse("invalid_request", "Missing commitment_scheme_version", {

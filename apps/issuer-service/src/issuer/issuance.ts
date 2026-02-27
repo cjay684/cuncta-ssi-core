@@ -391,7 +391,8 @@ export const issueDiBbsCredentialWithStatus = async (input: {
       subjectClaims: input.claims,
       keyPair
     });
-    (vc as any).status = {
+    const vcWithStatus = vc as Record<string, unknown> & { status?: Record<string, unknown> };
+    vcWithStatus.status = {
       ...credentialStatus,
       status_list: { uri: credentialStatus.statusListCredential, idx: nextIndex },
       cuncta_bitstring: credentialStatus
