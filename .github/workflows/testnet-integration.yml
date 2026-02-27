@@ -10,22 +10,36 @@ permissions:
 
 jobs:
   testnet:
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
+    environment: testnet
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cuncta
+          POSTGRES_PASSWORD: cuncta
+          POSTGRES_DB: cuncta_ssi
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U cuncta -d cuncta_ssi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       HEDERA_NETWORK: testnet
       HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
       HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
-      HEDERA_PAYER_ACCOUNT_ID: ${{ secrets.HEDERA_PAYER_ACCOUNT_ID }}
-      HEDERA_PAYER_PRIVATE_KEY: ${{ secrets.HEDERA_PAYER_PRIVATE_KEY }}
+      TESTNET_PAYER_ACCOUNT_ID: ${{ secrets.TESTNET_PAYER_ACCOUNT_ID || secrets.HEDERA_PAYER_ACCOUNT_ID }}
+      TESTNET_PAYER_PRIVATE_KEY: ${{ secrets.TESTNET_PAYER_PRIVATE_KEY || secrets.HEDERA_PAYER_PRIVATE_KEY }}
+      HEDERA_PAYER_ACCOUNT_ID: ${{ secrets.TESTNET_PAYER_ACCOUNT_ID || secrets.HEDERA_PAYER_ACCOUNT_ID }}
+      HEDERA_PAYER_PRIVATE_KEY: ${{ secrets.TESTNET_PAYER_PRIVATE_KEY || secrets.HEDERA_PAYER_PRIVATE_KEY }}
       SERVICE_JWT_SECRET: ${{ secrets.SERVICE_JWT_SECRET }}
       PSEUDONYMIZER_PEPPER: ${{ secrets.PSEUDONYMIZER_PEPPER }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
-      ISSUER_SERVICE_BASE_URL: ${{ secrets.ISSUER_SERVICE_BASE_URL }}
-      VERIFIER_SERVICE_BASE_URL: ${{ secrets.VERIFIER_SERVICE_BASE_URL }}
-      POLICY_SERVICE_BASE_URL: ${{ secrets.POLICY_SERVICE_BASE_URL }}
-      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
-      ISSUER_BASE_URL: ${{ secrets.ISSUER_BASE_URL }}
+      DATABASE_URL: postgres://cuncta:cuncta@localhost:5432/cuncta_ssi
+      DYNAMIC_PORTS: "1"
+      USER_PAYS_MODE: "1"
+      HEDERA_MIRROR_URL: ${{ secrets.HEDERA_MIRROR_URL }}
       RUN_TESTNET_INTEGRATION: "1"
     steps:
       - name: Checkout
@@ -44,6 +58,20 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Set mirror URL default (allow secret override)
+        run: |
+          echo "HEDERA_MIRROR_URL=${HEDERA_MIRROR_URL:-https://testnet.mirrornode.hedera.com}" >> $GITHUB_ENV
+          echo "Mirror URL: ${HEDERA_MIRROR_URL:-https://testnet.mirrornode.hedera.com}"
+
+      - name: Prebuild workspace for DB wait helper
+        run: pnpm -r build
+
+      - name: Wait for Postgres
+        run: node scripts/ci/wait-for-postgres.mjs
+
+      - name: Testnet preflight
+        run: node scripts/ci/testnet-preflight.mjs
 
       - name: Verify (direct)
         run: pnpm verify:testnet
