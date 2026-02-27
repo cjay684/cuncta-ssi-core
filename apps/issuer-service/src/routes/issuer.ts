@@ -226,179 +226,212 @@ export const buildOid4vciIssuerMetadata = async (input: {
 
 export const registerIssuerRoutes = (app: FastifyInstance) => {
   // Internal helper: one-time offer challenges for Aura capability offers (used by gateway).
-  app.post("/v1/internal/oid4vci/offer-challenge", async (request, reply) => {
-    await requireServiceAuth(request, reply, {
-      requiredScopes: ["issuer:oid4vci_offer_challenge"]
-    });
-    if (reply.sent) return;
-    const created = await createOfferChallenge();
-    return reply.send({
-      nonce: created.nonce,
-      audience: config.ISSUER_BASE_URL.replace(/\/$/, ""),
-      expires_at: created.expiresAt
-    });
-  });
+  app.post(
+    "/v1/internal/oid4vci/offer-challenge",
+    {
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      await requireServiceAuth(request, reply, {
+        requiredScopes: ["issuer:oid4vci_offer_challenge"]
+      });
+      if (reply.sent) return;
+      const created = await createOfferChallenge();
+      return reply.send({
+        nonce: created.nonce,
+        audience: config.ISSUER_BASE_URL.replace(/\/$/, ""),
+        expires_at: created.expiresAt
+      });
+    }
+  );
 
   // Internal helper: mint a preauth-based credential offer for an Aura capability VC, if eligible.
-  app.post("/v1/internal/oid4vci/preauth/aura", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
-    if (reply.sent) return;
-    const body = z
-      .object({
-        credential_configuration_id: z.string().min(3),
-        domain: z.string().min(1).max(200),
-        space_id: z.string().uuid().optional(),
-        subjectDid: z.string().min(3),
-        offer_nonce: z.string().min(10),
-        proof_jwt: z.string().min(10)
-      })
-      .parse(request.body ?? {});
-
-    // Consume the offer challenge (one-time); prevents the offer endpoint being an eligibility oracle.
-    try {
-      await consumeOfferChallenge({ nonce: body.offer_nonce });
-    } catch {
-      return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Invalid offer nonce", {
-          devMode: config.DEV_MODE
+  app.post(
+    "/v1/internal/oid4vci/preauth/aura",
+    {
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
+      if (reply.sent) return;
+      const body = z
+        .object({
+          credential_configuration_id: z.string().min(3),
+          domain: z.string().min(1).max(200),
+          space_id: z.string().uuid().optional(),
+          subjectDid: z.string().min(3),
+          offer_nonce: z.string().min(10),
+          proof_jwt: z.string().min(10)
         })
-      );
-    }
+        .parse(request.body ?? {});
 
-    // Holder-authenticate the offer request (no PII persisted).
-    try {
-      await verifyOid4vciProofJwtEdDSA({
-        proofJwt: body.proof_jwt,
-        expectedAudience: config.ISSUER_BASE_URL.replace(/\/$/, ""),
-        expectedNonce: body.offer_nonce,
-        expectedSubjectDid: body.subjectDid
+      // Consume the offer challenge (one-time); prevents the offer endpoint being an eligibility oracle.
+      try {
+        await consumeOfferChallenge({ nonce: body.offer_nonce });
+      } catch {
+        return reply.code(400).send(
+          makeErrorResponse("invalid_request", "Invalid offer nonce", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+
+      // Holder-authenticate the offer request (no PII persisted).
+      try {
+        await verifyOid4vciProofJwtEdDSA({
+          proofJwt: body.proof_jwt,
+          expectedAudience: config.ISSUER_BASE_URL.replace(/\/$/, ""),
+          expectedNonce: body.offer_nonce,
+          expectedSubjectDid: body.subjectDid
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "proof_invalid";
+        return reply.code(401).send(
+          makeErrorResponse("invalid_request", "Proof invalid", {
+            details: config.DEV_MODE ? message : undefined,
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+
+      const configId = body.credential_configuration_id;
+      if (!configId.startsWith("aura:")) {
+        return reply.code(400).send(
+          makeErrorResponse("invalid_request", "Invalid Aura configuration id", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+      const resolved = resolveCredentialConfig(configId);
+      // Strict scope validation (wallet-first / portable): keep scope_json minimal and exact.
+      // - marketplace/social: { domain: "marketplace"|"social" }
+      // - space:*: { space_id: "<uuid>" } -> derived domain "space:<uuid>"
+      let requestedDomain = "";
+      try {
+        requestedDomain = (() => {
+          if (body.space_id) {
+            const expected = `space:${body.space_id}`;
+            if (body.domain !== expected) {
+              throw new Error("space_id_domain_mismatch");
+            }
+            return expected;
+          }
+          if (body.domain !== "marketplace" && body.domain !== "social") {
+            throw new Error("domain_invalid");
+          }
+          return body.domain;
+        })();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "domain_invalid";
+        return reply.code(400).send(
+          makeErrorResponse("invalid_request", "Invalid capability scope", {
+            details: config.DEV_MODE ? message : undefined,
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+
+      const hashes = getDidHashes(body.subjectDid);
+      const privacy = await getPrivacyStatus(hashes);
+      if (privacy.tombstoned || privacy.restricted) {
+        return reply.code(403).send(
+          makeErrorResponse("invalid_request", "Restricted subject", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+      const lookup = getLookupHashes(hashes);
+
+      // Eligibility check uses current aura_state + scoped rule thresholds.
+      const eligibility = await checkCapabilityEligibility({
+        subjectLookupHashes: lookup,
+        domain: requestedDomain,
+        outputVct: resolved.vct
+      }).catch(() => ({ eligible: false as const, reason: "aura_not_eligible" }));
+      if (!eligibility.eligible) {
+        return reply.code(404).send(
+          makeErrorResponse("aura_not_ready", "Not eligible for capability", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+
+      // Bind the offer to this scope for later /credential enforcement.
+      const created = await createPreauthCode({
+        vct: configId,
+        ttlSeconds: config.OID4VCI_PREAUTH_CODE_TTL_SECONDS,
+        txCode: null,
+        // Store hash-only scope binding; wallet supplies raw scope_json at redemption time.
+        scope: body.space_id ? { space_id: body.space_id } : { domain: body.domain }
       });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "proof_invalid";
-      return reply.code(401).send(
-        makeErrorResponse("invalid_request", "Proof invalid", {
-          details: config.DEV_MODE ? message : undefined,
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-
-    const configId = body.credential_configuration_id;
-    if (!configId.startsWith("aura:")) {
-      return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Invalid Aura configuration id", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const resolved = resolveCredentialConfig(configId);
-    // Strict scope validation (wallet-first / portable): keep scope_json minimal and exact.
-    // - marketplace/social: { domain: "marketplace"|"social" }
-    // - space:*: { space_id: "<uuid>" } -> derived domain "space:<uuid>"
-    let requestedDomain = "";
-    try {
-      requestedDomain = (() => {
-        if (body.space_id) {
-          const expected = `space:${body.space_id}`;
-          if (body.domain !== expected) {
-            throw new Error("space_id_domain_mismatch");
+      return reply.send({
+        credential_offer: {
+          credential_issuer: config.ISSUER_BASE_URL,
+          credential_configuration_ids: [configId],
+          grants: {
+            "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+              "pre-authorized_code": created.preAuthorizedCode
+            }
           }
-          return expected;
-        }
-        if (body.domain !== "marketplace" && body.domain !== "social") {
-          throw new Error("domain_invalid");
-        }
-        return body.domain;
-      })();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "domain_invalid";
-      return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Invalid capability scope", {
-          details: config.DEV_MODE ? message : undefined,
-          devMode: config.DEV_MODE
-        })
-      );
+        },
+        expires_at: created.expiresAt
+      });
     }
-
-    const hashes = getDidHashes(body.subjectDid);
-    const privacy = await getPrivacyStatus(hashes);
-    if (privacy.tombstoned || privacy.restricted) {
-      return reply.code(403).send(
-        makeErrorResponse("invalid_request", "Restricted subject", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const lookup = getLookupHashes(hashes);
-
-    // Eligibility check uses current aura_state + scoped rule thresholds.
-    const eligibility = await checkCapabilityEligibility({
-      subjectLookupHashes: lookup,
-      domain: requestedDomain,
-      outputVct: resolved.vct
-    }).catch(() => ({ eligible: false as const, reason: "aura_not_eligible" }));
-    if (!eligibility.eligible) {
-      return reply.code(404).send(
-        makeErrorResponse("aura_not_ready", "Not eligible for capability", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-
-    // Bind the offer to this scope for later /credential enforcement.
-    const created = await createPreauthCode({
-      vct: configId,
-      ttlSeconds: config.OID4VCI_PREAUTH_CODE_TTL_SECONDS,
-      txCode: null,
-      // Store hash-only scope binding; wallet supplies raw scope_json at redemption time.
-      scope: body.space_id ? { space_id: body.space_id } : { domain: body.domain }
-    });
-    return reply.send({
-      credential_offer: {
-        credential_issuer: config.ISSUER_BASE_URL,
-        credential_configuration_ids: [configId],
-        grants: {
-          "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
-            "pre-authorized_code": created.preAuthorizedCode
-          }
-        }
-      },
-      expires_at: created.expiresAt
-    });
-  });
+  );
 
   // Internal helper for app-gateway to mint a credential offer (pre-authorized code).
   // This is not a public endpoint; gateway is the public surface.
-  app.post("/v1/internal/oid4vci/preauth", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
-    if (reply.sent) return;
-    const body = z
-      .object({
-        vct: z.string().min(3),
-        // For now: tx_code support is optional; if provided, it is treated as a one-time PIN.
-        tx_code: z.string().min(1).max(32).optional()
-      })
-      .parse(request.body ?? {});
-    const created = await createPreauthCode({
-      vct: body.vct,
-      ttlSeconds: config.OID4VCI_PREAUTH_CODE_TTL_SECONDS,
-      txCode: body.tx_code ?? null,
-      scope: null
-    });
-    return reply.send({
-      credential_offer: {
-        credential_issuer: config.ISSUER_BASE_URL,
-        credential_configuration_ids: [body.vct],
-        grants: {
-          "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
-            "pre-authorized_code": created.preAuthorizedCode,
-            ...(body.tx_code ? { tx_code: { length: body.tx_code.length } } : {})
-          }
+  app.post(
+    "/v1/internal/oid4vci/preauth",
+    {
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
         }
-      },
-      expires_at: created.expiresAt
-    });
-  });
+      }
+    },
+    async (request, reply) => {
+      await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
+      if (reply.sent) return;
+      const body = z
+        .object({
+          vct: z.string().min(3),
+          // For now: tx_code support is optional; if provided, it is treated as a one-time PIN.
+          tx_code: z.string().min(1).max(32).optional()
+        })
+        .parse(request.body ?? {});
+      const created = await createPreauthCode({
+        vct: body.vct,
+        ttlSeconds: config.OID4VCI_PREAUTH_CODE_TTL_SECONDS,
+        txCode: body.tx_code ?? null,
+        scope: null
+      });
+      return reply.send({
+        credential_offer: {
+          credential_issuer: config.ISSUER_BASE_URL,
+          credential_configuration_ids: [body.vct],
+          grants: {
+            "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+              "pre-authorized_code": created.preAuthorizedCode,
+              ...(body.tx_code ? { tx_code: { length: body.tx_code.length } } : {})
+            }
+          }
+        },
+        expires_at: created.expiresAt
+      });
+    }
+  );
 
   app.get("/v1/issuer", async (_request, reply) => {
     return reply.send({ issuerDid: ISSUER_DID });
@@ -979,96 +1012,118 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
     }
   );
 
-  app.post("/v1/issue", async (request, reply) => {
-    if (config.NODE_ENV === "production" && !config.DEV_MODE) {
-      return reply.code(404).send(
-        makeErrorResponse("not_found", "Route disabled", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const requestId = (request as { requestId?: string }).requestId;
-    if (hasIssuerOverride(request.body)) {
-      return reply.code(400).send(
-        makeErrorResponse("issuer_not_allowed", "Issuer override not allowed", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const body = issueRequestSchema.parse(request.body);
-    log.info("issuer.issue.request", { requestId, vct: body.vct });
-    let result;
-    try {
-      result = await issueCredentialCore({
-        subjectDid: body.subjectDid,
-        claims: body.claims,
-        vct: body.vct
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === "catalog_integrity_failed") {
-        return reply.code(503).send(
-          makeErrorResponse("catalog_integrity_failed", "Catalog integrity check failed", {
+  app.post(
+    "/v1/issue",
+    {
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      if (config.NODE_ENV === "production" && !config.DEV_MODE) {
+        return reply.code(404).send(
+          makeErrorResponse("not_found", "Route disabled", {
             devMode: config.DEV_MODE
           })
         );
       }
-      throw error;
+      const requestId = (request as { requestId?: string }).requestId;
+      if (hasIssuerOverride(request.body)) {
+        return reply.code(400).send(
+          makeErrorResponse("issuer_not_allowed", "Issuer override not allowed", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+      const body = issueRequestSchema.parse(request.body);
+      log.info("issuer.issue.request", { requestId, vct: body.vct });
+      let result;
+      try {
+        result = await issueCredentialCore({
+          subjectDid: body.subjectDid,
+          claims: body.claims,
+          vct: body.vct
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "catalog_integrity_failed") {
+          return reply.code(503).send(
+            makeErrorResponse("catalog_integrity_failed", "Catalog integrity check failed", {
+              devMode: config.DEV_MODE
+            })
+          );
+        }
+        throw error;
+      }
+      return reply.send({
+        credential: result.credential,
+        eventId: result.eventId,
+        credentialFingerprint: result.credentialFingerprint
+      });
     }
-    return reply.send({
-      credential: result.credential,
-      eventId: result.eventId,
-      credentialFingerprint: result.credentialFingerprint
-    });
-  });
+  );
 
-  app.post("/v1/admin/issue", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:internal_issue"] });
-    if (reply.sent) return;
-    const requestId = (request as { requestId?: string }).requestId;
-    if (hasIssuerOverride(request.body)) {
-      return reply.code(400).send(
-        makeErrorResponse("issuer_not_allowed", "Issuer override not allowed", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const body = issueRequestSchema.parse(request.body);
-    if (!config.ISSUER_INTERNAL_ALLOWED_VCTS.length) {
-      return reply.code(403).send(
-        makeErrorResponse("invalid_request", "Issuer allowlist not configured", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    if (!config.ISSUER_INTERNAL_ALLOWED_VCTS.includes(body.vct)) {
-      return reply.code(403).send(
-        makeErrorResponse("invalid_request", "VCT not allowed", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    log.info("issuer.internal.issue.request", { requestId, vct: body.vct });
-    let result;
-    try {
-      result = await issueCredentialCore({
-        subjectDid: body.subjectDid,
-        claims: body.claims,
-        vct: body.vct
-      });
-    } catch (error) {
-      if (error instanceof Error && error.message === "catalog_integrity_failed") {
-        return reply.code(503).send(
-          makeErrorResponse("catalog_integrity_failed", "Catalog integrity check failed", {
+  app.post(
+    "/v1/admin/issue",
+    {
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
+    },
+    async (request, reply) => {
+      await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:internal_issue"] });
+      if (reply.sent) return;
+      const requestId = (request as { requestId?: string }).requestId;
+      if (hasIssuerOverride(request.body)) {
+        return reply.code(400).send(
+          makeErrorResponse("issuer_not_allowed", "Issuer override not allowed", {
             devMode: config.DEV_MODE
           })
         );
       }
-      throw error;
+      const body = issueRequestSchema.parse(request.body);
+      if (!config.ISSUER_INTERNAL_ALLOWED_VCTS.length) {
+        return reply.code(403).send(
+          makeErrorResponse("invalid_request", "Issuer allowlist not configured", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+      if (!config.ISSUER_INTERNAL_ALLOWED_VCTS.includes(body.vct)) {
+        return reply.code(403).send(
+          makeErrorResponse("invalid_request", "VCT not allowed", {
+            devMode: config.DEV_MODE
+          })
+        );
+      }
+      log.info("issuer.internal.issue.request", { requestId, vct: body.vct });
+      let result;
+      try {
+        result = await issueCredentialCore({
+          subjectDid: body.subjectDid,
+          claims: body.claims,
+          vct: body.vct
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message === "catalog_integrity_failed") {
+          return reply.code(503).send(
+            makeErrorResponse("catalog_integrity_failed", "Catalog integrity check failed", {
+              devMode: config.DEV_MODE
+            })
+          );
+        }
+        throw error;
+      }
+      return reply.send({
+        credential: result.credential,
+        eventId: result.eventId,
+        credentialFingerprint: result.credentialFingerprint
+      });
     }
-    return reply.send({
-      credential: result.credential,
-      eventId: result.eventId,
-      credentialFingerprint: result.credentialFingerprint
-    });
-  });
+  );
 };
