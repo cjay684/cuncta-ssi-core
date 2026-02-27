@@ -42,7 +42,6 @@ run().catch((error) => {
   }
   console.error(msg);
   // Also log the raw object for debugging; some thrown objects are non-enumerable.
-  // eslint-disable-next-line no-console
   console.error(error);
   process.exit(1);
 });

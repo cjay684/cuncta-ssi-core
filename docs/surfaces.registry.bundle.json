@@ -401,7 +401,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:oid4vci_preauth"]
+              "requiredScopes": [
+                "issuer:oid4vci_preauth"
+              ]
             },
             "method": "POST",
             "path": "/v1/internal/oid4vci/*",
@@ -415,7 +417,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:oid4vci_offer_challenge"]
+              "requiredScopes": [
+                "issuer:oid4vci_offer_challenge"
+              ]
             },
             "method": "POST",
             "path": "/v1/internal/oid4vci/offer-challenge",
@@ -427,7 +431,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:oid4vci_preauth"]
+              "requiredScopes": [
+                "issuer:oid4vci_preauth"
+              ]
             },
             "method": "POST",
             "path": "/v1/internal/oid4vci/preauth/aura",
@@ -445,7 +451,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:aura_claim"]
+              "requiredScopes": [
+                "issuer:aura_claim"
+              ]
             },
             "method": "POST",
             "path": "/v1/aura/claim",
@@ -457,7 +465,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:aura_explain"]
+              "requiredScopes": [
+                "issuer:aura_explain"
+              ]
             },
             "method": "GET",
             "path": "/v1/aura/explain",
@@ -468,7 +478,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:credentials_revoke"]
+              "requiredScopes": [
+                "issuer:credentials_revoke"
+              ]
             },
             "method": "POST",
             "path": "/v1/credentials/revoke",
@@ -480,7 +492,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:revoke"]
+              "requiredScopes": [
+                "issuer:revoke"
+              ]
             },
             "method": "POST",
             "path": "/v1/revoke",
@@ -492,7 +506,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:internal_issue"]
+              "requiredScopes": [
+                "issuer:internal_issue"
+              ]
             },
             "method": "POST",
             "path": "/v1/issue",
@@ -504,7 +520,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:reputation_events"]
+              "requiredScopes": [
+                "issuer:reputation_events"
+              ]
             },
             "method": "POST",
             "path": "/v1/reputation/events",
@@ -516,7 +534,9 @@
           },
           {
             "auth": {
-              "requiredScopes": ["issuer:reputation_recompute"]
+              "requiredScopes": [
+                "issuer:reputation_recompute"
+              ]
             },
             "method": "POST",
             "path": "/v1/reputation/recompute/:did",
@@ -528,7 +548,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:internal_issue"]
+              "requireAdminScope": [
+                "issuer:internal_issue"
+              ]
             },
             "method": "POST",
             "path": "/v1/admin/issue",
@@ -540,7 +562,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:key_rotate"]
+              "requireAdminScope": [
+                "issuer:key_rotate"
+              ]
             },
             "method": "POST",
             "path": "/v1/admin/keys/rotate",
@@ -552,7 +576,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:key_revoke"]
+              "requireAdminScope": [
+                "issuer:key_revoke"
+              ]
             },
             "method": "POST",
             "path": "/v1/admin/keys/revoke",
@@ -564,7 +590,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:anchor_reconcile"]
+              "requireAdminScope": [
+                "issuer:anchor_reconcile"
+              ]
             },
             "method": "POST",
             "path": "/v1/admin/anchors/reconcile",
@@ -576,7 +604,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:privacy_status"]
+              "requireAdminScope": [
+                "issuer:privacy_status"
+              ]
             },
             "method": "GET",
             "path": "/v1/admin/privacy/status",
@@ -587,7 +617,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:aura_explain"]
+              "requireAdminScope": [
+                "issuer:aura_explain"
+              ]
             },
             "method": "GET",
             "path": "/v1/admin/aura/explain",
@@ -598,7 +630,9 @@
           },
           {
             "auth": {
-              "requireAdminScope": ["issuer:aura_reset"]
+              "requireAdminScope": [
+                "issuer:aura_reset"
+              ]
             },
             "method": "POST",
             "path": "/v1/admin/aura/reset",
