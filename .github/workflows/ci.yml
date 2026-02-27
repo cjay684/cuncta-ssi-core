@@ -106,7 +106,6 @@ jobs:
         run: node scripts/ci/wait-for-postgres.mjs
 
       - name: Unit tests (coverage)
-        continue-on-error: true
         run: pnpm test:unit:coverage
 
       - name: Upload coverage artifact
