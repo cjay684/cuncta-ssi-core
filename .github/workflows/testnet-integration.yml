@@ -38,7 +38,6 @@ jobs:
       PSEUDONYMIZER_PEPPER: ${{ secrets.PSEUDONYMIZER_PEPPER }}
       DATABASE_URL: postgres://cuncta:cuncta@localhost:5432/cuncta_ssi
       DYNAMIC_PORTS: "1"
-      USER_PAYS_MODE: "1"
       HEDERA_MIRROR_URL: ${{ secrets.HEDERA_MIRROR_URL }}
       RUN_TESTNET_INTEGRATION: "1"
     steps:
