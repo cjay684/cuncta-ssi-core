@@ -17,6 +17,7 @@ process.env.POLICY_SIGNING_JWK =
 process.env.POLICY_SIGNING_BOOTSTRAP = "true";
 process.env.ANCHOR_AUTH_SECRET =
   process.env.ANCHOR_AUTH_SECRET ?? "test-anchor-auth-secret-please-rotate";
+process.env.ISSUER_BASE_URL = process.env.ISSUER_BASE_URL ?? "http://localhost:3002";
 
 test("AURA_BATCH anchor payload is privacy-safe (no subject hashes)", async () => {
   const { getDb } = await import("../db.js");
