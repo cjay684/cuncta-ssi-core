@@ -229,10 +229,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/v1/internal/oid4vci/offer-challenge",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       await requireServiceAuth(request, reply, {
@@ -252,10 +254,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/v1/internal/oid4vci/preauth/aura",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
@@ -390,10 +394,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/v1/internal/oid4vci/preauth",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       await requireServiceAuth(request, reply, { requiredScopes: ["issuer:oid4vci_preauth"] });
@@ -462,10 +468,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/token",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_TOKEN_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       if (!config.ISSUER_ENABLE_OID4VCI) {
@@ -633,10 +641,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/credential",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       if (!config.ISSUER_ENABLE_OID4VCI) {
@@ -1005,10 +1015,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/v1/issue",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       if (config.NODE_ENV === "production" && !config.DEV_MODE) {
@@ -1056,10 +1068,12 @@ export const registerIssuerRoutes = (app: FastifyInstance) => {
   app.post(
     "/v1/admin/issue",
     {
-      preHandler: app.rateLimit({
-        max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
-        timeWindow: "1 minute"
-      })
+      config: {
+        rateLimit: {
+          max: config.RATE_LIMIT_IP_CREDENTIAL_PER_MIN,
+          timeWindow: "1 minute"
+        }
+      }
     },
     async (request, reply) => {
       await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:internal_issue"] });
