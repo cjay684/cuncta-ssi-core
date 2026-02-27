@@ -78,7 +78,7 @@ const sponsoredGone = (reply: FastifyReply, context: GatewayContext) => {
       "sponsored_onboarding_not_supported",
       "Legacy onboarding is not supported. Use self-funded flows only.",
       {
-      devMode: context.config.DEV_MODE
+        devMode: context.config.DEV_MODE
       }
     )
   );
@@ -504,8 +504,7 @@ export const registerOnboardRoutes = (app: FastifyInstance, context: GatewayCont
       }
       const body = userPaysSubmitSchema.parse(request.body ?? {});
       const signedBytes = Buffer.from(body.signedTransactionB64u, "base64url");
-      const budget = (context.config as unknown as { USER_PAYS_FEE_BUDGETS?: any })?.USER_PAYS_FEE_BUDGETS
-        ?.TopicMessageSubmitTransaction ?? {
+      const budget = context.config.USER_PAYS_FEE_BUDGETS?.TopicMessageSubmitTransaction ?? {
         maxFeeTinybars: context.config.USER_PAYS_MAX_FEE_TINYBARS,
         maxTxBytes: context.config.USER_PAYS_MAX_TX_BYTES
       };
