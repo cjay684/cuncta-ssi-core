@@ -125,7 +125,8 @@ ${mode === "protect" ? "$out = [Dpapi]::ProtectCurrentUser($bytes)" : "$out = [D
 };
 
 const dpapiProtectBytes = (bytes: Uint8Array) => runPowerShellDpapi("protect", toBase64(bytes));
-const dpapiUnprotectBytes = (ciphertextB64: string) => fromBase64(runPowerShellDpapi("unprotect", ciphertextB64));
+const dpapiUnprotectBytes = (ciphertextB64: string) =>
+  fromBase64(runPowerShellDpapi("unprotect", ciphertextB64));
 
 const keyPath = (purpose: WalletKeyPurpose) => {
   if (purpose === "primary") return "ed25519_dpapi";
@@ -140,8 +141,12 @@ type StoredDpapiKey = {
   createdAt: string;
 };
 
+type WalletStateWithKeystore = WalletState & {
+  keystore?: Record<string, StoredDpapiKey | undefined>;
+};
+
 const readKey = (state: WalletState, purpose: WalletKeyPurpose): StoredDpapiKey | null => {
-  const bucket = ((state as unknown as { keystore?: unknown }).keystore ?? {}) as Record<string, any>;
+  const bucket = (state as WalletStateWithKeystore).keystore ?? {};
   const entry = bucket[keyPath(purpose)];
   if (!entry || typeof entry !== "object") return null;
   const cipher = String(entry.privateKeyDpapiB64 ?? "");
@@ -157,8 +162,8 @@ const readKey = (state: WalletState, purpose: WalletKeyPurpose): StoredDpapiKey 
 };
 
 const writeKey = (state: WalletState, purpose: WalletKeyPurpose, material: StoredDpapiKey) => {
-  const root = state as unknown as { keystore?: Record<string, any> };
-  const bucket = (root.keystore ?? {}) as Record<string, any>;
+  const root = state as WalletStateWithKeystore;
+  const bucket = root.keystore ?? {};
   bucket[keyPath(purpose)] = material;
   root.keystore = bucket;
 };
@@ -168,7 +173,10 @@ export const createWindowsDpapiKeyStore = (input: {
   filename?: string;
 }): WalletKeyStore => {
   requireWindows();
-  const store = new WalletStore({ walletDir: input.walletDir, filename: input.filename ?? "wallet-state.json" });
+  const store = new WalletStore({
+    walletDir: input.walletDir,
+    filename: input.filename ?? "wallet-state.json"
+  });
 
   const generate = async (purpose: WalletKeyPurpose) => {
     const privateKey = new Uint8Array(randomBytes(32));
@@ -246,12 +254,11 @@ export const createWindowsDpapiKeyStore = (input: {
     },
     async deleteKey(purpose) {
       const state = await store.load();
-      const root = state as unknown as { keystore?: Record<string, any> };
-      const bucket = (root.keystore ?? {}) as Record<string, any>;
+      const root = state as WalletStateWithKeystore;
+      const bucket = root.keystore ?? {};
       delete bucket[keyPath(purpose)];
       root.keystore = bucket;
       await store.save(state);
     }
   };
 };
-
