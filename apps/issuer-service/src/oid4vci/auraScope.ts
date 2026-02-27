@@ -89,4 +89,3 @@ export const validateAuraScopeAgainstRuleDomainPattern = (input: {
     throw new Error("scope_domain_mismatch");
   }
 };
-

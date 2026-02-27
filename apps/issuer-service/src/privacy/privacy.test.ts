@@ -263,8 +263,12 @@ const run = async () => {
   assert.equal(signalRow, undefined);
   const issuanceRow = await db("issuance_events").where({ event_id: "evt_dsr_1" }).first();
   assert.equal(issuanceRow?.subject_did_hash ?? null, null);
-  const auditPrimary = await db("command_center_audit_events").where({ subject_hash: didHash }).first();
-  const auditLegacy = await db("command_center_audit_events").where({ subject_hash: legacyHash }).first();
+  const auditPrimary = await db("command_center_audit_events")
+    .where({ subject_hash: didHash })
+    .first();
+  const auditLegacy = await db("command_center_audit_events")
+    .where({ subject_hash: legacyHash })
+    .first();
   const auditUnrelated = await db("command_center_audit_events")
     .where({ subject_hash: "unrelated_subject_hash" })
     .first();

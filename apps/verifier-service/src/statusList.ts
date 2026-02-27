@@ -223,7 +223,8 @@ export const verifyStatusListEntry = async (status: Record<string, unknown>) => 
   const from = (value: unknown): { listCredential?: string; index?: string } => {
     if (!value || typeof value !== "object") return {};
     const v = value as Record<string, unknown>;
-    const listCredential = typeof v.statusListCredential === "string" ? v.statusListCredential : undefined;
+    const listCredential =
+      typeof v.statusListCredential === "string" ? v.statusListCredential : undefined;
     const index =
       typeof v.statusListIndex === "string"
         ? v.statusListIndex
@@ -249,7 +250,8 @@ export const verifyStatusListEntry = async (status: Record<string, unknown>) => 
     return { listCredential, index };
   })();
 
-  const listCredential = direct.listCredential ?? namespaced.listCredential ?? tokenStyle.listCredential;
+  const listCredential =
+    direct.listCredential ?? namespaced.listCredential ?? tokenStyle.listCredential;
   const index = direct.index ?? namespaced.index ?? tokenStyle.index;
   if (!listCredential || !index) {
     return { valid: false, reason: "missing_status_fields" };

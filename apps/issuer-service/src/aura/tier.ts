@@ -3,14 +3,19 @@ type TierDef = { name: string; min_score: number };
 const parseNumber = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-const normalizeTierName = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const normalizeTierName = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase();
 
 export const deriveTierDefs = (ruleLogic: Record<string, unknown>): TierDef[] => {
   const score = (ruleLogic.score as Record<string, unknown>) ?? {};
   const raw = (score.tiers as unknown) ?? null;
   if (Array.isArray(raw)) {
     const parsed = raw
-      .map((entry) => (entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null))
+      .map((entry) =>
+        entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null
+      )
       .filter(Boolean)
       .map((entry) => ({
         name: normalizeTierName(entry!.name),
@@ -80,4 +85,3 @@ export const clampTierByDiversity = (input: {
   }
   return Math.max(0, Math.min(maxAllowed, input.tiers.length - 1));
 };
-

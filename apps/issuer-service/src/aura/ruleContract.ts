@@ -57,4 +57,3 @@ export const ruleAppliesToDomain = (ruleDomain: string, domain: string) => {
   }
   return false;
 };
-

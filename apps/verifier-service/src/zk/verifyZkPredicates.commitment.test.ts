@@ -132,4 +132,3 @@ test("zk predicates: commitment scheme mismatch is denied", async () => {
   assert.equal(ok.ok, false);
   assert.ok(ok.reasons.includes("commitment_scheme_mismatch"));
 });
-

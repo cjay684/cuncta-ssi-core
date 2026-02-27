@@ -40,7 +40,11 @@ const run = async () => {
         `expected database_url_required_in_production, got: ${error instanceof Error ? error.message : String(error)}`
       );
     }
-    assert.equal(threw, true, "expected parseConfig() to throw when DATABASE_URL is missing in production");
+    assert.equal(
+      threw,
+      true,
+      "expected parseConfig() to throw when DATABASE_URL is missing in production"
+    );
   } finally {
     process.env.NODE_ENV = previousNodeEnv;
   }
@@ -50,4 +54,3 @@ run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

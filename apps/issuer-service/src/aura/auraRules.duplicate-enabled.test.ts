@@ -22,13 +22,19 @@ test("at most one enabled aura_rule per (domain, output_vct)", async () => {
   const domain = "social";
   const outputVct = "cuncta.test.duplicate_enabled_v1";
 
-  await db("aura_rules").whereIn("rule_id", ["test.dup.enabled.a.v1", "test.dup.enabled.b.v1"]).del();
+  await db("aura_rules")
+    .whereIn("rule_id", ["test.dup.enabled.a.v1", "test.dup.enabled.b.v1"])
+    .del();
 
   await db("aura_rules").insert({
     rule_id: "test.dup.enabled.a.v1",
     domain,
     output_vct: outputVct,
-    rule_logic: JSON.stringify({ purpose: "dup test", window_seconds: 60, output: { claims: { ok: true } } }),
+    rule_logic: JSON.stringify({
+      purpose: "dup test",
+      window_seconds: 60,
+      output: { claims: { ok: true } }
+    }),
     enabled: true,
     version: 1,
     created_at: now,
@@ -42,7 +48,11 @@ test("at most one enabled aura_rule per (domain, output_vct)", async () => {
       rule_id: "test.dup.enabled.b.v1",
       domain,
       output_vct: outputVct,
-      rule_logic: JSON.stringify({ purpose: "dup test", window_seconds: 60, output: { claims: { ok: true } } }),
+      rule_logic: JSON.stringify({
+        purpose: "dup test",
+        window_seconds: 60,
+        output: { claims: { ok: true } }
+      }),
       enabled: true,
       version: 2,
       created_at: now,
@@ -59,4 +69,3 @@ test("at most one enabled aura_rule per (domain, output_vct)", async () => {
     assert.equal(enabled.length, 1);
   }
 });
-

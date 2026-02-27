@@ -193,7 +193,9 @@ export const processAuraSignalsOnce = async () => {
           .ignore();
       }
     } catch (error) {
-      log.warn("aura.batch.anchor_failed", { error: error instanceof Error ? error.message : "unknown_error" });
+      log.warn("aura.batch.anchor_failed", {
+        error: error instanceof Error ? error.message : "unknown_error"
+      });
     }
   }
 
@@ -219,20 +221,20 @@ export const processAuraSignalsOnce = async () => {
         .update({ processed_at: new Date().toISOString() });
       continue;
     }
-    const applicable = rules.filter((rule) => ruleAppliesToDomain(String(rule.domain ?? ""), domain));
+    const applicable = rules.filter((rule) =>
+      ruleAppliesToDomain(String(rule.domain ?? ""), domain)
+    );
     if (!applicable.length) continue;
 
-    let aggregatedState:
-      | {
-          score: number;
-          diversity: number;
-          tier: string;
-          tierLevel: number;
-          windowDays: number;
-          lastSignalAt: string;
-          updatedAt: string;
-        }
-      | null = null;
+    let aggregatedState: {
+      score: number;
+      diversity: number;
+      tier: string;
+      tierLevel: number;
+      windowDays: number;
+      lastSignalAt: string;
+      updatedAt: string;
+    } | null = null;
     for (const rule of applicable) {
       const ruleLogic = parseRuleLogic(rule);
       const windowSeconds = parseNumber(ruleLogic.window_seconds, 0);

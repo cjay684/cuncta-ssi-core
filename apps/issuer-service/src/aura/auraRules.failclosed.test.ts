@@ -46,4 +46,3 @@ test("enabled aura_rule without purpose fails closed", async () => {
 
   await assert.rejects(async () => processAuraSignalsOnce(), /aura_integrity_failed/);
 });
-

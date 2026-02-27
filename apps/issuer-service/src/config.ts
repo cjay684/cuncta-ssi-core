@@ -69,15 +69,22 @@ const envSchema = z.object({
   OID4VCI_ACCESS_TOKEN_TTL_SECONDS: z.preprocess(toNumber(300), z.number().int().min(30)),
   OID4VCI_ACCESS_TOKEN_SECRET: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
   OID4VCI_TOKEN_SIGNING_JWK: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
-  OID4VCI_TOKEN_SIGNING_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
+  OID4VCI_TOKEN_SIGNING_BOOTSTRAP: z
+    .preprocess((value) => value === "true", z.boolean())
+    .default(false),
   OID4VCI_PREAUTH_CODE_TTL_SECONDS: z.preprocess(toNumber(300), z.number().int().min(30).max(3600)),
   OID4VCI_C_NONCE_TTL_SECONDS: z.preprocess(toNumber(300), z.number().int().min(30).max(3600)),
-  OID4VCI_OFFER_CHALLENGE_TTL_SECONDS: z.preprocess(toNumber(120), z.number().int().min(30).max(600)),
+  OID4VCI_OFFER_CHALLENGE_TTL_SECONDS: z.preprocess(
+    toNumber(120),
+    z.number().int().min(30).max(600)
+  ),
   OID4VCI_DID_RESOLVE_TIMEOUT_MS: z.preprocess(
     clampNumber(1500, 200, 10000),
     z.number().int().min(200).max(10000)
   ),
-  OID4VCI_ENFORCE_DID_KEY_BINDING: z.preprocess((value) => value === "true", z.boolean()).optional(),
+  OID4VCI_ENFORCE_DID_KEY_BINDING: z
+    .preprocess((value) => value === "true", z.boolean())
+    .optional(),
   ISSUER_BBS_SECRET_KEY_B64U: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
   ISSUER_BBS_PUBLIC_KEY_B64U: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
   // ZK tracks are optional and require explicit opt-in in production.
@@ -116,9 +123,7 @@ const envSchema = z.object({
     z.number().int().min(256).max(8192)
   ),
   MIRROR_NODE_BASE_URL: z.preprocess(emptyToUndefined, z.string().url().optional()),
-  ANCHOR_RECONCILIATION_ENABLED: z
-    .preprocess((value) => value === "true", z.boolean())
-    .optional(),
+  ANCHOR_RECONCILIATION_ENABLED: z.preprocess((value) => value === "true", z.boolean()).optional(),
   ANCHOR_RECONCILE_TIMEOUT_MS: z.preprocess(
     clampNumber(3000, 500, 30_000),
     z.number().int().min(500).max(30_000)
@@ -127,13 +132,14 @@ const envSchema = z.object({
     clampNumber(10, 1, 50),
     z.number().int().min(1).max(50)
   ),
-  ANCHOR_RECONCILE_BATCH_SIZE: z.preprocess(
-    clampNumber(5, 1, 50),
-    z.number().int().min(1).max(50)
-  ),
+  ANCHOR_RECONCILE_BATCH_SIZE: z.preprocess(clampNumber(5, 1, 50), z.number().int().min(1).max(50)),
   ANCHOR_RECONCILER_POLL_MS: z.preprocess(
     clampNumber(60 * 60 * 1000, 60 * 1000, 24 * 60 * 60 * 1000),
-    z.number().int().min(60 * 1000).max(24 * 60 * 60 * 1000)
+    z
+      .number()
+      .int()
+      .min(60 * 1000)
+      .max(24 * 60 * 60 * 1000)
   ),
   CLEANUP_WORKER_POLL_MS: z.preprocess(
     clampNumber(60 * 60 * 1000, 60 * 1000, 24 * 60 * 60 * 1000),
@@ -214,7 +220,10 @@ const envSchema = z.object({
 
 export const parseConfig = (env: NodeJS.ProcessEnv) => {
   const parsed = envSchema.parse(env);
-  if (parsed.NODE_ENV === "production" && (!env.DATABASE_URL || String(env.DATABASE_URL).trim() === "")) {
+  if (
+    parsed.NODE_ENV === "production" &&
+    (!env.DATABASE_URL || String(env.DATABASE_URL).trim() === "")
+  ) {
     // Fail closed: production must be explicitly wired to its DB (no implicit local fallback).
     throw new Error("database_url_required_in_production");
   }

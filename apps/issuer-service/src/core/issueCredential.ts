@@ -18,4 +18,3 @@ export const issueCredentialCore = async (input: IssueCredentialCoreInput) => {
   }
   return issueCredential({ subjectDid: input.subjectDid, vct: input.vct, claims: input.claims });
 };
-

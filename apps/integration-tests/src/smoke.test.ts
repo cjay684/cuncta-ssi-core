@@ -10,7 +10,10 @@ const run = async () => {
 
   // Admin API must be /v1/admin/* (no /v1/internal/*).
   assert.ok(text.includes("/v1/admin/keys/rotate"), "harness must use /v1/admin/keys/rotate");
-  assert.ok(!text.includes("/v1/internal/keys/rotate"), "harness must not use /v1/internal/keys/rotate");
+  assert.ok(
+    !text.includes("/v1/internal/keys/rotate"),
+    "harness must not use /v1/internal/keys/rotate"
+  );
 
   // Self-funded only: legacy onboarding endpoints must be exercised as 410 Gone.
   assert.ok(
@@ -127,4 +130,3 @@ run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

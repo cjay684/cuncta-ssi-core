@@ -25,14 +25,20 @@ const registrarModule = Registrar as unknown as { default?: typeof Registrar };
 const registrar = registrarModule.default ?? Registrar;
 type RegistrarProviders = Parameters<typeof registrar.generateCreateDIDRequest>[1];
 
-type RegistrarDeactivateRequest = { state: unknown; signingRequest: { serializedPayload: Uint8Array } };
+type RegistrarDeactivateRequest = {
+  state: unknown;
+  signingRequest: { serializedPayload: Uint8Array };
+};
 
 const registrarGenerateDeactivateRequest = async (
   did: string,
   providers: RegistrarProviders
 ): Promise<RegistrarDeactivateRequest> => {
-  const fn = (registrar as unknown as { generateDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateDeactivateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateDeactivateDIDRequest;
   if (!fn) throw new Error("did_deactivate_not_supported");
   const res = (await fn({ did }, providers)) as unknown as RegistrarDeactivateRequest;
   return res;
@@ -47,8 +53,11 @@ const registrarSubmitDeactivateRequest = async (
   },
   providers: RegistrarProviders
 ): Promise<{ did?: unknown }> => {
-  const fn = (registrar as unknown as { submitDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitDeactivateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitDeactivateDIDRequest;
   if (!fn) throw new Error("did_deactivate_not_supported");
   return (await fn(input, providers)) as { did?: unknown };
 };
@@ -81,7 +90,11 @@ export const didDeactivate = async () => {
 
   const { payerAccountId, payerPrivateKey } = resolvePayer(env);
   const providers = {
-    clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+    clientOptions: {
+      network: env.HEDERA_NETWORK,
+      accountId: payerAccountId,
+      privateKey: payerPrivateKey
+    }
   } as RegistrarProviders;
 
   const req = await registrarGenerateDeactivateRequest(did, providers);
@@ -91,6 +104,7 @@ export const didDeactivate = async () => {
     { state: req.state, signature, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
     providers
   );
-  console.log(JSON.stringify({ ok: true, did: String(result?.did ?? did), deactivated: true }, null, 2));
+  console.log(
+    JSON.stringify({ ok: true, did: String(result?.did ?? did), deactivated: true }, null, 2)
+  );
 };
-

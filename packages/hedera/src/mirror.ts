@@ -83,7 +83,9 @@ const withCacheTtl = <T extends object>(value: T, ttlMs: number) =>
 const fetchJsonWithRetry = async <T>(
   url: string,
   opts: { timeoutMs: number; maxAttempts: number }
-): Promise<{ ok: true; status: number; json: T } | { ok: false; status: number; error: string }> => {
+): Promise<
+  { ok: true; status: number; json: T } | { ok: false; status: number; error: string }
+> => {
   const normalizedUrl = url;
   const cached = cacheGet<
     { ok: true; status: number; json: T } | { ok: false; status: number; error: string }
@@ -125,7 +127,10 @@ const fetchJsonWithRetry = async <T>(
     } catch {
       const reason = controller.signal.aborted ? "mirror_timeout" : "mirror_network_error";
       if (attempt === opts.maxAttempts) {
-        const out = withCacheTtl({ ok: false, status: 0, error: reason } as const, CACHE_TTL_ERROR_MS);
+        const out = withCacheTtl(
+          { ok: false, status: 0, error: reason } as const,
+          CACHE_TTL_ERROR_MS
+        );
         cacheSet(normalizedUrl, out);
         return out;
       }
@@ -160,10 +165,10 @@ export const fetchTopicMessages = async (
 
   const timeoutMs = options?.timeoutMs ?? 3000;
   const maxAttempts = options?.maxAttempts ?? 8;
-  const res = await fetchJsonWithRetry<{ messages?: MirrorTopicMessage[]; links?: { next?: string } }>(
-    url.toString(),
-    { timeoutMs, maxAttempts }
-  );
+  const res = await fetchJsonWithRetry<{
+    messages?: MirrorTopicMessage[];
+    links?: { next?: string };
+  }>(url.toString(), { timeoutMs, maxAttempts });
   if (!res.ok) return res;
   return {
     ok: true,
@@ -211,4 +216,3 @@ export const fetchTopicMessageBySequence = async (
     raw: msg
   };
 };
-

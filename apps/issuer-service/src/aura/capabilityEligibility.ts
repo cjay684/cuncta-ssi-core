@@ -7,10 +7,7 @@ import { clampTierByDiversity, computeTierFromScore, tierLevelForName } from "./
 const parseNumber = (value: unknown, fallback: number) =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-export const getCapabilityRuleForScope = async (input: {
-  outputVct: string;
-  domain: string;
-}) => {
+export const getCapabilityRuleForScope = async (input: { outputVct: string; domain: string }) => {
   const db = await getDb();
   const rules = await db("aura_rules").where({ enabled: true, output_vct: input.outputVct });
   // Match by domain scope (exact or prefix patterns like "space:*").
@@ -66,7 +63,10 @@ export const checkCapabilityEligibility = async (input: {
   });
   const tier = tierComputed.tiers[clampedLevel]?.name ?? tierComputed.tier;
   const diversityMin = parseNumber(ruleLogic.diversity_min, 0);
-  const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : tierComputed.tiers[0]?.name ?? "bronze";
+  const minTier =
+    typeof ruleLogic.min_tier === "string"
+      ? ruleLogic.min_tier
+      : (tierComputed.tiers[0]?.name ?? "bronze");
   const minTierLevel = tierLevelForName(minTier, tierComputed.tiers);
   const tierOk = clampedLevel >= minTierLevel;
   const diversityOk = computed.diversity >= diversityMin;
@@ -98,4 +98,3 @@ export const checkCapabilityEligibility = async (input: {
     ruleLogic
   };
 };
-

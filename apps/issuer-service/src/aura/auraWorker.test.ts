@@ -27,9 +27,7 @@ const run = async () => {
   await db("aura_state").del();
   await db("aura_issuance_queue").del();
   await db("aura_rules").update({ enabled: false });
-  await db("aura_rules")
-    .where("rule_id", "like", "test.auraWorker.%")
-    .del();
+  await db("aura_rules").where("rule_id", "like", "test.auraWorker.%").del();
 
   const insertRule = async (
     ruleId: string,
@@ -185,7 +183,13 @@ const run = async () => {
       }),
       updated_at: new Date().toISOString()
     });
-  await insertSignals(subjectHash, "social", "social.post_success", [counterpartyHash], "social-pass-c");
+  await insertSignals(
+    subjectHash,
+    "social",
+    "social.post_success",
+    [counterpartyHash],
+    "social-pass-c"
+  );
   await processAuraSignalsOnce();
   const socialStateC = await db("aura_state")
     .where({ subject_did_hash: subjectHash, domain: "social" })

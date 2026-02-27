@@ -16,7 +16,10 @@ const toOptionalString = (value: unknown) => {
 
 const resolveDid = async (did: string) => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort("did_resolve_timeout"), config.OID4VCI_DID_RESOLVE_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => controller.abort("did_resolve_timeout"),
+    config.OID4VCI_DID_RESOLVE_TIMEOUT_MS
+  );
   timeout.unref?.();
   try {
     const url = new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, config.DID_SERVICE_BASE_URL);
@@ -86,4 +89,3 @@ export const verifyOid4vciProofJwtEdDSA = async (input: VerifyOid4vciProofJwtInp
 
   return { cnfJwk: cnf.jwk, payload };
 };
-

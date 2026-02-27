@@ -39,7 +39,8 @@ export const issueRequest = async () => {
   };
 
   const next =
-    state.credentials?.filter((cred) => cred.vct !== "cuncta.marketplace.seller_good_standing") ?? [];
+    state.credentials?.filter((cred) => cred.vct !== "cuncta.marketplace.seller_good_standing") ??
+    [];
   next.push({
     vct: "cuncta.marketplace.seller_good_standing",
     credential: payload.credential,

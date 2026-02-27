@@ -77,7 +77,9 @@ const run = async () => {
     const modeIndex = args.findIndex((arg) => arg === "--mode");
     const mode = modeIndex === -1 ? undefined : args[modeIndex + 1];
     if (mode && mode !== "user_pays") {
-      throw new Error("Invalid --mode (expected user_pays). CUNCTA supports self-funded onboarding only.");
+      throw new Error(
+        "Invalid --mode (expected user_pays). CUNCTA supports self-funded onboarding only."
+      );
     }
     await didCreateAuto(mode as "user_pays" | undefined);
     return;
@@ -224,7 +226,7 @@ run()
   .catch((error) => {
     if (error instanceof Error) {
       const wantStack = process.env.WALLET_DEBUG_STACK === "1";
-      console.error(wantStack ? error.stack ?? error.message : error.message);
+      console.error(wantStack ? (error.stack ?? error.message) : error.message);
     } else {
       console.error(String(error));
     }

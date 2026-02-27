@@ -53,10 +53,9 @@ test("AURA_BATCH batch_hash is deterministic across event ordering", async () =>
     updated_at: now,
     rule_signature: null
   });
-  const inserted = (await db("aura_rules").where({ rule_id: "test.batch.determinism.v1" }).first()) as Record<
-    string,
-    unknown
-  >;
+  const inserted = (await db("aura_rules")
+    .where({ rule_id: "test.batch.determinism.v1" })
+    .first()) as Record<string, unknown>;
   await ensureAuraRuleIntegrity(inserted as never);
 
   const subjectHash = getDidHashes("did:hedera:testnet:subject:batch:1").primary;
@@ -105,4 +104,3 @@ test("AURA_BATCH batch_hash is deterministic across event ordering", async () =>
   });
   assert.equal(meta.batch_hash, expectedBatchHash);
 });
-

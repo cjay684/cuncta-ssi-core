@@ -58,7 +58,7 @@ export const enforceStrictDbRole = async () => {
   if (!config.STRICT_DB_ROLE) return;
   const forbiddenWriteTables = [
     "policies",
-    "policy_version_floor",
+    "policy_version_floor"
     // Legacy tables removed from runtime role allowlists.
   ];
   for (const tableName of forbiddenWriteTables) {

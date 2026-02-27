@@ -8,7 +8,8 @@ process.env.DATABASE_URL =
 process.env.RETENTION_AURA_SIGNALS_DAYS = "1";
 process.env.RETENTION_AURA_STATE_DAYS = "1";
 process.env.RETENTION_AURA_ISSUANCE_QUEUE_DAYS = "1";
-process.env.RETENTION_VERIFICATION_CHALLENGES_DAYS = process.env.RETENTION_VERIFICATION_CHALLENGES_DAYS ?? "1";
+process.env.RETENTION_VERIFICATION_CHALLENGES_DAYS =
+  process.env.RETENTION_VERIFICATION_CHALLENGES_DAYS ?? "1";
 process.env.RETENTION_RATE_LIMIT_EVENTS_DAYS = process.env.RETENTION_RATE_LIMIT_EVENTS_DAYS ?? "1";
 process.env.RETENTION_OBLIGATION_EVENTS_DAYS = process.env.RETENTION_OBLIGATION_EVENTS_DAYS ?? "1";
 process.env.RETENTION_AUDIT_LOGS_DAYS = process.env.RETENTION_AUDIT_LOGS_DAYS ?? "1";
@@ -91,16 +92,39 @@ test("cleanup worker applies Aura retention (signals/state/terminal queue rows)"
 
   await runCleanupOnce();
 
-  const remainingSignals = await db("aura_signals").where({ subject_did_hash: subject }).select("event_hash");
-  assert.equal(remainingSignals.some((r: { event_hash: string }) => r.event_hash === "evt_old"), false);
-  assert.equal(remainingSignals.some((r: { event_hash: string }) => r.event_hash === "evt_recent"), true);
+  const remainingSignals = await db("aura_signals")
+    .where({ subject_did_hash: subject })
+    .select("event_hash");
+  assert.equal(
+    remainingSignals.some((r: { event_hash: string }) => r.event_hash === "evt_old"),
+    false
+  );
+  assert.equal(
+    remainingSignals.some((r: { event_hash: string }) => r.event_hash === "evt_recent"),
+    true
+  );
 
-  const remainingState = await db("aura_state").where({ subject_did_hash: subject }).select("domain");
-  assert.equal(remainingState.some((r: { domain: string }) => r.domain === "social"), false);
-  assert.equal(remainingState.some((r: { domain: string }) => r.domain === "marketplace"), true);
+  const remainingState = await db("aura_state")
+    .where({ subject_did_hash: subject })
+    .select("domain");
+  assert.equal(
+    remainingState.some((r: { domain: string }) => r.domain === "social"),
+    false
+  );
+  assert.equal(
+    remainingState.some((r: { domain: string }) => r.domain === "marketplace"),
+    true
+  );
 
-  const remainingQueue = await db("aura_issuance_queue").where({ subject_did_hash: subject }).select("status");
-  assert.equal(remainingQueue.some((r: { status: string }) => r.status === "ISSUED"), false);
-  assert.equal(remainingQueue.some((r: { status: string }) => r.status === "PENDING"), true);
+  const remainingQueue = await db("aura_issuance_queue")
+    .where({ subject_did_hash: subject })
+    .select("status");
+  assert.equal(
+    remainingQueue.some((r: { status: string }) => r.status === "ISSUED"),
+    false
+  );
+  assert.equal(
+    remainingQueue.some((r: { status: string }) => r.status === "PENDING"),
+    true
+  );
 });
-

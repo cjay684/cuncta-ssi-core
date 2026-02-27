@@ -52,4 +52,3 @@ test("zk predicates: stub statement is rejected gracefully (data-driven)", async
   assert.equal(out.ok, false);
   assert.ok(out.reasons.includes("zk_statement_unavailable"));
 });
-

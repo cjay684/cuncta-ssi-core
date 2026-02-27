@@ -50,10 +50,9 @@ test("AURA_BATCH anchor payload is privacy-safe (no subject hashes)", async () =
     updated_at: now,
     rule_signature: null
   });
-  const inserted = (await db("aura_rules").where({ rule_id: "test.batch.privacy.v1" }).first()) as Record<
-    string,
-    unknown
-  >;
+  const inserted = (await db("aura_rules")
+    .where({ rule_id: "test.batch.privacy.v1" })
+    .first()) as Record<string, unknown>;
   await ensureAuraRuleIntegrity(inserted as never);
 
   const subjectHash = getDidHashes("did:hedera:testnet:subject:batch:privacy").primary;
@@ -84,8 +83,16 @@ test("AURA_BATCH anchor payload is privacy-safe (no subject hashes)", async () =
   assert.equal(typeof meta.batch_hash, "string");
 
   const metaString = JSON.stringify(meta);
-  assert.ok(!metaString.includes(subjectHash), "anchor payload must not contain subject hash values");
-  assert.ok(!metaString.includes("subject_did_hash"), "anchor payload must not contain subject_did_hash keys");
-  assert.ok(!metaString.includes("event_hashes"), "anchor payload must not expose per-event hashes");
+  assert.ok(
+    !metaString.includes(subjectHash),
+    "anchor payload must not contain subject hash values"
+  );
+  assert.ok(
+    !metaString.includes("subject_did_hash"),
+    "anchor payload must not contain subject_did_hash keys"
+  );
+  assert.ok(
+    !metaString.includes("event_hashes"),
+    "anchor payload must not expose per-event hashes"
+  );
 });
-

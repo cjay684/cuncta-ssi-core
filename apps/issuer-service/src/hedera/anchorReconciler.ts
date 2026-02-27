@@ -68,13 +68,23 @@ export const reconcileAnchors = async (input?: {
   if (input?.payloadHashes?.length) {
     receipts = (await db("anchor_receipts")
       .whereIn("payload_hash", input.payloadHashes)
-      .select("payload_hash", "topic_id", "sequence_number", "consensus_timestamp")) as ReceiptRow[];
+      .select(
+        "payload_hash",
+        "topic_id",
+        "sequence_number",
+        "consensus_timestamp"
+      )) as ReceiptRow[];
   } else {
     // Default: reconcile recent receipts created during normal operation.
     receipts = (await db("anchor_receipts")
       .orderBy("created_at", "desc")
       .limit(limit)
-      .select("payload_hash", "topic_id", "sequence_number", "consensus_timestamp")) as ReceiptRow[];
+      .select(
+        "payload_hash",
+        "topic_id",
+        "sequence_number",
+        "consensus_timestamp"
+      )) as ReceiptRow[];
   }
 
   if (!receipts.length) {
@@ -94,7 +104,9 @@ export const reconcileAnchors = async (input?: {
   const verifiedSet = new Set(
     existing.filter((row) => row.status === "VERIFIED").map((row) => row.payload_hash)
   );
-  const candidates = forced ? receipts : receipts.filter((row) => !verifiedSet.has(row.payload_hash));
+  const candidates = forced
+    ? receipts
+    : receipts.filter((row) => !verifiedSet.has(row.payload_hash));
 
   const results: Array<{
     payloadHash: string;
@@ -120,7 +132,10 @@ export const reconcileAnchors = async (input?: {
         config.MIRROR_NODE_BASE_URL,
         topicId,
         sequenceNumber,
-        { timeoutMs: config.ANCHOR_RECONCILE_TIMEOUT_MS, maxAttempts: config.ANCHOR_RECONCILE_MAX_ATTEMPTS }
+        {
+          timeoutMs: config.ANCHOR_RECONCILE_TIMEOUT_MS,
+          maxAttempts: config.ANCHOR_RECONCILE_MAX_ATTEMPTS
+        }
       );
 
       if (!mirrorRes.ok) {
@@ -179,7 +194,10 @@ export const reconcileAnchors = async (input?: {
             ) {
               status = "MISMATCH";
               reason = "mirror_missing_anchor_auth_meta";
-            } else if (mirrorAuth.anchor_auth_sig !== undefined || mirrorAuth.anchor_auth_ts !== undefined) {
+            } else if (
+              mirrorAuth.anchor_auth_sig !== undefined ||
+              mirrorAuth.anchor_auth_ts !== undefined
+            ) {
               if (!config.ANCHOR_AUTH_SECRET) {
                 status = "ERROR";
                 reason = "anchor_auth_secret_missing";
@@ -192,7 +210,9 @@ export const reconcileAnchors = async (input?: {
                 if (verified.ok) {
                   status = "VERIFIED";
                   reason =
-                    expectedAuth.anchor_auth_sig === undefined ? "db_missing_anchor_auth_meta" : "ok";
+                    expectedAuth.anchor_auth_sig === undefined
+                      ? "db_missing_anchor_auth_meta"
+                      : "ok";
                 } else {
                   status = verified.reason === "missing_auth" ? "MISMATCH" : "INVALID_AUTH";
                   reason = `anchor_auth_${verified.reason}`;
@@ -263,7 +283,11 @@ export const reconcileAnchors = async (input?: {
   return { attempted: results.length, counts, results };
 };
 
-const withTimeout = async <T>(promise: Promise<T>, timeoutMs: number, errorCode: string): Promise<T> => {
+const withTimeout = async <T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorCode: string
+): Promise<T> => {
   let timer: NodeJS.Timeout | null = null;
   try {
     return await Promise.race([
@@ -308,4 +332,3 @@ export const startAnchorReconciler = () => {
   }, intervalMs);
   return () => clearInterval(timer);
 };
-
