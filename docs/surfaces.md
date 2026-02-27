@@ -157,4 +157,3 @@ OpenAPI stubs live in `docs/openapi/` and should be read through the lens of thi
   - `docs/openapi/verifier-service.yaml` (private behind gateway; includes deprecated legacy routes)
   - `docs/openapi/did-service.yaml` (service-auth create; resolve is safe to proxy via gateway)
   - `docs/openapi/policy-service.yaml` (requirements are internal; gateway is the consumer surface)
-

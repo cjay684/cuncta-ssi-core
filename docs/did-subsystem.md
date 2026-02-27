@@ -91,4 +91,3 @@ Evidence:
 - wallet mainnet guard: `apps/wallet-cli/src/commands/didCreate.ts`
 
 No code edits are required to switch testnet → mainnet; operators provide mainnet keys + config.
-

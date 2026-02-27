@@ -14,7 +14,9 @@ const circuitsDir = path.join(pkgDir, "circuits");
 const outDir = path.join(pkgDir, "artifacts", "age_gte_v1");
 
 const sha256Hex = async (p) =>
-  createHash("sha256").update(await readFile(p)).digest("hex");
+  createHash("sha256")
+    .update(await readFile(p))
+    .digest("hex");
 
 const run = (label, cmd, args, cwd, options = {}) => {
   const started = Date.now();
@@ -60,7 +62,9 @@ const waitForFiles = async (label, files, timeoutMs) => {
     await sleep(250);
   }
   const missing = files.filter((p) => !existsSync(p));
-  throw new Error(`timeout step=${label} elapsedMs=${Date.now() - started} missing=${missing.join(",")}`);
+  throw new Error(
+    `timeout step=${label} elapsedMs=${Date.now() - started} missing=${missing.join(",")}`
+  );
 };
 
 const runAndKillIfNeeded = async (label, cmd, args, cwd, options = {}) => {
@@ -209,8 +213,18 @@ const main = async () => {
   const vk = path.join(outDir, "age_gte_v1.verification_key.json");
 
   if (!(await readFile(ptau).catch(() => null))) {
-    run("snarkjs.powersoftau.new", process.execPath, [snarkjsCli, "powersoftau", "new", "bn128", "12", ptau0, "-v"], pkgDir);
-    run("snarkjs.powersoftau.beacon", process.execPath, [snarkjsCli, "powersoftau", "beacon", ptau0, ptauBeacon, beaconHash, "10"], pkgDir);
+    run(
+      "snarkjs.powersoftau.new",
+      process.execPath,
+      [snarkjsCli, "powersoftau", "new", "bn128", "12", ptau0, "-v"],
+      pkgDir
+    );
+    run(
+      "snarkjs.powersoftau.beacon",
+      process.execPath,
+      [snarkjsCli, "powersoftau", "beacon", ptau0, ptauBeacon, beaconHash, "10"],
+      pkgDir
+    );
     run(
       "snarkjs.powersoftau.prepare",
       process.execPath,
@@ -219,8 +233,18 @@ const main = async () => {
     );
   }
 
-  run("snarkjs.groth16.setup", process.execPath, [snarkjsCli, "groth16", "setup", r1cs, ptau, zkey0], pkgDir);
-  run("snarkjs.zkey.beacon", process.execPath, [snarkjsCli, "zkey", "beacon", zkey0, zkey, beaconHash, "10"], pkgDir);
+  run(
+    "snarkjs.groth16.setup",
+    process.execPath,
+    [snarkjsCli, "groth16", "setup", r1cs, ptau, zkey0],
+    pkgDir
+  );
+  run(
+    "snarkjs.zkey.beacon",
+    process.execPath,
+    [snarkjsCli, "zkey", "beacon", zkey0, zkey, beaconHash, "10"],
+    pkgDir
+  );
   run(
     "snarkjs.zkey.export_vkey",
     process.execPath,
@@ -230,11 +254,21 @@ const main = async () => {
 
   // Emit a small manifest for the registry authoring step.
   const manifest = {
-    wasm: { path: path.relative(repoRoot, wasm).replaceAll("\\", "/"), sha256_hex: await sha256Hex(wasm) },
-    zkey: { path: path.relative(repoRoot, zkey).replaceAll("\\", "/"), sha256_hex: await sha256Hex(zkey) },
+    wasm: {
+      path: path.relative(repoRoot, wasm).replaceAll("\\", "/"),
+      sha256_hex: await sha256Hex(wasm)
+    },
+    zkey: {
+      path: path.relative(repoRoot, zkey).replaceAll("\\", "/"),
+      sha256_hex: await sha256Hex(zkey)
+    },
     vk: { path: path.relative(repoRoot, vk).replaceAll("\\", "/"), sha256_hex: await sha256Hex(vk) }
   };
-  await writeFile(path.join(outDir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  await writeFile(
+    path.join(outDir, "manifest.json"),
+    JSON.stringify(manifest, null, 2) + "\n",
+    "utf8"
+  );
   console.log("wrote manifest.json", manifest);
 };
 
@@ -242,4 +276,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

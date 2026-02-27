@@ -36,46 +36,46 @@ A pnpm monorepo (`pnpm-workspace.yaml`) with two workspace roots:
 
 ### Apps
 
-| App | Purpose |
-|---|---|
-| `app-gateway` | Public API gateway; only public-facing service |
-| `did-service` | Hedera DID lifecycle (create, update, deactivate, resolve) |
-| `issuer-service` | Credential issuance, Aura, OID4VCI, privacy, anchoring |
-| `verifier-service` | Presentation verification, OID4VP, ZK proofs |
-| `policy-service` | Policy evaluation and compliance profiles |
-| `social-service` | Credential-gated social features |
-| `wallet-cli` | CLI wallet for DID/credential operations |
-| `mobile-wallet` | Mobile wallet (test harness) |
-| `web-demo` | React demo UI |
-| `integration-tests` | End-to-end integration tests |
-| `contract-e2e` | Contract/guard tests |
+| App                 | Purpose                                                    |
+| ------------------- | ---------------------------------------------------------- |
+| `app-gateway`       | Public API gateway; only public-facing service             |
+| `did-service`       | Hedera DID lifecycle (create, update, deactivate, resolve) |
+| `issuer-service`    | Credential issuance, Aura, OID4VCI, privacy, anchoring     |
+| `verifier-service`  | Presentation verification, OID4VP, ZK proofs               |
+| `policy-service`    | Policy evaluation and compliance profiles                  |
+| `social-service`    | Credential-gated social features                           |
+| `wallet-cli`        | CLI wallet for DID/credential operations                   |
+| `mobile-wallet`     | Mobile wallet (test harness)                               |
+| `web-demo`          | React demo UI                                              |
+| `integration-tests` | End-to-end integration tests                               |
+| `contract-e2e`      | Contract/guard tests                                       |
 
 ### Packages
 
-| Package | Purpose |
-|---|---|
-| `shared` | Service auth, pseudonymization, canonical JSON, surface registry |
-| `db` | Knex PostgreSQL client, migrations |
-| `sdjwt` | SD-JWT VC issuance, presentation, verification |
-| `di-bbs` | DI+BBS (BLS12-381) credential format |
-| `hedera` | Hedera client, topic management, anchor publishing, fee budgets |
-| `wallet` | Wallet state, key generation |
-| `wallet-keystore` | Platform-specific key storage (DPAPI, file) |
-| `payments` | Fee schedules, payment request building |
-| `trust-registry` | Signed issuer trust bundles |
-| `policy-profiles` | Compliance profile definitions (default/uk/eu) |
-| `verifier-helper` | SD-JWT presentation verification utilities |
-| `zk-age-snark` | Groth16 age proof circuit and prover |
-| `zk-commitments-bn254` | Poseidon commitments on BN254 |
-| `zk-proof-groth16-bn254` | Groth16 proof/verify wrapper (snarkjs) |
-| `zk-registry` | ZK statement definitions (registry-driven) |
+| Package                  | Purpose                                                          |
+| ------------------------ | ---------------------------------------------------------------- |
+| `shared`                 | Service auth, pseudonymization, canonical JSON, surface registry |
+| `db`                     | Knex PostgreSQL client, migrations                               |
+| `sdjwt`                  | SD-JWT VC issuance, presentation, verification                   |
+| `di-bbs`                 | DI+BBS (BLS12-381) credential format                             |
+| `hedera`                 | Hedera client, topic management, anchor publishing, fee budgets  |
+| `wallet`                 | Wallet state, key generation                                     |
+| `wallet-keystore`        | Platform-specific key storage (DPAPI, file)                      |
+| `payments`               | Fee schedules, payment request building                          |
+| `trust-registry`         | Signed issuer trust bundles                                      |
+| `policy-profiles`        | Compliance profile definitions (default/uk/eu)                   |
+| `verifier-helper`        | SD-JWT presentation verification utilities                       |
+| `zk-age-snark`           | Groth16 age proof circuit and prover                             |
+| `zk-commitments-bn254`   | Poseidon commitments on BN254                                    |
+| `zk-proof-groth16-bn254` | Groth16 proof/verify wrapper (snarkjs)                           |
+| `zk-registry`            | ZK statement definitions (registry-driven)                       |
 
 ### Credential Formats vs. ZK Layer
 
 Two distinct layers exist in the codebase and should not be conflated:
 
-- **Credential formats** (selective disclosure): `sdjwt` and `di-bbs` — these determine *how claims are encoded and selectively revealed* during presentation.
-- **Predicate ZK layer**: `zk-age-snark`, `zk-commitments-bn254`, `zk-proof-groth16-bn254` — Groth16 SNARKs on BN254 that prove *statements about claims* (e.g., "age ≥ 18") without revealing the claim value. This is orthogonal to the credential format.
+- **Credential formats** (selective disclosure): `sdjwt` and `di-bbs` — these determine _how claims are encoded and selectively revealed_ during presentation.
+- **Predicate ZK layer**: `zk-age-snark`, `zk-commitments-bn254`, `zk-proof-groth16-bn254` — Groth16 SNARKs on BN254 that prove _statements about claims_ (e.g., "age ≥ 18") without revealing the claim value. This is orthogonal to the credential format.
 
 Compliance profiles (`policy-profiles`) and the trust registry (`trust-registry`) span both layers. UK and EU compliance overlays can tighten verification requirements at the policy level, affecting both format-level checks (revocation, binding) and ZK predicate enforcement.
 
@@ -285,6 +285,7 @@ export const issueCredential = async (input: {
 ```
 
 Every issuance:
+
 1. Validates claims against the credential catalog's JSON Schema (Ajv)
 2. Checks for privacy tombstones (GDPR erasure)
 3. Allocates a status list index (for revocation)
@@ -451,6 +452,7 @@ export const consumeCNonce = async (input: { cNonce: string; tokenJti: string })
 ```
 
 Key security properties:
+
 - Pre-auth codes, c_nonces, and offer challenges are all **hash-only + TTL + one-time**
 - Token is bound to a specific `credential_configuration_id`
 - Issuer override attempts (`issuerDid`, `issuer`, `iss` in body) are explicitly rejected
@@ -681,6 +683,7 @@ export const dependencyFailureDeny = () => ({
 ### Registry-Driven Architecture
 
 ZK statements are defined in JSON files in `packages/zk-registry/statements/`. Each statement defines:
+
 - Circuit references (WASM, proving key, verifying key) with SHA-256 hashes
 - Public input schema and ordering
 - Required bindings (nonce, audience, request_hash)
@@ -803,6 +806,7 @@ const computeScore = (signals, ruleLogic) => {
 ```
 
 Anti-gaming mechanics:
+
 - **Per-counterparty cap**: Max signals counted from any single counterparty
 - **Decay exponent**: Diminishing returns from repeated counterparty interactions
 - **Collusion detection**: If top-2 counterparties exceed concentration threshold, a multiplier penalty applies
@@ -986,16 +990,16 @@ export const processAnchorOutboxOnce = async (publisher?) => {
 
 ### Event Types Anchored
 
-| Event Type | What It Anchors |
-|---|---|
-| `ISSUED` | Credential issuance (hash of eventId, vct, statusListId, statusIndex, credentialFingerprint) |
-| `REVOKED` | Credential revocation (hash of eventId, statusListId, statusIndex, revokedAt) |
-| `AURA_BATCH` | Processed signal batch (domain, window, signal count, batch hash — no subject IDs) |
-| `AURA_DERIVED` | Aura capability issuance |
-| `AURA_RESET` | Aura state reset |
-| `AURA_RULE_CHANGE` | Rule modification (rule_id, domain, output_vct, version) |
-| `AUDIT_LOG_HEAD` | Periodic audit log integrity hash |
-| `ISSUER_KEY_ROTATE` / `ISSUER_KEY_REVOKE` | Key lifecycle events |
+| Event Type                                | What It Anchors                                                                              |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `ISSUED`                                  | Credential issuance (hash of eventId, vct, statusListId, statusIndex, credentialFingerprint) |
+| `REVOKED`                                 | Credential revocation (hash of eventId, statusListId, statusIndex, revokedAt)                |
+| `AURA_BATCH`                              | Processed signal batch (domain, window, signal count, batch hash — no subject IDs)           |
+| `AURA_DERIVED`                            | Aura capability issuance                                                                     |
+| `AURA_RESET`                              | Aura state reset                                                                             |
+| `AURA_RULE_CHANGE`                        | Rule modification (rule_id, domain, output_vct, version)                                     |
+| `AUDIT_LOG_HEAD`                          | Periodic audit log integrity hash                                                            |
+| `ISSUER_KEY_ROTATE` / `ISSUER_KEY_REVOKE` | Key lifecycle events                                                                         |
 
 All anchored payloads contain **only hashes and metadata** — never raw DIDs, credentials, or claims.
 
@@ -1165,6 +1169,7 @@ Lookups check both primary (HMAC) and legacy (SHA256) hashes for backward compat
 ```
 
 Key properties:
+
 - Issuance events are **unlinked** (subject_did_hash set to null) — event stays for audit but subject is gone
 - Tombstone prevents re-creation of data for the erased subject
 - Hedera anchors are **immutable** but contain only hashes, so they can't be linked back
@@ -1219,6 +1224,7 @@ export const runCleanupOnce = async () => {
 ```
 
 Configurable retention windows:
+
 - `RETENTION_VERIFICATION_CHALLENGES_DAYS` (default 7)
 - `RETENTION_RATE_LIMIT_EVENTS_DAYS` (default 7)
 - `RETENTION_OBLIGATION_EVENTS_DAYS` (default 30)
@@ -1234,6 +1240,7 @@ Configurable retention windows:
 ### Capability Gating
 
 Every write action passes through `verifyAndGate()` which:
+
 1. Checks privacy status (tombstoned/restricted)
 2. Fetches policy requirements
 3. Validates the user's credential presentation
@@ -1260,6 +1267,7 @@ Threaded real-time chat with four thread types: `space_chat`, `challenge_chat`, 
 ### Sync Sessions
 
 Three modes:
+
 - **Scroll Sync**: Synchronized scrolling with WebSocket event streaming
 - **Listen Sync**: Synchronized audio with broadcast control and reactions
 - **Hangouts**: Lightweight voice/presence rooms (control plane only)
@@ -1439,42 +1447,50 @@ export const checkIssuerRule = async (input) => {
 PostgreSQL managed by Knex migrations in `packages/db`. Key tables:
 
 **Identity & Credentials:**
+
 - `credential_types` — VCT definitions, JSON schemas, SD-JWT defaults
 - `issuance_events` — Credential issuance records (subject as pseudonymized hash)
 - `status_lists` + `status_list_versions` — Revocation bitstrings
 - `issuer_keys` — Issuer signing keys with rotation
 
 **Policy:**
+
 - `actions` — Action definitions
 - `policies` — Policy logic (versioned, signed)
 - `policy_version_floor` — Minimum policy versions
 
 **Verification:**
+
 - `verification_challenges` — OID4VP challenge requests (nonce, audience, policy pinning)
 
 **OID4VCI:**
+
 - `oid4vci_preauth_codes` — Hash-only pre-authorized codes
 - `oid4vci_c_nonces` — Hash-only client nonces
 - `oid4vci_offer_challenges` — Offer challenge nonces
 - `oid4vp_request_hashes` — Request hash tracking
 
 **Aura:**
+
 - `aura_rules` — Rule definitions (signed, versioned)
 - `aura_signals` — Behavioral signals
 - `aura_state` — Aggregated state per subject+domain
 - `aura_issuance_queue` — Pending capability issuances
 
 **Anchoring:**
+
 - `anchor_outbox` — Hedera anchor message queue
 - `anchor_receipts` — Receipts (topic_id, sequence_number, consensus_timestamp)
 
 **Privacy:**
+
 - `privacy_requests` — DSR requests
 - `privacy_tokens` — DSR session tokens
 - `privacy_restrictions` — Restricted subjects
 - `privacy_tombstones` — Erasure markers
 
 **Social:**
+
 - `social_profiles`, `social_posts`, `social_replies`, `social_follows`
 - `social_spaces`, `social_space_memberships`, `social_space_posts`
 - `social_space_crews`, `social_space_crew_members`
@@ -1487,6 +1503,7 @@ PostgreSQL managed by Knex migrations in `packages/db`. Key tables:
 - `social_action_log`
 
 **Audit:**
+
 - `audit_logs` — All major operations
 - `command_center_audit_events` — Command planner events
 - `system_metadata` — Key-value config (pepper fingerprint, rule hashes)
@@ -1497,21 +1514,21 @@ PostgreSQL managed by Knex migrations in `packages/db`. Key tables:
 
 ### Wallet CLI Commands
 
-| Command | Action |
-|---|---|
-| `did:create` | Create DID (default onboarding) |
-| `did:create:user-pays` | Self-funded DID creation |
-| `did:rotate` | Rotate DID root key |
-| `did:recovery:setup` | Install recovery key |
-| `did:recovery:rotate` | Rotate using recovery key |
-| `did:deactivate` | Deactivate DID |
-| `vc:acquire` | Acquire credential via OID4VCI |
-| `present` | Build presentation for action |
-| `vp:respond` | Respond to OID4VP request |
-| `verify` | Verify last presentation |
-| `aura:simulate` | Loop present+verify to emit aura signals |
-| `aura:claim` | Claim derived aura credential |
-| `privacy:flow` | Run DSR request+confirm demo |
+| Command                | Action                                   |
+| ---------------------- | ---------------------------------------- |
+| `did:create`           | Create DID (default onboarding)          |
+| `did:create:user-pays` | Self-funded DID creation                 |
+| `did:rotate`           | Rotate DID root key                      |
+| `did:recovery:setup`   | Install recovery key                     |
+| `did:recovery:rotate`  | Rotate using recovery key                |
+| `did:deactivate`       | Deactivate DID                           |
+| `vc:acquire`           | Acquire credential via OID4VCI           |
+| `present`              | Build presentation for action            |
+| `vp:respond`           | Respond to OID4VP request                |
+| `verify`               | Verify last presentation                 |
+| `aura:simulate`        | Loop present+verify to emit aura signals |
+| `aura:claim`           | Claim derived aura credential            |
+| `privacy:flow`         | Run DSR request+confirm demo             |
 
 ### Wallet Keystore
 
@@ -1525,6 +1542,7 @@ Keys are stored encrypted at rest (DPAPI on Windows); the `WalletKeyStore` inter
 ### Mobile Wallet Tests
 
 Sprint tests validate:
+
 - Software key restrictions and mainnet guards
 - Vault encryption at rest
 - KB-JWT binding (claims, signature, SD hash)
@@ -1543,24 +1561,29 @@ Note: `CODEBASE_OVERVIEW.md` is derived from source code. This appendix intentio
 ## A) Interoperability Targets (As Implemented)
 
 ### Protocol rails
+
 - **OID4VCI-style issuance** exists end-to-end (wallet obtains access token + c_nonce; issuer serves metadata + token + credential).
 - **OID4VP-style presentation** exists (verifier serves a request object; wallet responds with presentation; verifier verifies and returns allow/deny).
 
 ### Credential formats
+
 - **Primary VC format:** SD-JWT VC (`dc+sd-jwt`) with selective disclosure and KB-JWT holder binding.
 - **Optional format:** DI+BBS (`di+bbs`) is present as an alternate credential format path.
 
 ### DID method (Hedera)
+
 - DID lifecycle operations use a dedicated did-service and a resolver, but the repo does not currently contain a single explicit “did:hedera v1 vs v2 controller model” compatibility statement.
 - This matters for key rotation and recovery semantics: whether “control authority” is treated as identifier-key-derived vs controller-property-derived.
 
 ## B) Status / Revocation Contract (Where Interop Can Drift)
 
 ### Current behavior (issuer)
+
 - Issued SD-JWT payloads embed a `status` object whose shape matches a **W3C Bitstring Status List entry** (fields like `type: "BitstringStatusListEntry"`, `statusListIndex`, `statusListCredential`).
 - The issuer serves a `BitstringStatusListCredential` JSON object at `/status-lists/:id`, and includes a JWT proof (`proof.jwt`) signed by the issuer key.
 
 ### Current behavior (verifier)
+
 - Verifier fetches the status list URL and validates:
   - same origin relative to `ISSUER_SERVICE_BASE_URL`
   - required path prefix `/status-lists/`
@@ -1569,21 +1592,26 @@ Note: `CODEBASE_OVERVIEW.md` is derived from source code. This appendix intentio
 - It then checks the bit at `statusListIndex` inside `credentialSubject.encodedList`.
 
 ### Decision to make explicit
+
 This is internally consistent, but ecosystems differ on how SD-JWT VC revocation should be expressed. To keep compatibility intentional, pick one:
+
 - **Primary: Token-style status list** (SD-JWT VC status mechanism) and optionally publish a W3C translation for other ecosystems; OR
 - **Primary: W3C Bitstring profile** and make the SD-JWT `status` claim explicitly profile-namespaced (so it is not “spec-shaped but different”).
 
 ### Privacy posture for status list retrieval
+
 The current verifier SSRF protections are strong, but they also pin retrieval to the issuer origin. If you want to move status list hosting behind a dedicated domain/CDN later, treat it as a deliberate profile decision (explicit allowlisted origin(s) with the same SSRF rules).
 
 ## C) DID Control + Rotation Trust Contract (Needs a Stated Model)
 
 The repo implements wallet-driven signing for DID operations (request/submit), but DID-method semantics need an explicit “compatibility target” statement:
+
 - What key(s) are authoritative for DID updates/deactivation?
 - What does “rotate root key” mean without changing the DID identifier?
 - What does recovery authorize relative to update authorization?
 
 This statement should match:
+
 - wallet-cli rotation/recovery flows
 - did-service update authorization checks (via SDK/resolver)
 - verifier DID key binding assumptions (authorized keys extracted from DID document)
@@ -1591,13 +1619,16 @@ This statement should match:
 ## D) ZK Statement Trust Contract (Soundness vs Meaning)
 
 ### What is strong already
+
 - Proof verification is registry-driven: statement definitions declare required bindings, public inputs order, parameter constraints, and allowed commitment schemes.
 - Proofs are bound to request context via `nonce/audience/request_hash` public inputs and drift bounds.
 
 ### The gap to label explicitly
+
 For `age_credential_v1`, the wallet computes `dob_commitment` locally and sends it as a claim; the issuer enforces a shape/allowed-claims contract and explicitly forbids DOB fields.
 
 That means the current trust contract is:
+
 - **cryptographically sound proof**
 - but **self-asserted attribute behind the commitment** (issuer does not verify DOB-derived truth)
 
@@ -1606,6 +1637,7 @@ If downstream policy treats “age >= 18” as high assurance, the ZK statement 
 ## E) Aura Trust Contract (Sybil vs Collusion)
 
 The Aura scoring layer includes meaningful anti-collusion primitives (caps, decay, diversity constraints). The remaining high-leverage decision is domain-specific **Sybil posture**:
+
 - Which Aura domains are sybil-sensitive?
 - What makes a counterparty eligible to generate weight (credential requirement, stake/cost, tier floors, etc.)?
 

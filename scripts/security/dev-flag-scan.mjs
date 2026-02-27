@@ -23,7 +23,9 @@ const parseEnvExample = () => {
 };
 
 const isTruthy = (raw) => {
-  const v = String(raw ?? "").trim().toLowerCase();
+  const v = String(raw ?? "")
+    .trim()
+    .toLowerCase();
   return v === "1" || v === "true" || v === "yes" || v === "on";
 };
 
@@ -52,13 +54,17 @@ const main = () => {
   // Break-glass must never be enabled by default in the example env.
   const breakGlass = map.get("BREAK_GLASS_DISABLE_STRICT");
   if (breakGlass !== undefined && isTruthy(breakGlass)) {
-    failures.push({ kind: "break_glass_enabled_by_default", key: "BREAK_GLASS_DISABLE_STRICT", value: breakGlass });
+    failures.push({
+      kind: "break_glass_enabled_by_default",
+      key: "BREAK_GLASS_DISABLE_STRICT",
+      value: breakGlass
+    });
   }
 
   // CI-only flags must not be wired into shipped artifacts (Docker images, etc).
   // This is a conservative text scan; we fail if the string appears at all.
   try {
-    const dockerfiles = execSync("git ls-files \"**/Dockerfile\" \"**/Dockerfile.*\"", {
+    const dockerfiles = execSync('git ls-files "**/Dockerfile" "**/Dockerfile.*"', {
       cwd: repoRoot,
       stdio: ["ignore", "pipe", "ignore"]
     })
@@ -69,7 +75,11 @@ const main = () => {
     for (const file of dockerfiles) {
       const raw = readFileSync(path.join(repoRoot, file), "utf8");
       if (raw.includes("CI_TEST_MODE")) {
-        failures.push({ kind: "ci_test_mode_referenced_in_dockerfile", key: file, value: "CI_TEST_MODE" });
+        failures.push({
+          kind: "ci_test_mode_referenced_in_dockerfile",
+          key: file,
+          value: "CI_TEST_MODE"
+        });
       }
     }
   } catch (err) {
@@ -95,4 +105,3 @@ try {
   console.error("[dev-flag-scan] ERROR", err instanceof Error ? err.message : err);
   process.exit(2);
 }
-

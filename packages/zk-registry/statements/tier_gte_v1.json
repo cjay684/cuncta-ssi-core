@@ -22,7 +22,13 @@
     },
     "required": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"]
   },
-  "public_inputs_order": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"],
+  "public_inputs_order": [
+    "tier_commitment",
+    "min_tier",
+    "nonce_hash",
+    "audience_hash",
+    "request_hash"
+  ],
   "required_bindings": ["nonce", "audience", "request_hash"],
   "credential": {
     "credential_config_id": "tier_credential_v1",
@@ -32,7 +38,9 @@
   },
   "credential_requirements": {
     "required_commitment_fields": ["tier_commitment", "commitment_scheme_version"],
-    "commitment_scheme_versions_allowed": ["0000000000000000000000000000000000000000000000000000000000000000"]
+    "commitment_scheme_versions_allowed": [
+      "0000000000000000000000000000000000000000000000000000000000000000"
+    ]
   },
   "zk_context_requirements": {},
   "issuer_contract": {
@@ -40,8 +48,18 @@
     "required_claims": ["tier_commitment", "commitment_scheme_version"]
   },
   "verifier_contract": {
-    "required_public_inputs": ["tier_commitment", "min_tier", "nonce_hash", "audience_hash", "request_hash"],
-    "binding_public_inputs": { "nonce": "nonce_hash", "audience": "audience_hash", "request_hash": "request_hash" },
+    "required_public_inputs": [
+      "tier_commitment",
+      "min_tier",
+      "nonce_hash",
+      "audience_hash",
+      "request_hash"
+    ],
+    "binding_public_inputs": {
+      "nonce": "nonce_hash",
+      "audience": "audience_hash",
+      "request_hash": "request_hash"
+    },
     "param_constraints": [{ "param": "min_tier", "public_input": "min_tier", "op": "eq" }],
     "context_constraints": []
   },
@@ -54,4 +72,3 @@
   "privacy_notes": "Stub to demonstrate data-driven extensibility; circuit and keys not shipped yet.",
   "deprecated": false
 }
-

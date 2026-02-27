@@ -26,7 +26,8 @@ const walk = async (dir) => {
   for (const entry of entries) {
     const p = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith(".")) continue;
+      if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith("."))
+        continue;
       out.push(...(await walk(p)));
     } else {
       out.push(p);
@@ -107,4 +108,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

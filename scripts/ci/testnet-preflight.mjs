@@ -104,7 +104,10 @@ const main = async () => {
     throw new Error("invalid_TESTNET_MIN_BALANCE_TINYBARS");
   }
 
-  const balance = await fetchJsonWithRetry(balanceUrl.toString(), { timeoutMs: 10_000, attempts: 3 });
+  const balance = await fetchJsonWithRetry(balanceUrl.toString(), {
+    timeoutMs: 10_000,
+    attempts: 3
+  });
   if (!balance.ok) {
     throw new Error(
       `[preflight] mirror_balance_query_failed url=${balanceUrl.toString()} status=${balance.status} body=${String(
@@ -132,4 +135,3 @@ main().catch((err) => {
   console.error("[preflight] FAIL", message);
   process.exit(1);
 });
-

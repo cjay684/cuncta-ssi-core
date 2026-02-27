@@ -196,4 +196,3 @@ Wallet helper:
 ```sh
 pnpm -C apps/wallet-cli wallet privacy:flow
 ```
-

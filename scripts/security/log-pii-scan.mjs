@@ -70,4 +70,3 @@ if (findings.length) {
 }
 
 console.log("log_pii_scan_ok");
-

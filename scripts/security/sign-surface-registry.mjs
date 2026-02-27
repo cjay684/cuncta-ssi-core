@@ -169,13 +169,23 @@ const parseAndValidateProtectedHeader = (protectedB64url) => {
   if (!isObject(header)) throw new Error("surface_registry_integrity_failed");
 
   const keys = Object.keys(header);
-  const isLegacy = keys.length === 3 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid");
-  const isV1Plus = keys.length === 4 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid") && keys.includes("canon");
+  const isLegacy =
+    keys.length === 3 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid");
+  const isV1Plus =
+    keys.length === 4 &&
+    keys.includes("alg") &&
+    keys.includes("typ") &&
+    keys.includes("kid") &&
+    keys.includes("canon");
   if (!isLegacy && !isV1Plus) {
     throw new Error("surface_registry_integrity_failed");
   }
 
-  if (header.alg !== "EdDSA" || header.typ !== "surface-registry+json" || !isNonEmptyString(header.kid)) {
+  if (
+    header.alg !== "EdDSA" ||
+    header.typ !== "surface-registry+json" ||
+    !isNonEmptyString(header.kid)
+  ) {
     throw new Error("surface_registry_integrity_failed");
   }
 
@@ -304,7 +314,9 @@ Modes:
       }
       if (args.verify || args.sync) {
         // eslint-disable-next-line no-console
-        console.warn("[surface-registry] SURFACE_REGISTRY_PUBLIC_KEY missing; skipping signature verification");
+        console.warn(
+          "[surface-registry] SURFACE_REGISTRY_PUBLIC_KEY missing; skipping signature verification"
+        );
       }
     } else {
       await verifyBundleSignature({ bundle, publicKeyJwkB64url: publicKeyEnv });
@@ -323,7 +335,9 @@ Modes:
       if (args.sync) {
         await writeFile(args.bundlePath, expectedText, "utf8");
         // eslint-disable-next-line no-console
-        console.log(`[surface-registry] Synced bundle: ${path.relative(repoRoot, args.bundlePath)}`);
+        console.log(
+          `[surface-registry] Synced bundle: ${path.relative(repoRoot, args.bundlePath)}`
+        );
         return;
       }
       throw new Error("surface_registry_bundle_not_deterministic");
@@ -360,7 +374,11 @@ Modes:
   if (!prot || !payload || !sig) {
     throw new Error("surface_registry_signing_failed");
   }
-  const expectedProt = protectedHeaderToDeterministicB64url({ kid, canon: CANON_VERSION, legacy: false });
+  const expectedProt = protectedHeaderToDeterministicB64url({
+    kid,
+    canon: CANON_VERSION,
+    legacy: false
+  });
   if (prot !== expectedProt) {
     throw new Error("surface_registry_signing_failed");
   }
@@ -384,7 +402,9 @@ Modes:
     // Best-effort self-check.
     await verifyBundleSignature({ bundle, publicKeyJwkB64url: publicKeyEnv });
     // eslint-disable-next-line no-console
-    console.log(`[surface-registry] Signed + verified bundle: ${path.relative(repoRoot, args.bundlePath)}`);
+    console.log(
+      `[surface-registry] Signed + verified bundle: ${path.relative(repoRoot, args.bundlePath)}`
+    );
   }
 };
 
@@ -394,4 +414,3 @@ main().catch((err) => {
   console.error("[surface-registry] ERROR", message);
   process.exit(1);
 });
-

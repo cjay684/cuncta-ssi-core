@@ -22,9 +22,9 @@ Profiles live under:
 
 Selection order:
 
-1) Explicit `context.profile_id` (request context)
-2) `context.verifier_origin` origin → `COMPLIANCE_PROFILE_ORIGIN_MAP_JSON` mapping
-3) `COMPLIANCE_PROFILE_DEFAULT` fallback
+1. Explicit `context.profile_id` (request context)
+2. `context.verifier_origin` origin → `COMPLIANCE_PROFILE_ORIGIN_MAP_JSON` mapping
+3. `COMPLIANCE_PROFILE_DEFAULT` fallback
 
 No endpoint-specific jurisdiction logic is used.
 
@@ -50,4 +50,3 @@ Common env knobs:
 
 - `COMPLIANCE_PROFILE_DEFAULT=default|uk|eu`
 - `COMPLIANCE_PROFILE_ORIGIN_MAP_JSON='{"https://rp.example":"uk"}'`
-

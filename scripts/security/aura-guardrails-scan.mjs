@@ -80,11 +80,18 @@ const main = async () => {
     path.join(repoRoot, "apps", "social-service", "src", "routes"),
     path.join(repoRoot, "apps", "app-gateway", "src", "routes")
   ];
-  const routeFiles = (await Promise.all(routeRoots.map((r) => walk(r)))).flat().filter((f) => isTextFile(f));
+  const routeFiles = (await Promise.all(routeRoots.map((r) => walk(r))))
+    .flat()
+    .filter((f) => isTextFile(f));
   for (const file of routeFiles) {
     const r = rel(file);
     const content = await readFile(file, "utf8").catch(() => "");
-    for (const forbidden of ['"/v1/aura/state"', '"/v1/aura/raw"', "'/v1/aura/state'", "'/v1/aura/raw'"]) {
+    for (const forbidden of [
+      '"/v1/aura/state"',
+      '"/v1/aura/raw"',
+      "'/v1/aura/state'",
+      "'/v1/aura/raw'"
+    ]) {
       if (content.includes(forbidden)) {
         failures.push({ kind: "raw_aura_endpoint_forbidden", file: r, detail: forbidden });
       }
@@ -99,4 +106,3 @@ main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

@@ -56,4 +56,3 @@ if (findings.length) {
 }
 
 console.log("zk_proof_db_scan_ok");
-

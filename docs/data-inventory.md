@@ -8,16 +8,16 @@ Principles:
 
 ## Persistent Stores
 
-| Store | Location | Contains | PII Risk | Retention | DSR behavior |
-|---|---|---|---|---|---|
-| `verification_challenges` | Postgres | `challenge_hash`, action/policy hashes, expiry/consumed timestamps | Low (no raw nonce) | TTL via `RETENTION_VERIFICATION_CHALLENGES_DAYS` | Not directly linkable; expires/deletes |
-| `oid4vci_preauth_codes` | Postgres | `code_hash`, `vct`, TTL, consumed timestamp | Low (no raw code) | TTL (minutes) + cleanup | Not linkable to DID; TTL delete |
-| `oid4vci_c_nonces` | Postgres | `nonce_hash`, `token_jti_hash`, TTL, consumed timestamp | Low | TTL (minutes) + cleanup | Not linkable to DID; TTL delete |
-| `oid4vp_request_hashes` | Postgres | `request_hash`, TTL, consumed timestamp | Low | TTL (minutes) | Not linkable to DID; TTL delete |
-| `issuance_events` | Postgres | `subject_did_hash` (HMAC pepper), `vct`, credential fingerprints, status list pointers | Medium (pseudonymous) | Retention per issuer policy | `privacy/erase` unlinks `subject_did_hash` and writes tombstones |
-| `status_lists` + versions | Postgres | revocation bitstrings (no subject identifiers) | Low | Operational | DSR not applicable (no subject identifiers) |
-| `anchor_*` tables | Postgres | anchored payload hashes + receipts + reconciliation status | Low | Operational | DSR not applicable (hash-only) |
-| `audit_logs` / `command_center_audit_events` | Postgres | operational telemetry, pseudonymous subject hashes | Medium (pseudonymous) | `RETENTION_AUDIT_LOGS_DAYS` | DSR erasure removes/unlinks subject hashes when present |
+| Store                                        | Location | Contains                                                                               | PII Risk              | Retention                                        | DSR behavior                                                     |
+| -------------------------------------------- | -------- | -------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| `verification_challenges`                    | Postgres | `challenge_hash`, action/policy hashes, expiry/consumed timestamps                     | Low (no raw nonce)    | TTL via `RETENTION_VERIFICATION_CHALLENGES_DAYS` | Not directly linkable; expires/deletes                           |
+| `oid4vci_preauth_codes`                      | Postgres | `code_hash`, `vct`, TTL, consumed timestamp                                            | Low (no raw code)     | TTL (minutes) + cleanup                          | Not linkable to DID; TTL delete                                  |
+| `oid4vci_c_nonces`                           | Postgres | `nonce_hash`, `token_jti_hash`, TTL, consumed timestamp                                | Low                   | TTL (minutes) + cleanup                          | Not linkable to DID; TTL delete                                  |
+| `oid4vp_request_hashes`                      | Postgres | `request_hash`, TTL, consumed timestamp                                                | Low                   | TTL (minutes)                                    | Not linkable to DID; TTL delete                                  |
+| `issuance_events`                            | Postgres | `subject_did_hash` (HMAC pepper), `vct`, credential fingerprints, status list pointers | Medium (pseudonymous) | Retention per issuer policy                      | `privacy/erase` unlinks `subject_did_hash` and writes tombstones |
+| `status_lists` + versions                    | Postgres | revocation bitstrings (no subject identifiers)                                         | Low                   | Operational                                      | DSR not applicable (no subject identifiers)                      |
+| `anchor_*` tables                            | Postgres | anchored payload hashes + receipts + reconciliation status                             | Low                   | Operational                                      | DSR not applicable (hash-only)                                   |
+| `audit_logs` / `command_center_audit_events` | Postgres | operational telemetry, pseudonymous subject hashes                                     | Medium (pseudonymous) | `RETENTION_AUDIT_LOGS_DAYS`                      | DSR erasure removes/unlinks subject hashes when present          |
 
 ## Cryptographic Pseudonymization
 
@@ -51,10 +51,10 @@ Principles:
 
 The following tables may exist in some deployments from earlier experimental ZK tracks. They are not used by the current Groth16 predicate flow.
 
-| Store | Location | Contains | PII Risk | Retention | DSR behavior |
-|---|---|---|---|---|---|
-| `zk_age_groups` | Postgres | legacy Merkle roots for Semaphore-era age track | Low | Deprecated | DSR not applicable (no subject identifiers) |
-| `zk_age_group_members` | Postgres | legacy `identity_commitment` + `subject_did_hash` | Medium (pseudonymous) | Deprecated | `privacy/erase` deletes rows by DID hash |
+| Store                  | Location | Contains                                          | PII Risk              | Retention  | DSR behavior                                |
+| ---------------------- | -------- | ------------------------------------------------- | --------------------- | ---------- | ------------------------------------------- |
+| `zk_age_groups`        | Postgres | legacy Merkle roots for Semaphore-era age track   | Low                   | Deprecated | DSR not applicable (no subject identifiers) |
+| `zk_age_group_members` | Postgres | legacy `identity_commitment` + `subject_did_hash` | Medium (pseudonymous) | Deprecated | `privacy/erase` deletes rows by DID hash    |
 
 ## Lawful Basis (Template)
 
@@ -64,4 +64,3 @@ Deployment owners must select and document one basis per processing purpose:
 - Legitimate interests (fraud/abuse controls, rate limiting)
 
 Record your basis per store/purpose in deployment documentation.
-

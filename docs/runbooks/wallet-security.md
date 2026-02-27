@@ -37,4 +37,3 @@ Threat assumptions:
   - holder public key (for `cnf.jwk`)
   - keystore-encrypted private key blobs (DPAPI mode) under a dedicated `keystore` bucket
 - No raw private key material is stored server-side by any service.
-

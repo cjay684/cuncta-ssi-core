@@ -51,14 +51,14 @@
 
 **Anchors per event**
 
-| Event | Anchors | Source |
-|-------|---------|--------|
-| Credential issuance | 1 (ISSUED) | `issuance.ts` |
-| Revocation | 1 (REVOKED) | `issuance.ts` |
-| Verification | 1 (OBLIGATION_EXECUTED) + optional ANCHOR_EVENT per policy | `obligations/execute.ts` |
-| Social action (when `body.anchor` true) | 1 per action | `social.ts` (profile create, post, reply, etc.) |
-| Catalog change | 1 (CATALOG_CHANGE) | `catalogIntegrity.ts` |
-| Audit head | 1 (AUDIT_LOG_HEAD) per cleanup cycle | `cleanupWorker.ts` |
+| Event                                   | Anchors                                                    | Source                                          |
+| --------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------- |
+| Credential issuance                     | 1 (ISSUED)                                                 | `issuance.ts`                                   |
+| Revocation                              | 1 (REVOKED)                                                | `issuance.ts`                                   |
+| Verification                            | 1 (OBLIGATION_EXECUTED) + optional ANCHOR_EVENT per policy | `obligations/execute.ts`                        |
+| Social action (when `body.anchor` true) | 1 per action                                               | `social.ts` (profile create, post, reply, etc.) |
+| Catalog change                          | 1 (CATALOG_CHANGE)                                         | `catalogIntegrity.ts`                           |
+| Audit head                              | 1 (AUDIT_LOG_HEAD) per cleanup cycle                       | `cleanupWorker.ts`                              |
 
 **Batching**
 
@@ -133,12 +133,12 @@
 
 **Current behavior (no special flags)**
 
-| Check | Default | Config |
-|-------|---------|--------|
-| OID4VP requests signed | ✅ On | `VERIFIER_SIGN_OID4VP_REQUEST` defaults `true` |
-| Origin audience enforced | ✅ On | `ENFORCE_ORIGIN_AUDIENCE` defaults `true` |
-| Short expirations | ✅ Yes (challenge TTL, token TTL) | Configurable |
-| Challenge single-use | ✅ Yes | Enforced in verify flow |
+| Check                    | Default                           | Config                                         |
+| ------------------------ | --------------------------------- | ---------------------------------------------- |
+| OID4VP requests signed   | ✅ On                             | `VERIFIER_SIGN_OID4VP_REQUEST` defaults `true` |
+| Origin audience enforced | ✅ On                             | `ENFORCE_ORIGIN_AUDIENCE` defaults `true`      |
+| Short expirations        | ✅ Yes (challenge TTL, token TTL) | Configurable                                   |
+| Challenge single-use     | ✅ Yes                            | Enforced in verify flow                        |
 
 **Flags to enable**
 
@@ -323,19 +323,19 @@ pnpm start
 
 **What would break or need attention:**
 
-| Area | Effect |
-|------|--------|
-| **Verifier** | Fails at startup if `ALLOW_MAINNET` not set; with `ALLOW_MAINNET=1` it runs. |
-| **Issuer** | Same guard; with `ALLOW_MAINNET=1` it runs. |
-| **wallet-cli** | `HEDERA_NETWORK=mainnet` fails env schema (`z.literal("testnet")`). |
-| **createDidUserPays** | Hardcoded `network: "testnet"` in Registrar providers. |
-| **Fees** | Mainnet fees apply; no fee handling changes. |
-| **DID format** | `did:hedera:mainnet:...` used when network is mainnet. |
-| **Mirror URL** | Defaults to mainnet mirror; overridable. |
-| **Access tokens** | Unchanged. |
-| **Rate limits** | Unchanged; consider tuning for mainnet. |
-| **OID metadata** | `ISSUER_BASE_URL` must point to mainnet-facing URL. |
-| **Reconciliation** | Disabled by default in production; enable explicitly if desired. |
+| Area                  | Effect                                                                       |
+| --------------------- | ---------------------------------------------------------------------------- |
+| **Verifier**          | Fails at startup if `ALLOW_MAINNET` not set; with `ALLOW_MAINNET=1` it runs. |
+| **Issuer**            | Same guard; with `ALLOW_MAINNET=1` it runs.                                  |
+| **wallet-cli**        | `HEDERA_NETWORK=mainnet` fails env schema (`z.literal("testnet")`).          |
+| **createDidUserPays** | Hardcoded `network: "testnet"` in Registrar providers.                       |
+| **Fees**              | Mainnet fees apply; no fee handling changes.                                 |
+| **DID format**        | `did:hedera:mainnet:...` used when network is mainnet.                       |
+| **Mirror URL**        | Defaults to mainnet mirror; overridable.                                     |
+| **Access tokens**     | Unchanged.                                                                   |
+| **Rate limits**       | Unchanged; consider tuning for mainnet.                                      |
+| **OID metadata**      | `ISSUER_BASE_URL` must point to mainnet-facing URL.                          |
+| **Reconciliation**    | Disabled by default in production; enable explicitly if desired.             |
 
 ---
 
@@ -343,12 +343,12 @@ pnpm start
 
 **Would a security auditor find:**
 
-| Category | Finding |
-|----------|---------|
-| **Dev-only shortcuts** | Operator-as-payer fallback (testnet/dev); `ANCHOR_RECONCILIATION_ENABLED=false` in prod; `ENFORCE_ORIGIN_AUDIENCE` off by default. |
-| **Temporary fallbacks** | `OID4VCI_ACCESS_TOKEN_SECRET` fallback to `SERVICE_JWT_SECRET_ISSUER` / `SERVICE_JWT_SECRET`; shared secrets increase blast radius. |
-| **Implicit trust** | Internal endpoints rely on service auth; policy-service compromise can affect policy content (integrity still enforced by verifier). |
-| **TODO/FIXME in critical paths** | None in app code; only in `packages/wallet/node_modules/zod`. |
+| Category                         | Finding                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Dev-only shortcuts**           | Operator-as-payer fallback (testnet/dev); `ANCHOR_RECONCILIATION_ENABLED=false` in prod; `ENFORCE_ORIGIN_AUDIENCE` off by default.   |
+| **Temporary fallbacks**          | `OID4VCI_ACCESS_TOKEN_SECRET` fallback to `SERVICE_JWT_SECRET_ISSUER` / `SERVICE_JWT_SECRET`; shared secrets increase blast radius.  |
+| **Implicit trust**               | Internal endpoints rely on service auth; policy-service compromise can affect policy content (integrity still enforced by verifier). |
+| **TODO/FIXME in critical paths** | None in app code; only in `packages/wallet/node_modules/zod`.                                                                        |
 
 ---
 

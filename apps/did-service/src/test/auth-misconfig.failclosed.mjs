@@ -33,4 +33,3 @@ const reply = (() => {
 await requireServiceAuth(request, reply);
 assert.equal(reply.__state.sent, true);
 assert.equal(reply.__state.status, 503);
-

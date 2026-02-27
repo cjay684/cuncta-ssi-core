@@ -57,6 +57,7 @@ pnpm --filter wallet-cli dev -- did:recovery:simulate-loss
 ### 4) Rotate the DID using the recovery key
 
 This performs a standard DID update signed by the recovery key:
+
 - Adds a fresh primary key
 - Removes the previous primary verification method (best-effort)
 - Updates `wallet-state.json` to the new primary key
@@ -81,4 +82,3 @@ Run any wallet presentation/verification flow that relies on KB-JWT holder bindi
 - Servers remain fail-closed in production posture (misconfig should deny).
 - The recovery key install step is intentionally explicit and auditable.
 - On compromise: if you suspect the recovery key is exposed, rotate it immediately (install a new recovery key and remove the old verification method).
-
