@@ -31,14 +31,7 @@ test("AURA_BATCH batch_hash is deterministic across event ordering", async () =>
 
   await db("anchor_outbox").where({ event_type: "AURA_BATCH" }).del();
   await db("aura_signals").where({ domain: "marketplace" }).del();
-  await db("aura_rules").where({ rule_id: "test.batch.determinism.v1" }).del();
-  await db("aura_rules")
-    .where({
-      domain: "marketplace",
-      output_vct: "cuncta.marketplace.seller_good_standing",
-      enabled: true
-    })
-    .update({ enabled: false, updated_at: now });
+  await db("aura_rules").where({ domain: "marketplace" }).del();
 
   await db("aura_rules").insert({
     rule_id: "test.batch.determinism.v1",
