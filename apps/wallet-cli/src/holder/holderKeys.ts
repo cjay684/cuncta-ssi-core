@@ -13,16 +13,28 @@ const base64url = (input: Uint8Array | string) =>
 
 export const resolveHolderKeyState = async (): Promise<HolderKeyState> => {
   const state = await loadWalletState();
-  const key = (state as any)?.keys?.holder as HolderKeyState | undefined;
+  const keyedState = state as unknown as {
+    keys?: {
+      holder?: HolderKeyState;
+      ed25519?: {
+        publicKeyBase64?: string;
+        publicKeyMultibase?: string;
+        privateKeyBase64?: string;
+      };
+    };
+  };
+  const key = keyedState.keys?.holder;
   if (key?.alg === "Ed25519" && key.publicKeyBase64 && key.publicKeyMultibase) {
     return key;
   }
   // Backward compat: existing wallets may still have `keys.ed25519` populated.
-  const legacy = (state as any)?.keys?.ed25519 as
-    | { publicKeyBase64?: string; publicKeyMultibase?: string; privateKeyBase64?: string }
-    | undefined;
+  const legacy = keyedState.keys?.ed25519;
   if (legacy?.publicKeyBase64 && legacy.publicKeyMultibase) {
-    return { alg: "Ed25519", publicKeyBase64: legacy.publicKeyBase64, publicKeyMultibase: legacy.publicKeyMultibase };
+    return {
+      alg: "Ed25519",
+      publicKeyBase64: legacy.publicKeyBase64,
+      publicKeyMultibase: legacy.publicKeyMultibase
+    };
   }
   throw new Error("holder_keys_missing");
 };
@@ -61,4 +73,3 @@ export const buildHolderJwtEdDsa = async (input: {
   const signatureB64 = base64url(signature);
   return `${signingInput}.${signatureB64}`;
 };
-

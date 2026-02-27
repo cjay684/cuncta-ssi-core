@@ -2,7 +2,11 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import * as Registrar from "@hiero-did-sdk/registrar";
 import * as DidMessages from "@hiero-did-sdk/messages";
-import { classifyHederaFailure, OnboardingStrategy, parseOnboardingStrategyList } from "@cuncta/shared";
+import {
+  classifyHederaFailure,
+  OnboardingStrategy,
+  parseOnboardingStrategyList
+} from "@cuncta/shared";
 import {
   AccountId,
   Client,
@@ -28,7 +32,10 @@ export const envSchema = z
   .object({
     NODE_ENV: z.string().optional(),
     DID_SERVICE_BASE_URL: z.string().url(),
-    APP_GATEWAY_BASE_URL: z.preprocess((value) => (value === "" ? undefined : value), z.string().url().optional()),
+    APP_GATEWAY_BASE_URL: z.preprocess(
+      (value) => (value === "" ? undefined : value),
+      z.string().url().optional()
+    ),
     HEDERA_NETWORK: HederaNetwork.default("testnet"),
     ALLOW_MAINNET: z.preprocess((v) => v === "true" || v === "1", z.boolean()).default(false),
     HEDERA_DID_TOPIC_ID: z.string().optional(),
@@ -39,10 +46,10 @@ export const envSchema = z
     ONBOARDING_STRATEGY_DEFAULT: z.string().optional(),
     ONBOARDING_STRATEGY_ALLOWED: z.string().optional()
   })
-  .refine(
-    (env) => env.HEDERA_NETWORK !== "mainnet" || env.ALLOW_MAINNET,
-    { message: "HEDERA_NETWORK=mainnet requires ALLOW_MAINNET=true", path: ["ALLOW_MAINNET"] }
-  );
+  .refine((env) => env.HEDERA_NETWORK !== "mainnet" || env.ALLOW_MAINNET, {
+    message: "HEDERA_NETWORK=mainnet requires ALLOW_MAINNET=true",
+    path: ["ALLOW_MAINNET"]
+  });
 
 type WalletState = {
   keys: {
@@ -105,8 +112,11 @@ const registrarGenerateUpdateRequest = async (
   input: { did: string; updates: unknown[] },
   providers: RegistrarProviders
 ): Promise<RegistrarUpdateRequest> => {
-  const fn = (registrar as unknown as { generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return (await fn(input, providers)) as RegistrarUpdateRequest;
 };
@@ -120,8 +130,11 @@ const registrarSubmitUpdateRequest = async (
   },
   providers: RegistrarProviders
 ) => {
-  const fn = (registrar as unknown as { submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return await fn(input, providers);
 };
@@ -212,11 +225,16 @@ const waitForDidResolution = async (
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort("did_resolution_fetch_timeout"), 5000);
       timeout.unref?.();
-      const response = await fetch(new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, didServiceBaseUrl), {
-        signal: controller.signal
-      });
+      const response = await fetch(
+        new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, didServiceBaseUrl),
+        {
+          signal: controller.signal
+        }
+      );
       clearTimeout(timeout);
-      console.log(`did_resolution_fetch attempt=${attempt}/${maxAttempts} status=${response.status}`);
+      console.log(
+        `did_resolution_fetch attempt=${attempt}/${maxAttempts} status=${response.status}`
+      );
       if (response.ok) {
         const payload = (await response.json()) as { didDocument?: Record<string, unknown> };
         if (payload.didDocument && Object.keys(payload.didDocument).length > 0) {
@@ -455,7 +473,9 @@ const resolvePayerCredentials = (env: z.infer<typeof envSchema>) => {
     );
   }
   if (!isCiTestBuildEnabled()) {
-    throw new Error("payer_credentials_required (set HEDERA_PAYER_*; operator fallback requires CI_TEST_MODE=true)");
+    throw new Error(
+      "payer_credentials_required (set HEDERA_PAYER_*; operator fallback requires CI_TEST_MODE=true)"
+    );
   }
   const operatorAccountId = env.HEDERA_OPERATOR_ID?.trim();
   const operatorPrivateKey = env.HEDERA_OPERATOR_PRIVATE_KEY?.trim();
@@ -608,14 +628,20 @@ export const didCreateAuto = async (modeOverride?: OnboardingStrategy) => {
     console.log("Pending network confirmation...");
     const resolveBaseUrl = env.APP_GATEWAY_BASE_URL ?? serviceBaseUrl;
     const resolution = await waitForDidResolution(resolveBaseUrl, result.did);
-    console.log(`did_resolution_elapsed_ms=${resolution.elapsedMs} attempts=${resolution.attempts}`);
+    console.log(
+      `did_resolution_elapsed_ms=${resolution.elapsedMs} attempts=${resolution.attempts}`
+    );
 
     // Install a dedicated holder binding key in the DID Document.
     // This enables true "DID↔cnf" rotation semantics: root key stays for DID updates, holder key rotates for kb-jwt binding.
     {
       const { payerAccountId, payerPrivateKey } = resolvePayerCredentials(env);
       const providers = {
-        clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+        clientOptions: {
+          network: env.HEDERA_NETWORK,
+          accountId: payerAccountId,
+          privateKey: payerPrivateKey
+        }
       } as RegistrarProviders;
       const holderId = `#holder-${Date.now()}`;
       const updates: Array<Record<string, unknown>> = [
@@ -625,18 +651,39 @@ export const didCreateAuto = async (modeOverride?: OnboardingStrategy) => {
           property: "verificationMethod",
           publicKeyMultibase: holderPublicKeyMultibase
         },
-        { operation: "add-verification-method", id: holderId, property: "authentication", publicKeyMultibase: holderPublicKeyMultibase },
-        { operation: "add-verification-method", id: holderId, property: "assertionMethod", publicKeyMultibase: holderPublicKeyMultibase }
+        {
+          operation: "add-verification-method",
+          id: holderId,
+          property: "authentication",
+          publicKeyMultibase: holderPublicKeyMultibase
+        },
+        {
+          operation: "add-verification-method",
+          id: holderId,
+          property: "assertionMethod",
+          publicKeyMultibase: holderPublicKeyMultibase
+        }
       ];
-      const updateReq = await registrarGenerateUpdateRequest({ did: result.did, updates }, providers);
-      const signingRequests = (updateReq?.signingRequests ?? {}) as Record<string, { serializedPayload?: Uint8Array }>;
+      const updateReq = await registrarGenerateUpdateRequest(
+        { did: result.did, updates },
+        providers
+      );
+      const signingRequests = (updateReq?.signingRequests ?? {}) as Record<
+        string,
+        { serializedPayload?: Uint8Array }
+      >;
       const signatures: Record<string, Uint8Array> = {};
       for (const [key, req] of Object.entries(signingRequests)) {
         const payloadToSign = (req.serializedPayload ?? new Uint8Array()) as Uint8Array;
         signatures[key] = await keystore.sign("primary", payloadToSign);
       }
       await registrarSubmitUpdateRequest(
-        { states: updateReq.states, signatures, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
+        {
+          states: updateReq.states,
+          signatures,
+          waitForDIDVisibility: false,
+          visibilityTimeoutMs: 120_000
+        },
         providers
       );
       // Deterministic visibility poll (no blind sleeps): ensure the holder key is now authorized by the DID doc.
@@ -647,7 +694,7 @@ export const didCreateAuto = async (modeOverride?: OnboardingStrategy) => {
     const state: WalletState = {
       // Preserve keystore + any future wallet metadata.
       // (File keystore writes private key material under `state.keystore.*`; do not wipe it.)
-      ...(existing as any),
+      ...(existing ?? {}),
       keys: {
         holder: {
           alg: "Ed25519",
@@ -719,7 +766,11 @@ export const didCreateUserPaysGateway = async () => {
   // Same holder binding installation as didCreateAuto().
   {
     const providers = {
-      clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+      clientOptions: {
+        network: env.HEDERA_NETWORK,
+        accountId: payerAccountId,
+        privateKey: payerPrivateKey
+      }
     } as RegistrarProviders;
     const holderId = `#holder-${Date.now()}`;
     const updates: Array<Record<string, unknown>> = [
@@ -729,18 +780,36 @@ export const didCreateUserPaysGateway = async () => {
         property: "verificationMethod",
         publicKeyMultibase: holderPublicKeyMultibase
       },
-      { operation: "add-verification-method", id: holderId, property: "authentication", publicKeyMultibase: holderPublicKeyMultibase },
-      { operation: "add-verification-method", id: holderId, property: "assertionMethod", publicKeyMultibase: holderPublicKeyMultibase }
+      {
+        operation: "add-verification-method",
+        id: holderId,
+        property: "authentication",
+        publicKeyMultibase: holderPublicKeyMultibase
+      },
+      {
+        operation: "add-verification-method",
+        id: holderId,
+        property: "assertionMethod",
+        publicKeyMultibase: holderPublicKeyMultibase
+      }
     ];
     const updateReq = await registrarGenerateUpdateRequest({ did: result.did, updates }, providers);
-    const signingRequests = (updateReq?.signingRequests ?? {}) as Record<string, { serializedPayload?: Uint8Array }>;
+    const signingRequests = (updateReq?.signingRequests ?? {}) as Record<
+      string,
+      { serializedPayload?: Uint8Array }
+    >;
     const signatures: Record<string, Uint8Array> = {};
     for (const [key, req] of Object.entries(signingRequests)) {
       const payloadToSign = (req.serializedPayload ?? new Uint8Array()) as Uint8Array;
       signatures[key] = await keystore.sign("primary", payloadToSign);
     }
     await registrarSubmitUpdateRequest(
-      { states: updateReq.states, signatures, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
+      {
+        states: updateReq.states,
+        signatures,
+        waitForDIDVisibility: false,
+        visibilityTimeoutMs: 120_000
+      },
       providers
     );
     await waitForDidResolution(resolveBaseUrl, result.did, { maxAttempts: 90, intervalMs: 4000 });
@@ -749,7 +818,7 @@ export const didCreateUserPaysGateway = async () => {
   const existing = await loadWalletState();
   const state: WalletState = {
     // Preserve keystore + any future wallet metadata.
-    ...(existing as any),
+    ...(existing ?? {}),
     keys: {
       holder: {
         alg: "Ed25519",
