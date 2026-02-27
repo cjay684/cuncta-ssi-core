@@ -79,19 +79,22 @@ It exercises (real network):
 
 ## Common failures (actionable triage)
 
-1) `HEDERA_NETWORK must be set to testnet`
+1. `HEDERA_NETWORK must be set to testnet`
+
 - Fix: set `HEDERA_NETWORK=testnet` explicitly.
 
-2) `Missing required env vars: ...`
+2. `Missing required env vars: ...`
+
 - Fix: provide the required env vars listed by the error.
 
-3) Hedera flakiness (receipt / network / mirror lag)
+3. Hedera flakiness (receipt / network / mirror lag)
+
 - The harness includes bounded retries/backoff for transient Hedera failures and bounded polling for DID visibility.
 - If failures persist, verify:
   - operator account is funded
   - `MIRROR_NODE_BASE_URL` is reachable if overridden
   - local clock skew is not extreme
 
-4) `service_auth_not_configured`
-- Fix: set `SERVICE_JWT_SECRET` (and optionally `SERVICE_JWT_SECRET_*`) in your env for local runs.
+4. `service_auth_not_configured`
 
+- Fix: set `SERVICE_JWT_SECRET` (and optionally `SERVICE_JWT_SECRET_*`) in your env for local runs.

@@ -5,13 +5,43 @@
       "id": "app-gateway",
       "publiclyDeployable": true,
       "routes": [
-        { "method": "GET", "path": "/healthz", "surface": "public", "probe": { "path": "/healthz" } },
-        { "method": "GET", "path": "/metrics", "surface": "public", "probe": { "path": "/metrics" } },
-        { "method": "GET", "path": "/v1/capabilities", "surface": "public", "probe": { "path": "/v1/capabilities" } },
+        {
+          "method": "GET",
+          "path": "/healthz",
+          "surface": "public",
+          "probe": { "path": "/healthz" }
+        },
+        {
+          "method": "GET",
+          "path": "/metrics",
+          "surface": "public",
+          "probe": { "path": "/metrics" }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/capabilities",
+          "surface": "public",
+          "probe": { "path": "/v1/capabilities" }
+        },
 
-        { "method": "GET", "path": "/oid4vp/authorize", "surface": "public", "probe": { "path": "/oid4vp/authorize" } },
-        { "method": "GET", "path": "/oid4vp/request", "surface": "public", "probe": { "path": "/oid4vp/request" } },
-        { "method": "GET", "path": "/oid4vp/request_uri", "surface": "public", "probe": { "path": "/oid4vp/request_uri" } },
+        {
+          "method": "GET",
+          "path": "/oid4vp/authorize",
+          "surface": "public",
+          "probe": { "path": "/oid4vp/authorize" }
+        },
+        {
+          "method": "GET",
+          "path": "/oid4vp/request",
+          "surface": "public",
+          "probe": { "path": "/oid4vp/request" }
+        },
+        {
+          "method": "GET",
+          "path": "/oid4vp/request_uri",
+          "surface": "public",
+          "probe": { "path": "/oid4vp/request_uri" }
+        },
         {
           "method": "POST",
           "path": "/oid4vp/response",
@@ -22,9 +52,19 @@
             "body": {}
           }
         },
-        { "method": "GET", "path": "/.well-known/jwks.json", "surface": "public", "probe": { "path": "/.well-known/jwks.json" } },
+        {
+          "method": "GET",
+          "path": "/.well-known/jwks.json",
+          "surface": "public",
+          "probe": { "path": "/.well-known/jwks.json" }
+        },
 
-        { "method": "GET", "path": "/oid4vci/offer", "surface": "public", "probe": { "path": "/oid4vci/offer?vct=test_vct" } },
+        {
+          "method": "GET",
+          "path": "/oid4vci/offer",
+          "surface": "public",
+          "probe": { "path": "/oid4vci/offer?vct=test_vct" }
+        },
         {
           "method": "GET",
           "path": "/oid4vci/aura/challenge",
@@ -103,11 +143,36 @@
           "probe": { "path": "/v1/command/plan", "body": {} }
         },
 
-        { "method": "GET", "path": "/v1/realtime/*", "surface": "public", "probe": { "path": "/v1/realtime/events?permissionToken=tok" } },
-        { "method": "POST", "path": "/v1/realtime/*", "surface": "public", "probe": { "path": "/v1/realtime/token", "body": {} } },
-        { "method": "GET", "path": "/v1/social/*", "surface": "public", "probe": { "path": "/v1/social/feed" } },
-        { "method": "POST", "path": "/v1/social/*", "surface": "public", "probe": { "path": "/v1/social/post", "body": {} } },
-        { "method": "POST", "path": "/v1/media/*", "surface": "public", "probe": { "path": "/v1/media/upload/request", "body": {} } },
+        {
+          "method": "GET",
+          "path": "/v1/realtime/*",
+          "surface": "public",
+          "probe": { "path": "/v1/realtime/events?permissionToken=tok" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/realtime/*",
+          "surface": "public",
+          "probe": { "path": "/v1/realtime/token", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/social/*",
+          "surface": "public",
+          "probe": { "path": "/v1/social/feed" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/social/*",
+          "surface": "public",
+          "probe": { "path": "/v1/social/post", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/media/*",
+          "surface": "public",
+          "probe": { "path": "/v1/media/upload/request", "body": {} }
+        },
 
         {
           "method": "POST",
@@ -129,8 +194,18 @@
       "id": "issuer-service",
       "publiclyDeployable": true,
       "routes": [
-        { "method": "GET", "path": "/healthz", "surface": "public", "probe": { "path": "/healthz" } },
-        { "method": "GET", "path": "/metrics", "surface": "public", "probe": { "path": "/metrics" } },
+        {
+          "method": "GET",
+          "path": "/healthz",
+          "surface": "public",
+          "probe": { "path": "/healthz" }
+        },
+        {
+          "method": "GET",
+          "path": "/metrics",
+          "surface": "public",
+          "probe": { "path": "/metrics" }
+        },
 
         {
           "method": "GET",
@@ -138,21 +213,96 @@
           "surface": "public",
           "probe": { "path": "/.well-known/openid-credential-issuer" }
         },
-        { "method": "GET", "path": "/jwks.json", "surface": "public", "probe": { "path": "/jwks.json" } },
-        { "method": "POST", "path": "/token", "surface": "public", "probe": { "path": "/token", "body": "" } },
-        { "method": "POST", "path": "/credential", "surface": "public", "probe": { "path": "/credential", "body": {} } },
-        { "method": "GET", "path": "/status-lists/*", "surface": "public", "probe": { "path": "/status-lists/invalid" } },
-        { "method": "GET", "path": "/v1/issuer", "surface": "public", "probe": { "path": "/v1/issuer" } },
-        { "method": "GET", "path": "/v1/catalog/credentials", "surface": "public", "probe": { "path": "/v1/catalog/credentials" } },
-        { "method": "GET", "path": "/v1/catalog/credentials/:vct", "surface": "public", "probe": { "path": "/v1/catalog/credentials/invalid" } },
-        { "method": "POST", "path": "/v1/privacy/request", "surface": "public", "probe": { "path": "/v1/privacy/request", "body": {} } },
-        { "method": "POST", "path": "/v1/privacy/confirm", "surface": "public", "probe": { "path": "/v1/privacy/confirm", "body": {} } },
-        { "method": "GET", "path": "/v1/privacy/export", "surface": "public", "probe": { "path": "/v1/privacy/export" } },
-        { "method": "POST", "path": "/v1/privacy/restrict", "surface": "public", "probe": { "path": "/v1/privacy/restrict", "body": {} } },
-        { "method": "POST", "path": "/v1/privacy/erase", "surface": "public", "probe": { "path": "/v1/privacy/erase", "body": {} } },
-        { "method": "GET", "path": "/v1/privacy/erase-status", "surface": "public", "probe": { "path": "/v1/privacy/erase-status" } },
-        { "method": "POST", "path": "/v1/privacy/*", "surface": "public", "probe": { "path": "/v1/privacy/request", "body": {} } },
-        { "method": "GET", "path": "/v1/privacy/*", "surface": "public", "probe": { "path": "/v1/privacy/export" } },
+        {
+          "method": "GET",
+          "path": "/jwks.json",
+          "surface": "public",
+          "probe": { "path": "/jwks.json" }
+        },
+        {
+          "method": "POST",
+          "path": "/token",
+          "surface": "public",
+          "probe": { "path": "/token", "body": "" }
+        },
+        {
+          "method": "POST",
+          "path": "/credential",
+          "surface": "public",
+          "probe": { "path": "/credential", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/status-lists/*",
+          "surface": "public",
+          "probe": { "path": "/status-lists/invalid" }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/issuer",
+          "surface": "public",
+          "probe": { "path": "/v1/issuer" }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/catalog/credentials",
+          "surface": "public",
+          "probe": { "path": "/v1/catalog/credentials" }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/catalog/credentials/:vct",
+          "surface": "public",
+          "probe": { "path": "/v1/catalog/credentials/invalid" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/privacy/request",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/request", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/privacy/confirm",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/confirm", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/privacy/export",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/export" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/privacy/restrict",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/restrict", "body": {} }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/privacy/erase",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/erase", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/privacy/erase-status",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/erase-status" }
+        },
+        {
+          "method": "POST",
+          "path": "/v1/privacy/*",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/request", "body": {} }
+        },
+        {
+          "method": "GET",
+          "path": "/v1/privacy/*",
+          "surface": "public",
+          "probe": { "path": "/v1/privacy/export" }
+        },
 
         {
           "method": "POST",
@@ -296,4 +446,3 @@
     }
   ]
 }
-

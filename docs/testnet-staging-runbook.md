@@ -71,17 +71,16 @@ pnpm run smoke:staging
 
 What the script proves (and fails fast if any step breaks):
 
-1) DID create (self-funded via gateway `user_pays` flow; real Hedera topic submit)
-2) OID4VCI acquire credential (real token endpoint + credential endpoint)
-3) OID4VP request -> wallet response -> `ALLOW`
+1. DID create (self-funded via gateway `user_pays` flow; real Hedera topic submit)
+2. OID4VCI acquire credential (real token endpoint + credential endpoint)
+3. OID4VP request -> wallet response -> `ALLOW`
    - Wallet verifies `request_jwt` signature via `iss/.well-known/jwks.json` (strict default)
-4) Revoke -> verify `DENY`
+4. Revoke -> verify `DENY`
    - Operator revokes by `statusListId` + `statusListIndex` derived from the acquired credential
-5) Anchor reconcile returns at least one `VERIFIED` result (with bounded retries for mirror lag)
+5. Anchor reconcile returns at least one `VERIFIED` result (with bounded retries for mirror lag)
 
 ## Troubleshooting
 
 - If step (3) fails with `request_jwt_missing_strict_mode`: your staging gateway is not attaching signed requests to `/oid4vp/request` (request signing misconfigured).
 - If step (4) never turns into `DENY`: status list caching/propagation is stalled or the policy doesn’t require revocation for the `SMOKE_ACTION`.
 - If step (5) never yields `VERIFIED`: mirror lag, missing `ANCHOR_AUTH_SECRET`, or anchors are not being written (anchor worker/operator misconfig).
-
