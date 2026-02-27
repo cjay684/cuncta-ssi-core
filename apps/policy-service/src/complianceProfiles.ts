@@ -54,9 +54,16 @@ export const selectComplianceProfile = (context?: Record<string, unknown>): Comp
   return getComplianceProfile(fallbackId) ?? (getComplianceProfile("default") as ComplianceProfile);
 };
 
-const mergeFlags = (base?: Partial<ComplianceProfileFlags>, overlay?: Partial<ComplianceProfileFlags>) => ({
-  enforceOriginAudience: Boolean(overlay?.enforceOriginAudience ?? base?.enforceOriginAudience ?? true),
-  failClosedDependencies: Boolean(overlay?.failClosedDependencies ?? base?.failClosedDependencies ?? true),
+const mergeFlags = (
+  base?: Partial<ComplianceProfileFlags>,
+  overlay?: Partial<ComplianceProfileFlags>
+) => ({
+  enforceOriginAudience: Boolean(
+    overlay?.enforceOriginAudience ?? base?.enforceOriginAudience ?? true
+  ),
+  failClosedDependencies: Boolean(
+    overlay?.failClosedDependencies ?? base?.failClosedDependencies ?? true
+  ),
   statusListStrict: Boolean(overlay?.statusListStrict ?? base?.statusListStrict ?? true)
 });
 
@@ -94,4 +101,3 @@ export const applyComplianceProfileOverlay = (input: {
     flags: mergeFlags(profile.flags, undefined)
   };
 };
-

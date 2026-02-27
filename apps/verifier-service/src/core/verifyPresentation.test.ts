@@ -242,7 +242,10 @@ test("verifyPresentationCore: consumes challenge on first attempt even when late
     assert.ok(first.reasons.includes("kb_jwt_missing"));
 
     const row = await db("verification_challenges")
-      .where({ action_id: actionId, challenge_hash: createHash("sha256").update(nonce).digest("hex") })
+      .where({
+        action_id: actionId,
+        challenge_hash: createHash("sha256").update(nonce).digest("hex")
+      })
       .first();
     assert.ok(row?.consumed_at, "expected consumed_at to be set on first verify attempt");
 
@@ -258,4 +261,3 @@ test("verifyPresentationCore: consumes challenge on first attempt even when late
     await db.destroy();
   }
 });
-

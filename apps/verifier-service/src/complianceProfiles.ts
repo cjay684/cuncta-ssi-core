@@ -65,4 +65,3 @@ export const flagsFromRequirements = (input: {
     statusListStrict: Boolean(pf.statusListStrict || rf.statusListStrict)
   };
 };
-

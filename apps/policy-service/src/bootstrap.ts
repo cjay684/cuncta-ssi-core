@@ -67,4 +67,3 @@ export const ensureBaselinePolicies = async (db: DbClient) => {
   await upsertPolicy("dating_age_gate.v1", "dating_age_gate", datingLogic);
   await upsertPolicy("dating_enter.v1", "dating_enter", datingLogic);
 };
-

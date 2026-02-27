@@ -54,7 +54,8 @@ const isAbortLike = (error: unknown) => {
   if (!error) return false;
   if (error instanceof DOMException && error.name === "AbortError") return true;
   if (error instanceof Error && error.name === "AbortError") return true;
-  const msg = error instanceof Error ? error.message : isRecord(error) ? String(error.message ?? "") : "";
+  const msg =
+    error instanceof Error ? error.message : isRecord(error) ? String(error.message ?? "") : "";
   return /abort|aborted|timeout|timed out/i.test(msg);
 };
 
@@ -129,4 +130,3 @@ export const classifyHederaFailure = (error: unknown): HederaFailureClassificati
 
   return { kind: "unknown", code, status, txId };
 };
-

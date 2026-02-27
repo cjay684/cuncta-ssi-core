@@ -124,8 +124,12 @@ export const buildServer = () => {
       for (const req of logic.data.requirements) {
         for (const pred of req.zk_predicates ?? []) {
           const st = registry.get(pred.id);
-          if (!st) throw new Error(`policy_references_unknown_zk_statement:${row.policy_id}:${pred.id}`);
-          if (!st.available) throw new Error(`policy_references_unavailable_zk_statement:${row.policy_id}:${pred.id}`);
+          if (!st)
+            throw new Error(`policy_references_unknown_zk_statement:${row.policy_id}:${pred.id}`);
+          if (!st.available)
+            throw new Error(
+              `policy_references_unavailable_zk_statement:${row.policy_id}:${pred.id}`
+            );
         }
       }
     }

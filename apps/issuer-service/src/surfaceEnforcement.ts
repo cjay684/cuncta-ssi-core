@@ -46,14 +46,14 @@ const forbid = (reply: FastifyReply, devMode: boolean) =>
 export const registerSurfaceEnforcement = (
   app: FastifyInstance,
   input: {
-  config: {
-    NODE_ENV: string;
-    PUBLIC_SERVICE: boolean;
-    DEV_MODE: boolean;
-    SERVICE_JWT_SECRET?: string;
-    SERVICE_JWT_AUDIENCE: string;
-  };
-}
+    config: {
+      NODE_ENV: string;
+      PUBLIC_SERVICE: boolean;
+      DEV_MODE: boolean;
+      SERVICE_JWT_SECRET?: string;
+      SERVICE_JWT_AUDIENCE: string;
+    };
+  }
 ) => {
   const enabled = input.config.NODE_ENV === "production" && input.config.PUBLIC_SERVICE;
   const { registryPath, bundlePath } = resolveRegistryPaths();
@@ -133,4 +133,3 @@ export const registerSurfaceEnforcement = (
     }
   });
 };
-

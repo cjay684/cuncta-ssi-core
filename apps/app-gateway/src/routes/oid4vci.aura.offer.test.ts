@@ -19,12 +19,9 @@ process.env.USER_PAYS_HANDOFF_SECRET =
 const run = async (name: string, fn: () => Promise<void>) => {
   try {
     await fn();
-    // eslint-disable-next-line no-console
     console.log(`ok - ${name}`);
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error(`not ok - ${name}`);
-    // eslint-disable-next-line no-console
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
     process.exitCode = 1;
   }
@@ -104,7 +101,9 @@ await run("oid4vci aura offer forwards when scope is valid", async () => {
             credential_issuer: "http://localhost:3002",
             credential_configuration_ids: ["aura:cuncta.social.trusted_creator"],
             grants: {
-              "urn:ietf:params:oauth:grant-type:pre-authorized_code": { "pre-authorized_code": "code" }
+              "urn:ietf:params:oauth:grant-type:pre-authorized_code": {
+                "pre-authorized_code": "code"
+              }
             }
           },
           expires_at: new Date(Date.now() + 60_000).toISOString()
@@ -129,4 +128,3 @@ await run("oid4vci aura offer forwards when scope is valid", async () => {
   assert.equal(upstreamCalled, true);
   await app.close();
 });
-

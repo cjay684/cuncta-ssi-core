@@ -29,7 +29,6 @@ export async function up(knex: Knex): Promise<void> {
     await knex("aura_rules")
       .whereIn("rule_id", disable)
       .update({ enabled: false, updated_at: new Date().toISOString() });
-    // eslint-disable-next-line no-console
     console.log(
       `[aura_rules] disabled_duplicate_rules domain=${keep.domain} output_vct=${keep.output_vct} disabled=${disable.length}`
     );
@@ -47,4 +46,3 @@ export async function up(knex: Knex): Promise<void> {
 export async function down(knex: Knex): Promise<void> {
   await knex.raw(`DROP INDEX IF EXISTS aura_rules_one_enabled_per_domain_output_idx`);
 }
-

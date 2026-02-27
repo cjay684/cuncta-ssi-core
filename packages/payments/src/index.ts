@@ -198,7 +198,10 @@ const truncateUtf8ToBytes = (value: string, maxBytes: number) => {
 
 const sanitizeMemoPart = (value: string) => value.toLowerCase().replace(/[^a-z0-9._-]/g, "_");
 
-const parseRawAsset = (asset: RawAsset, network: "testnet" | "previewnet" | "mainnet"): AssetRef => {
+const parseRawAsset = (
+  asset: RawAsset,
+  network: "testnet" | "previewnet" | "mainnet"
+): AssetRef => {
   if (asset.kind === "HBAR") {
     return normalizeAssetRef({
       kind: "HBAR",
@@ -249,9 +252,12 @@ const normalizeSchedule = (schedule: RuntimeSchedule): RuntimeSchedule => {
   const actionFees: Record<string, FeeLineItem[]> = {};
   const intentFees: Record<string, FeeLineItem[]> = {};
   const purposeFees: Record<string, FeeLineItem[]> = {};
-  for (const key of sortedActionKeys) actionFees[key] = normalizeFeeItems(schedule.actionFees[key] ?? []);
-  for (const key of sortedIntentKeys) intentFees[key] = normalizeFeeItems(schedule.intentFees[key] ?? []);
-  for (const key of sortedPurposeKeys) purposeFees[key] = normalizeFeeItems(schedule.purposeFees[key] ?? []);
+  for (const key of sortedActionKeys)
+    actionFees[key] = normalizeFeeItems(schedule.actionFees[key] ?? []);
+  for (const key of sortedIntentKeys)
+    intentFees[key] = normalizeFeeItems(schedule.intentFees[key] ?? []);
+  for (const key of sortedPurposeKeys)
+    purposeFees[key] = normalizeFeeItems(schedule.purposeFees[key] ?? []);
   return {
     version: schedule.version,
     actionFees,
@@ -375,7 +381,11 @@ export const buildPaymentRequest = (input: {
   if (!ACCOUNT_ID_REGEX.test(input.receiver.accountId)) {
     throw new Error("invalid_receiver_account_id");
   }
-  if (!Number.isInteger(input.memoMaxBytes) || input.memoMaxBytes < 16 || input.memoMaxBytes > 256) {
+  if (
+    !Number.isInteger(input.memoMaxBytes) ||
+    input.memoMaxBytes < 16 ||
+    input.memoMaxBytes > 256
+  ) {
     throw new Error("invalid_memo_max_bytes");
   }
   const purposeScope = input.purposeScope.trim();

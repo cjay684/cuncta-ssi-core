@@ -1,3 +1,5 @@
+/* global Buffer, Response, clearTimeout, console, process, setTimeout */
+
 import assert from "node:assert/strict";
 
 const setupEnv = () => {
@@ -41,7 +43,11 @@ await run("sponsored DID create request returns 410 Gone", async () => {
     method: "POST",
     url: "/v1/onboard/did/create/request",
     headers: { "x-device-id": "device-test-1" },
-    payload: { network: "testnet", publicKeyMultibase: "z6Mkf5rGMoatqSjLf5fH2h6F4i2kUXqF2z7ABC", options: {} }
+    payload: {
+      network: "testnet",
+      publicKeyMultibase: "z6Mkf5rGMoatqSjLf5fH2h6F4i2kUXqF2z7ABC",
+      options: {}
+    }
   });
   assert.equal(response.statusCode, 410);
   const body = response.json();
@@ -79,7 +85,11 @@ await run("sponsored onboard issue returns 410 Gone", async () => {
     method: "POST",
     url: "/v1/onboard/issue",
     headers: { "x-device-id": "device-test-3" },
-    payload: { subjectDid: "did:hedera:testnet:0.0.1", vct: "cuncta.marketplace.seller_good_standing", claims: {} }
+    payload: {
+      subjectDid: "did:hedera:testnet:0.0.1",
+      vct: "cuncta.marketplace.seller_good_standing",
+      claims: {}
+    }
   });
   assert.equal(response.statusCode, 410);
   const body = response.json();
@@ -152,7 +162,8 @@ await run("verify proxy debug reasons disabled in production", async () => {
 
 await run("parses realtime token from websocket subprotocol safely", async () => {
   setupEnv();
-  const { parseWebsocketProtocolHeader, extractRealtimeToken } = await import("../routes/social.ts");
+  const { parseWebsocketProtocolHeader, extractRealtimeToken } =
+    await import("../routes/social.ts");
   const token = "abc123-test-token";
   const protocols = parseWebsocketProtocolHeader(`cuncta-rt, cuncta-rt.token.${token}`);
   const resolved = extractRealtimeToken({
@@ -184,7 +195,15 @@ await run("realtime events proxy forwards cursor query params", async () => {
     requestedUrl = String(input);
     return new Response(
       JSON.stringify({
-        events: [{ eventId: "evt_1", cursor: "12", eventType: "presence.ping", payload: {}, createdAt: "now" }],
+        events: [
+          {
+            eventId: "evt_1",
+            cursor: "12",
+            eventType: "presence.ping",
+            payload: {},
+            createdAt: "now"
+          }
+        ],
         nextCursor: "12"
       }),
       { status: 200, headers: { "content-type": "application/json" } }
@@ -202,7 +221,9 @@ await run("realtime events proxy forwards cursor query params", async () => {
     url: "/v1/realtime/events?permissionToken=tok&after=11&limit=1"
   });
   assert.equal(response.statusCode, 200);
-  assert.ok(requestedUrl.includes("/v1/social/realtime/events?permissionToken=tok&after=11&limit=1"));
+  assert.ok(
+    requestedUrl.includes("/v1/social/realtime/events?permissionToken=tok&after=11&limit=1")
+  );
   const body = response.json();
   assert.equal(body.events?.[0]?.cursor, "12");
   assert.equal(body.nextCursor, "12");
@@ -240,7 +261,7 @@ await run("realtime events proxy times out without hanging", async () => {
       SOCIAL_SERVICE_BASE_URL: "http://localhost:3005",
       REALTIME_SOCIAL_FETCH_TIMEOUT_MS: 150
     },
-    fetchImpl,
+    fetchImpl
   });
   const startedAt = Date.now();
   const response = await app.inject({
@@ -266,10 +287,13 @@ await run("media upload and realtime token include null feeQuote with empty sche
       });
     }
     if (url.includes("/v1/social/realtime/token")) {
-      return new Response(JSON.stringify({ token: "rt_token", expiresAt: "2026-01-01T00:00:00.000Z" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({ token: "rt_token", expiresAt: "2026-01-01T00:00:00.000Z" }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
     }
     return new Response(JSON.stringify({ error: "unexpected_url" }), {
       status: 500,
@@ -278,7 +302,7 @@ await run("media upload and realtime token include null feeQuote with empty sche
   };
   const app = buildServer({
     configOverride: { ...config, SOCIAL_SERVICE_BASE_URL: "http://localhost:3005" },
-    fetchImpl,
+    fetchImpl
   });
   const mediaResponse = await app.inject({
     method: "POST",
@@ -305,103 +329,109 @@ await run("media upload and realtime token include null feeQuote with empty sche
   await app.close();
 });
 
-await run("media upload and realtime token include deterministic purpose feeQuote when configured", async () => {
-  setupEnv();
-  const { buildServer } = await import("../server.ts");
-  const { config } = await import("../config.ts");
-  const schedule = {
-    version: 1,
-    assets: {
-      HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 },
-      CUNCTA: {
-        kind: "HTS",
-        tokenId_testnet: "0.0.12345",
-        tokenId_mainnet: "0.0.99999",
-        symbol: "CUNCTA",
-        decimals: 6
+await run(
+  "media upload and realtime token include deterministic purpose feeQuote when configured",
+  async () => {
+    setupEnv();
+    const { buildServer } = await import("../server.ts");
+    const { config } = await import("../config.ts");
+    const schedule = {
+      version: 1,
+      assets: {
+        HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 },
+        CUNCTA: {
+          kind: "HTS",
+          tokenId_testnet: "0.0.12345",
+          tokenId_mainnet: "0.0.99999",
+          symbol: "CUNCTA",
+          decimals: 6
+        }
+      },
+      fees: {
+        "purpose:media.upload.request": [
+          { asset: "HBAR", amount: "0.02", purpose: "media.upload" },
+          { asset: "CUNCTA", amount: "1", purpose: "media.upload" }
+        ],
+        "purpose:realtime.token": [{ asset: "HBAR", amount: "0.01", purpose: "realtime.publish" }]
       }
-    },
-    fees: {
-      "purpose:media.upload.request": [
-        { asset: "HBAR", amount: "0.02", purpose: "media.upload" },
-        { asset: "CUNCTA", amount: "1", purpose: "media.upload" }
-      ],
-      "purpose:realtime.token": [{ asset: "HBAR", amount: "0.01", purpose: "realtime.publish" }]
-    }
-  };
-  const fetchImpl = async (input) => {
-    const url = String(input);
-    if (url.includes("/v1/social/media/upload/request")) {
-      return new Response(JSON.stringify({ uploadId: "upl_2", ok: true }), {
-        status: 200,
+    };
+    const fetchImpl = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/social/media/upload/request")) {
+        return new Response(JSON.stringify({ uploadId: "upl_2", ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (url.includes("/v1/social/realtime/token")) {
+        return new Response(
+          JSON.stringify({ token: "rt_token_2", expiresAt: "2026-01-01T00:00:00.000Z" }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+      return new Response(JSON.stringify({ error: "unexpected_url" }), {
+        status: 500,
         headers: { "content-type": "application/json" }
       });
-    }
-    if (url.includes("/v1/social/realtime/token")) {
-      return new Response(JSON.stringify({ token: "rt_token_2", expiresAt: "2026-01-01T00:00:00.000Z" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      });
-    }
-    return new Response(JSON.stringify({ error: "unexpected_url" }), {
-      status: 500,
-      headers: { "content-type": "application/json" }
+    };
+    const app = buildServer({
+      configOverride: {
+        ...config,
+        SOCIAL_SERVICE_BASE_URL: "http://localhost:3005",
+        PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET: "0.0.777777",
+        COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(schedule)
+      },
+      fetchImpl
     });
-  };
-  const app = buildServer({
-    configOverride: {
-      ...config,
-      SOCIAL_SERVICE_BASE_URL: "http://localhost:3005",
-      PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET: "0.0.777777",
-      COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(schedule)
-    },
-    fetchImpl,
-  });
-  const mediaFirst = await app.inject({
-    method: "POST",
-    url: "/v1/media/upload/request",
-    payload: { fileName: "demo.png" }
-  });
-  const mediaSecond = await app.inject({
-    method: "POST",
-    url: "/v1/media/upload/request",
-    payload: { fileName: "demo.png" }
-  });
-  const tokenFirst = await app.inject({
-    method: "POST",
-    url: "/v1/realtime/token",
-    payload: { subjectDid: "did:example:abc" }
-  });
-  const tokenSecond = await app.inject({
-    method: "POST",
-    url: "/v1/realtime/token",
-    payload: { subjectDid: "did:example:abc" }
-  });
-  const mediaBodyA = mediaFirst.json();
-  const mediaBodyB = mediaSecond.json();
-  const tokenBodyA = tokenFirst.json();
-  const tokenBodyB = tokenSecond.json();
-  assert.equal(mediaFirst.statusCode, 200);
-  assert.equal(tokenFirst.statusCode, 200);
-  assert.deepEqual(mediaBodyA.feeQuote, mediaBodyB.feeQuote);
-  assert.equal(mediaBodyA.feeQuoteFingerprint, mediaBodyB.feeQuoteFingerprint);
-  assert.deepEqual(tokenBodyA.feeQuote, tokenBodyB.feeQuote);
-  assert.equal(tokenBodyA.feeQuoteFingerprint, tokenBodyB.feeQuoteFingerprint);
-  assert.ok(mediaBodyA.feeQuote);
-  assert.ok(tokenBodyA.feeQuote);
-  assert.ok(mediaBodyA.paymentRequest);
-  assert.ok(tokenBodyA.paymentRequest);
-  assert.equal(mediaBodyA.paymentRequest.instructions[0].to.accountId, "0.0.777777");
-  assert.ok(
-    Buffer.byteLength(mediaBodyA.paymentRequest.instructions[0].memo, "utf8") <=
-      config.HEDERA_TX_MEMO_MAX_BYTES
-  );
-  assert.equal(mediaBodyA.paymentRequestFingerprint, mediaBodyB.paymentRequestFingerprint);
-  assert.equal(tokenBodyA.paymentRequestFingerprint, tokenBodyB.paymentRequestFingerprint);
-  assert.equal(mediaBodyA.uploadId, "upl_2");
-  assert.equal(tokenBodyA.token, "rt_token_2");
-  await app.close();
-});
+    const mediaFirst = await app.inject({
+      method: "POST",
+      url: "/v1/media/upload/request",
+      payload: { fileName: "demo.png" }
+    });
+    const mediaSecond = await app.inject({
+      method: "POST",
+      url: "/v1/media/upload/request",
+      payload: { fileName: "demo.png" }
+    });
+    const tokenFirst = await app.inject({
+      method: "POST",
+      url: "/v1/realtime/token",
+      payload: { subjectDid: "did:example:abc" }
+    });
+    const tokenSecond = await app.inject({
+      method: "POST",
+      url: "/v1/realtime/token",
+      payload: { subjectDid: "did:example:abc" }
+    });
+    const mediaBodyA = mediaFirst.json();
+    const mediaBodyB = mediaSecond.json();
+    const tokenBodyA = tokenFirst.json();
+    const tokenBodyB = tokenSecond.json();
+    assert.equal(mediaFirst.statusCode, 200);
+    assert.equal(tokenFirst.statusCode, 200);
+    assert.deepEqual(mediaBodyA.feeQuote, mediaBodyB.feeQuote);
+    assert.equal(mediaBodyA.feeQuoteFingerprint, mediaBodyB.feeQuoteFingerprint);
+    assert.deepEqual(tokenBodyA.feeQuote, tokenBodyB.feeQuote);
+    assert.equal(tokenBodyA.feeQuoteFingerprint, tokenBodyB.feeQuoteFingerprint);
+    assert.ok(mediaBodyA.feeQuote);
+    assert.ok(tokenBodyA.feeQuote);
+    assert.ok(mediaBodyA.paymentRequest);
+    assert.ok(tokenBodyA.paymentRequest);
+    assert.equal(mediaBodyA.paymentRequest.instructions[0].to.accountId, "0.0.777777");
+    assert.ok(
+      Buffer.byteLength(mediaBodyA.paymentRequest.instructions[0].memo, "utf8") <=
+        config.HEDERA_TX_MEMO_MAX_BYTES
+    );
+    assert.equal(mediaBodyA.paymentRequestFingerprint, mediaBodyB.paymentRequestFingerprint);
+    assert.equal(tokenBodyA.paymentRequestFingerprint, tokenBodyB.paymentRequestFingerprint);
+    assert.equal(mediaBodyA.uploadId, "upl_2");
+    assert.equal(tokenBodyA.token, "rt_token_2");
+    await app.close();
+  }
+);
 
 await run("payment request includes HTS token instruction deterministically", async () => {
   setupEnv();
@@ -430,10 +460,13 @@ await run("payment request includes HTS token instruction deterministically", as
       COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(schedule)
     },
     fetchImpl: async () =>
-      new Response(JSON.stringify({ token: "rt_token_hts", expiresAt: "2026-01-01T00:00:00.000Z" }), {
-        status: 200,
-        headers: { "content-type": "application/json" }
-      }),
+      new Response(
+        JSON.stringify({ token: "rt_token_hts", expiresAt: "2026-01-01T00:00:00.000Z" }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      )
   });
   const first = await app.inject({
     method: "POST",
@@ -486,7 +519,7 @@ await run("payment request fingerprint changes when schedule fingerprint changes
       new Response(JSON.stringify({ token: "rt_token_a", expiresAt: "2026-01-01T00:00:00.000Z" }), {
         status: 200,
         headers: { "content-type": "application/json" }
-      }),
+      })
   });
   const appB = buildServer({
     configOverride: {
@@ -499,7 +532,7 @@ await run("payment request fingerprint changes when schedule fingerprint changes
       new Response(JSON.stringify({ token: "rt_token_b", expiresAt: "2026-01-01T00:00:00.000Z" }), {
         status: 200,
         headers: { "content-type": "application/json" }
-      }),
+      })
   });
   const resA = await appA.inject({
     method: "POST",
@@ -541,7 +574,7 @@ await run("invalid schedule warning omits raw schedule JSON", async () => {
         new Response(JSON.stringify({ token: "rt_token_3" }), {
           status: 200,
           headers: { "content-type": "application/json" }
-        }),
+        })
     });
     const response = await app.inject({
       method: "POST",
@@ -608,7 +641,7 @@ await run("command plan is deterministic for same input and context", async () =
       VERIFIER_SERVICE_BASE_URL: "http://localhost:3102"
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const payload = {
     intent: "join hangout",
@@ -637,74 +670,79 @@ await run("command plan is deterministic for same input and context", async () =
   await app.close();
 });
 
-await run("command plan returns fee quote metadata deterministically when schedule is configured", async () => {
-  setupEnv();
-  const { buildServer } = await import("../server.ts");
-  const { config } = await import("../config.ts");
-  const schedule = {
-    version: 1,
-    assets: {
-      HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 },
-      CUNCTA: {
-        kind: "HTS",
-        tokenId_testnet: "0.0.12345",
-        tokenId_mainnet: "0.0.99999",
-        symbol: "CUNCTA",
-        decimals: 6
+await run(
+  "command plan returns fee quote metadata deterministically when schedule is configured",
+  async () => {
+    setupEnv();
+    const { buildServer } = await import("../server.ts");
+    const { config } = await import("../config.ts");
+    const schedule = {
+      version: 1,
+      assets: {
+        HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 },
+        CUNCTA: {
+          kind: "HTS",
+          tokenId_testnet: "0.0.12345",
+          tokenId_mainnet: "0.0.99999",
+          symbol: "CUNCTA",
+          decimals: 6
+        }
+      },
+      fees: {
+        "action:sync.hangout.join_session": [
+          { asset: "CUNCTA", amount: "1", purpose: "intent.plan" },
+          { asset: "HBAR", amount: "0.05", purpose: "action.exec" }
+        ]
       }
-    },
-    fees: {
-      "action:sync.hangout.join_session": [
-        { asset: "CUNCTA", amount: "1", purpose: "intent.plan" },
-        { asset: "HBAR", amount: "0.05", purpose: "action.exec" }
-      ]
-    }
-  };
-  const fetchImpl = async (input) => {
-    const url = String(input);
-    if (url.includes("/v1/requirements")) {
-      return new Response(JSON.stringify({ version: 1, requirements: [] }), {
+    };
+    const fetchImpl = async (input) => {
+      const url = String(input);
+      if (url.includes("/v1/requirements")) {
+        return new Response(JSON.stringify({ version: 1, requirements: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return new Response(JSON.stringify({ decision: "DENY", reasons: ["proof_missing"] }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
-    }
-    return new Response(JSON.stringify({ decision: "DENY", reasons: ["proof_missing"] }), {
-      status: 200,
-      headers: { "content-type": "application/json" }
+    };
+    const app = buildServer({
+      configOverride: {
+        ...config,
+        POLICY_SERVICE_BASE_URL: "http://localhost:3101",
+        COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(schedule)
+      },
+      fetchImpl,
+      writeCommandCenterAuditEvent: async () => {}
     });
-  };
-  const app = buildServer({
-    configOverride: {
-      ...config,
-      POLICY_SERVICE_BASE_URL: "http://localhost:3101",
-      COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(schedule)
-    },
-    fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
-  });
-  const first = await app.inject({
-    method: "POST",
-    url: "/v1/command/plan",
-    payload: { intent: "join hangout", subjectDid: "did:example:fee" }
-  });
-  const second = await app.inject({
-    method: "POST",
-    url: "/v1/command/plan",
-    payload: { intent: "join hangout", subjectDid: "did:example:fee" }
-  });
-  assert.equal(first.statusCode, 200);
-  assert.equal(second.statusCode, 200);
-  const firstBody = first.json();
-  const secondBody = second.json();
-  assert.deepEqual(firstBody.feeQuote, secondBody.feeQuote);
-  assert.equal(firstBody.feeQuoteFingerprint, secondBody.feeQuoteFingerprint);
-  assert.ok(firstBody.feeQuote);
-  assert.deepEqual(
-    firstBody.feeQuote.items.map((entry) => `${entry.asset.kind}:${entry.asset.tokenId ?? ""}:${entry.purpose}`),
-    ["HBAR::action.exec", "HTS:0.0.12345:intent.plan"]
-  );
-  await app.close();
-});
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/command/plan",
+      payload: { intent: "join hangout", subjectDid: "did:example:fee" }
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/command/plan",
+      payload: { intent: "join hangout", subjectDid: "did:example:fee" }
+    });
+    assert.equal(first.statusCode, 200);
+    assert.equal(second.statusCode, 200);
+    const firstBody = first.json();
+    const secondBody = second.json();
+    assert.deepEqual(firstBody.feeQuote, secondBody.feeQuote);
+    assert.equal(firstBody.feeQuoteFingerprint, secondBody.feeQuoteFingerprint);
+    assert.ok(firstBody.feeQuote);
+    assert.deepEqual(
+      firstBody.feeQuote.items.map(
+        (entry) => `${entry.asset.kind}:${entry.asset.tokenId ?? ""}:${entry.purpose}`
+      ),
+      ["HBAR::action.exec", "HTS:0.0.12345:intent.plan"]
+    );
+    await app.close();
+  }
+);
 
 await run("command plan determinism key changes when fee schedule changes", async () => {
   setupEnv();
@@ -727,14 +765,18 @@ await run("command plan determinism key changes when fee schedule changes", asyn
     version: 1,
     assets: { HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 } },
     fees: {
-      "action:sync.hangout.join_session": [{ asset: "HBAR", amount: "0.05", purpose: "action.exec" }]
+      "action:sync.hangout.join_session": [
+        { asset: "HBAR", amount: "0.05", purpose: "action.exec" }
+      ]
     }
   };
   const scheduleB = {
     version: 1,
     assets: { HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 } },
     fees: {
-      "action:sync.hangout.join_session": [{ asset: "HBAR", amount: "0.08", purpose: "action.exec" }]
+      "action:sync.hangout.join_session": [
+        { asset: "HBAR", amount: "0.08", purpose: "action.exec" }
+      ]
     }
   };
   const appA = buildServer({
@@ -744,7 +786,7 @@ await run("command plan determinism key changes when fee schedule changes", asyn
       COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(scheduleA)
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const appB = buildServer({
     configOverride: {
@@ -753,7 +795,7 @@ await run("command plan determinism key changes when fee schedule changes", asyn
       COMMAND_FEE_SCHEDULE_JSON: JSON.stringify(scheduleB)
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const payload = { intent: "join hangout", subjectDid: "did:example:fee-compare" };
   const resA = await appA.inject({ method: "POST", url: "/v1/command/plan", payload });
@@ -789,7 +831,9 @@ await run("command plan determinism key changes when payments receiver changes",
     version: 1,
     assets: { HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 } },
     fees: {
-      "action:sync.hangout.join_session": [{ asset: "HBAR", amount: "0.05", purpose: "action.exec" }]
+      "action:sync.hangout.join_session": [
+        { asset: "HBAR", amount: "0.05", purpose: "action.exec" }
+      ]
     }
   };
   const appA = buildServer({
@@ -800,7 +844,7 @@ await run("command plan determinism key changes when payments receiver changes",
       PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET: "0.0.7001"
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const appB = buildServer({
     configOverride: {
@@ -810,7 +854,7 @@ await run("command plan determinism key changes when payments receiver changes",
       PAYMENTS_RECEIVER_ACCOUNT_ID_TESTNET: "0.0.7002"
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const payload = { intent: "join hangout", subjectDid: "did:example:payments-cfg" };
   const resA = await appA.inject({ method: "POST", url: "/v1/command/plan", payload });
@@ -849,7 +893,9 @@ await run("command plan determinism key changes when memo cap changes", async ()
     version: 1,
     assets: { HBAR: { kind: "HBAR", symbol: "HBAR", decimals: 8 } },
     fees: {
-      "action:sync.hangout.join_session": [{ asset: "HBAR", amount: "0.05", purpose: "action.exec" }]
+      "action:sync.hangout.join_session": [
+        { asset: "HBAR", amount: "0.05", purpose: "action.exec" }
+      ]
     }
   };
   const appA = buildServer({
@@ -861,7 +907,7 @@ await run("command plan determinism key changes when memo cap changes", async ()
       HEDERA_TX_MEMO_MAX_BYTES: 64
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const appB = buildServer({
     configOverride: {
@@ -872,7 +918,7 @@ await run("command plan determinism key changes when memo cap changes", async ()
       HEDERA_TX_MEMO_MAX_BYTES: 120
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const payload = { intent: "join hangout", subjectDid: "did:example:payments-cfg" };
   const resA = await appA.inject({ method: "POST", url: "/v1/command/plan", payload });
@@ -902,7 +948,7 @@ await run("command plan uses empty fee schedule when schedule JSON is invalid", 
         status: 200,
         headers: { "content-type": "application/json" }
       }),
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const response = await app.inject({
     method: "POST",
@@ -948,7 +994,7 @@ await run("command plan keeps requirements and next actions in stable order", as
       VERIFIER_SERVICE_BASE_URL: "http://localhost:3102"
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const response = await app.inject({
     method: "POST",
@@ -993,7 +1039,7 @@ await run("command plan denies on dependency timeout without hanging", async () 
       COMMAND_PLANNER_REQUIREMENTS_TIMEOUT_MS: 100
     },
     fetchImpl,
-    writeCommandCenterAuditEvent: async () => {},
+    writeCommandCenterAuditEvent: async () => {}
   });
   const startedAt = Date.now();
   const response = await app.inject({
@@ -1037,7 +1083,7 @@ await run("command plan emits redacted audit event", async () => {
     fetchImpl,
     writeCommandCenterAuditEvent: async (event) => {
       auditEvents.push(event);
-    },
+    }
   });
   const payload = {
     intent: "join hangout",
@@ -1073,7 +1119,9 @@ await run("command audit cleanup respects retention and bounded batches", async 
     db = await getDb();
     await db.raw("select 1");
   } catch {
-    console.log("skipped - command audit cleanup respects retention and bounded batches (database unavailable)");
+    console.log(
+      "skipped - command audit cleanup respects retention and bounded batches (database unavailable)"
+    );
     return;
   }
   await db("command_center_audit_events").where("subject_hash", "like", "cleanup_test_%").del();
@@ -1106,7 +1154,7 @@ await run("command audit cleanup respects retention and bounded batches", async 
       new Response(JSON.stringify({ error: "unused" }), {
         status: 500,
         headers: { "content-type": "application/json" }
-      }),
+      })
   });
   await app.inject({
     method: "POST",
@@ -1154,7 +1202,7 @@ await run("command plan returns promptly when audit cleanup hangs", async () => 
       new Response(JSON.stringify({ error: "unused" }), {
         status: 500,
         headers: { "content-type": "application/json" }
-      }),
+      })
   });
   const startedAt = Date.now();
   const response = await app.inject({
@@ -1182,7 +1230,7 @@ await run("command plan swallows cleanup rejection without unhandled failure", a
       new Response(JSON.stringify({ error: "unused" }), {
         status: 500,
         headers: { "content-type": "application/json" }
-      }),
+      })
   });
   const response = await app.inject({
     method: "POST",

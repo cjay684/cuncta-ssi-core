@@ -1,6 +1,6 @@
 import dotenv from "dotenv";
 import path from "node:path";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { presentSdJwtVc } from "@cuncta/sdjwt";
 import { SignJWT, importJWK } from "jose";
 
@@ -18,7 +18,7 @@ const createIssuerAdminToken = async () => {
     .setAudience(audience)
     .sign(new TextEncoder().encode(secret));
 };
-import { getPublicKey, hashes, sign } from "@noble/ed25519";
+import { hashes } from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
 
 if (!hashes.sha512) {
@@ -85,10 +85,8 @@ const waitFor = async <T>(
   throw new Error(`waitFor_timeout: ${JSON.stringify(diagnostic)}`);
 };
 
-const toBase64Url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 const fromBase64Url = (value: string) => new Uint8Array(Buffer.from(value, "base64url"));
 const sha256Base64Url = (value: string) => createHash("sha256").update(value).digest("base64url");
-const sha256Hex = (value: string) => createHash("sha256").update(value).digest("hex");
 
 const assertGatewayUrl = (url: URL) => {
   const base = new URL(APP_GATEWAY_BASE_URL);
@@ -158,15 +156,6 @@ const requestJson = async <T>(url: URL, init: RequestInit) => {
   return json as T;
 };
 
-const postJson = async <T>(pathValue: string, payload: unknown) => {
-  const url = new URL(pathValue, APP_GATEWAY_BASE_URL);
-  return requestJson<T>(url, {
-    method: "POST",
-    headers: gatewayHeaders(),
-    body: JSON.stringify(payload)
-  });
-};
-
 type RequirementsResponse = {
   requirements: Array<{
     vct: string;
@@ -181,28 +170,6 @@ const getRequirements = async (action: string): Promise<RequirementsResponse> =>
   const url = new URL("/v1/requirements", APP_GATEWAY_BASE_URL);
   url.searchParams.set("action", action);
   return requestJson<RequirementsResponse>(url, { method: "GET", headers: gatewayHeaders() });
-};
-
-const generateEd25519KeyPair = async (kid: string) => {
-  const privateKey = new Uint8Array(randomBytes(32));
-  const publicKey = await getPublicKey(privateKey);
-  const jwk = {
-    kty: "OKP",
-    crv: "Ed25519",
-    x: toBase64Url(publicKey),
-    d: toBase64Url(privateKey),
-    alg: "EdDSA",
-    kid
-  };
-  const publicJwk = {
-    kty: "OKP",
-    crv: "Ed25519",
-    x: jwk.x,
-    alg: "EdDSA",
-    kid
-  };
-  const cryptoKey = await importJWK(jwk, "EdDSA");
-  return { privateKey, publicKey, jwk, publicJwk, cryptoKey };
 };
 
 const parseHolderKeysFromEnv = async () => {
@@ -248,7 +215,11 @@ const issueCredentialViaIssuer = async (input: {
     const text = await response.text();
     throw new Error(`issuer admin issue failed: ${response.status} ${text}`);
   }
-  return (await response.json()) as { credential: string; eventId?: string; credentialFingerprint?: string };
+  return (await response.json()) as {
+    credential: string;
+    eventId?: string;
+    credentialFingerprint?: string;
+  };
 };
 
 const buildClaimsFromRequirements = (requirement: {
@@ -506,8 +477,13 @@ const waitForRevocation = async (input: {
         return { done: true, lastResponse: response };
       }
       // On timeout we want enough context to see if it's "still ALLOW" vs request failure.
-      const health = await fetchWithRetry(new URL("/healthz", APP_GATEWAY_BASE_URL), { method: "GET" });
-      return { done: false, lastResponse: { decision, verify: response, healthStatus: health.status } };
+      const health = await fetchWithRetry(new URL("/healthz", APP_GATEWAY_BASE_URL), {
+        method: "GET"
+      });
+      return {
+        done: false,
+        lastResponse: { decision, verify: response, healthStatus: health.status }
+      };
     },
     { timeoutMs: REVOKE_WAIT_MAX_MS, intervalMs: REVOKE_POLL_INTERVAL_MS }
   );
@@ -568,9 +544,11 @@ const main = async () => {
   if (!results.every(Boolean)) {
     process.exit(1);
   }
-  const holderKeys = holderFromEnv ?? (() => {
-    throw new Error("holderFromEnv required");
-  })();
+  const holderKeys =
+    holderFromEnv ??
+    (() => {
+      throw new Error("holderFromEnv required");
+    })();
   const holderDid = holderFromEnv.did;
 
   const requirementsSeed = await getRequirements(ACTION);

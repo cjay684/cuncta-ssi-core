@@ -1,9 +1,16 @@
 import { strict as assert } from "node:assert";
-import { classifyHederaFailure, extractHederaStatusFromError, extractTxIdFromError } from "./hederaFailure.js";
+import {
+  classifyHederaFailure,
+  extractHederaStatusFromError,
+  extractTxIdFromError
+} from "./hederaFailure.js";
 
 const run = async () => {
   assert.equal(extractTxIdFromError(new Error("no tx here")), undefined);
-  assert.equal(extractTxIdFromError(new Error("receipt for transaction 0.0.123@170.1 contained error")), "0.0.123@170.1");
+  assert.equal(
+    extractTxIdFromError(new Error("receipt for transaction 0.0.123@170.1 contained error")),
+    "0.0.123@170.1"
+  );
 
   assert.equal(
     extractHederaStatusFromError(
@@ -40,4 +47,3 @@ run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

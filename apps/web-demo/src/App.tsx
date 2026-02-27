@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { SignJWT, importJWK } from "jose";
 import * as Registrar from "@hiero-did-sdk/registrar";
 import type { OnboardingStrategy } from "@cuncta/shared";
-import { fromBase64Url, toBase64Url } from "./lib/encoding";
+import { fromBase64Url } from "./lib/encoding";
 import { decodeDisclosure, sha256Base64Url } from "./lib/crypto";
 import { generateKeypair, signPayload } from "./lib/ed25519";
 import { buildHolderJwk, toBase58Multibase } from "./lib/keys";
@@ -152,7 +152,12 @@ type CommandPlanResponse = {
   next_best_actions: string[];
   feeQuote?: {
     items?: Array<{
-      asset?: { kind?: "HBAR" | "HTS"; tokenId?: string | null; symbol?: string; decimals?: number };
+      asset?: {
+        kind?: "HBAR" | "HTS";
+        tokenId?: string | null;
+        symbol?: string;
+        decimals?: number;
+      };
       amount?: string;
       purpose?: string;
     }>;
@@ -162,7 +167,12 @@ type CommandPlanResponse = {
   paymentRequest?: {
     instructions?: Array<{
       to?: { accountId?: string };
-      asset?: { kind?: "HBAR" | "HTS"; tokenId?: string | null; symbol?: string; decimals?: number };
+      asset?: {
+        kind?: "HBAR" | "HTS";
+        tokenId?: string | null;
+        symbol?: string;
+        decimals?: number;
+      };
       amount?: string;
       memo?: string;
       purpose?: string;
@@ -351,7 +361,6 @@ const initialOnboardingStrategy =
     ? allowedOnboardingStrategies[0]!
     : defaultOnboardingStrategy;
 
-const DEVICE_ID_STORAGE_KEY = "cuncta_device_id";
 const socialCapabilityDescriptions: Record<string, string> = {
   "cuncta.social.account_active": "Base capability proving an active social account.",
   "cuncta.social.can_post": "Write capability used to create social posts.",
@@ -375,20 +384,6 @@ const auraTierDescriptions: Record<string, string> = {
   can_post: "Posting capability is available.",
   trusted_creator: "Trusted creator tier is available."
 };
-
-const getDeviceId = () => {
-  const existing = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
-  if (existing) return existing;
-  const generated =
-    window.crypto?.randomUUID?.() ?? `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, generated);
-  return generated;
-};
-
-const withDeviceHeaders = (headers?: Record<string, string>) => ({
-  ...(headers ?? {}),
-  "x-device-id": getDeviceId()
-});
 
 const waitForDidResolution = async (
   didServiceBaseUrl: string,
@@ -599,13 +594,10 @@ export default function App() {
 
         const payerId = payerAccountId.trim();
         const payerKey = payerPrivateKey.trim();
-        let effectivePayerId = payerId;
-        let effectivePayerKey = payerKey;
+        const effectivePayerId = payerId;
+        const effectivePayerKey = payerKey;
         if (!effectivePayerId || !effectivePayerKey) {
           throw new Error("Self-funded onboarding requires payer credentials.");
-        }
-        if (!effectivePayerId || !effectivePayerKey) {
-          throw new Error("Payer account id + private key required for self-funded onboarding.");
         }
         setOnboardingMethodUsed("sdk_key_entry");
         setStatus("Submitting DID to Hedera (self-funded)...");
@@ -3414,7 +3406,8 @@ export default function App() {
               )}
               <div className="stack">
                 <strong>Cost & Payment (Advisory)</strong>
-                {Array.isArray(commandPlan.feeQuote?.items) && commandPlan.feeQuote.items.length > 0 ? (
+                {Array.isArray(commandPlan.feeQuote?.items) &&
+                commandPlan.feeQuote.items.length > 0 ? (
                   <div className="stack">
                     <span className="muted">Fee quote</span>
                     {commandPlan.feeQuote.items.map((item, index) => (
@@ -3423,7 +3416,9 @@ export default function App() {
                         className="muted"
                       >
                         {(item.asset?.kind ?? "ASSET").toUpperCase()}
-                        {item.asset?.kind === "HTS" && item.asset?.tokenId ? ` (${item.asset.tokenId})` : ""}
+                        {item.asset?.kind === "HTS" && item.asset?.tokenId
+                          ? ` (${item.asset.tokenId})`
+                          : ""}
                         {" · "}
                         {item.amount ?? "0"}
                         {item.purpose ? ` · ${item.purpose}` : ""}
@@ -3455,7 +3450,9 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <span className="muted">Payment instructions unavailable (receiver not configured).</span>
+                  <span className="muted">
+                    Payment instructions unavailable (receiver not configured).
+                  </span>
                 )}
                 <details>
                   <summary className="muted">Fingerprint details</summary>
@@ -3467,10 +3464,12 @@ export default function App() {
                       feeQuoteFingerprint: {commandPlan.feeQuoteFingerprint ?? "not provided"}
                     </span>
                     <span className="muted">
-                      paymentRequestFingerprint: {commandPlan.paymentRequestFingerprint ?? "not provided"}
+                      paymentRequestFingerprint:{" "}
+                      {commandPlan.paymentRequestFingerprint ?? "not provided"}
                     </span>
                     <span className="muted">
-                      paymentsConfigFingerprint: {commandPlan.paymentsConfigFingerprint ?? "not provided"}
+                      paymentsConfigFingerprint:{" "}
+                      {commandPlan.paymentsConfigFingerprint ?? "not provided"}
                     </span>
                   </div>
                 </details>
