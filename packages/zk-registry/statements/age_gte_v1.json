@@ -9,7 +9,7 @@
   },
   "verifying_key_ref": {
     "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.verification_key.json",
-    "sha256_hex": "49509fe929e42fb14fdc17473d6db1c9c7f3f916c82967f86e20858892d76cdc"
+    "sha256_hex": "f889eb968a4c697c40d889b29d22a688a62f6429e49c3330f1cfdee9f62c7b02"
   },
   "wasm_ref": {
     "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.wasm",
