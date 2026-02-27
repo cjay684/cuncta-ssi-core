@@ -170,21 +170,30 @@ const runStagingSmoke = async () => {
   console.log(`[smoke] using wallet state file: ${walletStateFile}`);
 
   console.log("[smoke] 1) DID create (self-funded via gateway)");
-  run("did_create_user_pays_gateway", ["-C", "apps/wallet-cli", "did:create:user-pays-gateway"], walletEnv);
-
-  console.log("[smoke] 2) OID4VCI acquire credential");
   run(
-    "vc_acquire",
-    ["-C", "apps/wallet-cli", "vc:acquire", "--", "--config-id", vct],
+    "did_create_user_pays_gateway",
+    ["-C", "apps/wallet-cli", "did:create:user-pays-gateway"],
     walletEnv
   );
+
+  console.log("[smoke] 2) OID4VCI acquire credential");
+  run("vc_acquire", ["-C", "apps/wallet-cli", "vc:acquire", "--", "--config-id", vct], walletEnv);
 
   console.log("[smoke] 3) OID4VP request -> wallet response -> ALLOW (signature verified)");
   const requestUrl = new URL("/oid4vp/request", APP_GATEWAY_BASE_URL);
   requestUrl.searchParams.set("action", action);
   const allowOut = run(
     "vp_respond_allow",
-    ["-C", "apps/wallet-cli", "vp:respond", "--", "--request", requestUrl.toString(), "--credential-vct", vct],
+    [
+      "-C",
+      "apps/wallet-cli",
+      "vp:respond",
+      "--",
+      "--request",
+      requestUrl.toString(),
+      "--credential-vct",
+      vct
+    ],
     walletEnv
   );
   const allowPayload = JSON.parse(allowOut) as { decision?: string };
@@ -194,8 +203,9 @@ const runStagingSmoke = async () => {
 
   console.log("[smoke] 4) Revoke -> verify DENY (operator action, service-auth required)");
   const SERVICE_JWT_SECRET_ISSUER = requireEnv("SERVICE_JWT_SECRET_ISSUER");
-  const SERVICE_JWT_AUDIENCE_ISSUER =
-    (process.env.SERVICE_JWT_AUDIENCE_ISSUER ?? "cuncta.service.issuer").trim();
+  const SERVICE_JWT_AUDIENCE_ISSUER = (
+    process.env.SERVICE_JWT_AUDIENCE_ISSUER ?? "cuncta.service.issuer"
+  ).trim();
   const token = await createServiceJwt({
     secret: SERVICE_JWT_SECRET_ISSUER,
     audience: SERVICE_JWT_AUDIENCE_ISSUER,
@@ -242,9 +252,9 @@ const runStagingSmoke = async () => {
         denyPayload = JSON.parse(denyOut) as { decision?: string; reasons?: string[] };
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        const health = await fetch(new URL("/healthz", APP_GATEWAY_BASE_URL), { method: "GET" }).catch(
-          () => null
-        );
+        const health = await fetch(new URL("/healthz", APP_GATEWAY_BASE_URL), {
+          method: "GET"
+        }).catch(() => null);
         return {
           done: false,
           lastResponse: {
@@ -256,9 +266,9 @@ const runStagingSmoke = async () => {
       if (denyPayload?.decision === "DENY") {
         return { done: true, lastResponse: denyPayload };
       }
-      const health = await fetch(new URL("/healthz", APP_GATEWAY_BASE_URL), { method: "GET" }).catch(
-        () => null
-      );
+      const health = await fetch(new URL("/healthz", APP_GATEWAY_BASE_URL), {
+        method: "GET"
+      }).catch(() => null);
       return {
         done: false,
         lastResponse: {
@@ -286,14 +296,20 @@ const runStagingSmoke = async () => {
         { Authorization: `Bearer ${adminToken}` }
       );
       if (reconcileRes.ok) {
-        const payload = reconcileRes.payload as any;
+        const payload = reconcileRes.payload as {
+          results?: Array<{ status?: string; [key: string]: unknown }>;
+          [key: string]: unknown;
+        } | null;
         const results = Array.isArray(payload?.results) ? payload.results : [];
-        if (results.some((r: any) => r?.status === "VERIFIED")) {
+        if (results.some((r) => r?.status === "VERIFIED")) {
           return { done: true, lastResponse: payload };
         }
         return { done: false, lastResponse: { status: reconcileRes.status, payload } };
       }
-      return { done: false, lastResponse: { status: reconcileRes.status, payload: reconcileRes.payload } };
+      return {
+        done: false,
+        lastResponse: { status: reconcileRes.status, payload: reconcileRes.payload }
+      };
     },
     { timeoutMs: 2 * 60_000, intervalMs: 4000 }
   );
@@ -305,4 +321,3 @@ runStagingSmoke().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

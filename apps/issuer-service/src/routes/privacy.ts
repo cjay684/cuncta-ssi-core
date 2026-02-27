@@ -143,8 +143,11 @@ type SubjectLinkColumn = {
   hasDeletedAt: boolean;
 };
 
-let subjectLinkInventory: { loadedAt: number; truncated: boolean; columns: SubjectLinkColumn[] } | null =
-  null;
+let subjectLinkInventory: {
+  loadedAt: number;
+  truncated: boolean;
+  columns: SubjectLinkColumn[];
+} | null = null;
 
 const loadSubjectLinkInventory = async (): Promise<{
   truncated: boolean;
@@ -174,7 +177,9 @@ const loadSubjectLinkInventory = async (): Promise<{
       (await db
         .select("table_name")
         .from("information_schema.columns")
-        .where({ table_schema: "public", column_name: "deleted_at" })) as Array<{ table_name: string }>
+        .where({ table_schema: "public", column_name: "deleted_at" })) as Array<{
+        table_name: string;
+      }>
     ).map((row) => row.table_name)
   );
 
@@ -741,7 +746,8 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
         const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
         const minSilver = typeof scoreRule.min_silver === "number" ? scoreRule.min_silver : 0;
         const minGold = typeof scoreRule.min_gold === "number" ? scoreRule.min_gold : 0;
-        const diversityMin = typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
+        const diversityMin =
+          typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
         const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
 
         const reasons: string[] = [];
@@ -804,7 +810,10 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
     const q = z.object({ subjectDid: z.string().min(3) }).parse(request.query ?? {});
     const hashes = getDidHashes(q.subjectDid);
     const didHash = hashes.primary;
-    const status = await getPrivacyStatus({ primary: hashes.primary, legacy: hashes.legacy ?? null });
+    const status = await getPrivacyStatus({
+      primary: hashes.primary,
+      legacy: hashes.legacy ?? null
+    });
     if (status.tombstoned) {
       return reply.send({ subject: { did_hash: didHash }, aura: [], notice: "erased" });
     }

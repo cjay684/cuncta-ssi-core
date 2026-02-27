@@ -48,7 +48,10 @@ test("OID4VCI Aura metadata is derived from enabled aura_rules (no hardcoding)",
     updated_at: now,
     rule_signature: null
   });
-  const inserted = (await db("aura_rules").where({ rule_id: ruleId }).first()) as Record<string, unknown>;
+  const inserted = (await db("aura_rules").where({ rule_id: ruleId }).first()) as Record<
+    string,
+    unknown
+  >;
   await ensureAuraRuleIntegrity(inserted as never);
 
   const metadata = await buildOid4vciIssuerMetadata({
@@ -60,11 +63,13 @@ test("OID4VCI Aura metadata is derived from enabled aura_rules (no hardcoding)",
   assert.ok(supported);
 
   const configId = `aura:${outputVct}`;
-  assert.ok(configId in supported, "new enabled aura_rule should appear as aura:<output_vct> config");
+  assert.ok(
+    configId in supported,
+    "new enabled aura_rule should appear as aura:<output_vct> config"
+  );
   const cfg = supported[configId] as Record<string, unknown>;
   assert.equal(cfg.vct, outputVct);
   const capability = (cfg.capability ?? {}) as Record<string, unknown>;
   assert.equal(capability.domain_pattern, "social");
   assert.equal(capability.purpose, "Dynamic capability test purpose");
 });
-

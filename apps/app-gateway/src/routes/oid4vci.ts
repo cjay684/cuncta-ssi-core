@@ -56,7 +56,9 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
           : `sdjwt:${query.vct}`;
     const issuerSecret =
       context.config.SERVICE_JWT_SECRET_ISSUER ??
-      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+        ? context.config.SERVICE_JWT_SECRET
+        : undefined);
     if (!issuerSecret) {
       return reply.code(503).send(
         makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
@@ -95,7 +97,9 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
     }
     const issuerSecret =
       context.config.SERVICE_JWT_SECRET_ISSUER ??
-      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+        ? context.config.SERVICE_JWT_SECRET
+        : undefined);
     if (!issuerSecret) {
       return reply.code(503).send(
         makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
@@ -108,7 +112,10 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
       secret: issuerSecret,
       scope: ["issuer:oid4vci_offer_challenge"]
     });
-    const url = new URL("/v1/internal/oid4vci/offer-challenge", context.config.ISSUER_SERVICE_BASE_URL);
+    const url = new URL(
+      "/v1/internal/oid4vci/offer-challenge",
+      context.config.ISSUER_SERVICE_BASE_URL
+    );
     const response = await context.fetchImpl(url, {
       method: "POST",
       headers: { authorization: authHeader }
@@ -149,7 +156,9 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
     }
     const issuerSecret =
       context.config.SERVICE_JWT_SECRET_ISSUER ??
-      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+        ? context.config.SERVICE_JWT_SECRET
+        : undefined);
     if (!issuerSecret) {
       return reply.code(503).send(
         makeErrorResponse("service_auth_unavailable", "Service auth unavailable", {
@@ -162,7 +171,10 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
       secret: issuerSecret,
       scope: ["issuer:oid4vci_preauth"]
     });
-    const url = new URL("/v1/internal/oid4vci/preauth/aura", context.config.ISSUER_SERVICE_BASE_URL);
+    const url = new URL(
+      "/v1/internal/oid4vci/preauth/aura",
+      context.config.ISSUER_SERVICE_BASE_URL
+    );
     const response = await context.fetchImpl(url, {
       method: "POST",
       headers: {
@@ -175,4 +187,3 @@ export const registerOid4vciRoutes = (app: FastifyInstance, context: GatewayCont
     return sendProxyResponse(reply, response);
   });
 };
-

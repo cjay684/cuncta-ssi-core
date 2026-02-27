@@ -96,8 +96,12 @@ test("DSR erase removes aura_* and obligations_* rows for subject", async () => 
 
   const remainingSignals = await db("aura_signals").where({ subject_did_hash: didHash }).first();
   const remainingState = await db("aura_state").where({ subject_did_hash: didHash }).first();
-  const remainingQueue = await db("aura_issuance_queue").where({ subject_did_hash: didHash }).first();
-  const remainingObligations = await db("obligations_executions").where({ subject_did_hash: didHash }).first();
+  const remainingQueue = await db("aura_issuance_queue")
+    .where({ subject_did_hash: didHash })
+    .first();
+  const remainingObligations = await db("obligations_executions")
+    .where({ subject_did_hash: didHash })
+    .first();
 
   assert.equal(Boolean(remainingSignals), false);
   assert.equal(Boolean(remainingState), false);
@@ -106,4 +110,3 @@ test("DSR erase removes aura_* and obligations_* rows for subject", async () => 
 
   await app.close();
 });
-

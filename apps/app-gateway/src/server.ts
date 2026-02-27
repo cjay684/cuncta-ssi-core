@@ -58,7 +58,10 @@ export type GatewayContext = {
   maybeCleanupCommandCenterAuditEvents: () => Promise<void>;
   getFeeQuoteForPlan: (input: { actionId: string | null; intent: string }) => FeeQuote | null;
   getFeeQuoteForPurpose: (purpose: string) => FeeQuote | null;
-  getPaymentRequest: (input: { feeQuote: FeeQuote | null; purposeScope: string }) => PaymentRequest | null;
+  getPaymentRequest: (input: {
+    feeQuote: FeeQuote | null;
+    purposeScope: string;
+  }) => PaymentRequest | null;
   feeScheduleFingerprint: string;
   paymentsConfigFingerprint: string;
 };

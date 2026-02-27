@@ -127,7 +127,9 @@ const envSchema = z.object({
     toNumber(2000),
     z.number().int().min(250).max(30_000)
   ),
-  COMMAND_AUDIT_CLEANUP_ENABLED: z.preprocess((value) => value !== "false", z.boolean()).default(true),
+  COMMAND_AUDIT_CLEANUP_ENABLED: z
+    .preprocess((value) => value !== "false", z.boolean())
+    .default(true),
   COMMAND_AUDIT_RETENTION_DAYS: z.preprocess(toNumber(90), z.number().int().min(1).max(3650)),
   COMMAND_AUDIT_CLEANUP_THROTTLE_MS: z.preprocess(
     toNumber(5 * 60 * 1000),
@@ -143,7 +145,9 @@ const envSchema = z.object({
 });
 
 if (process.env.ALLOW_SPONSORED_ONBOARDING === "true") {
-  throw new Error("ALLOW_SPONSORED_ONBOARDING is not supported. CUNCTA supports self-funded onboarding only.");
+  throw new Error(
+    "ALLOW_SPONSORED_ONBOARDING is not supported. CUNCTA supports self-funded onboarding only."
+  );
 }
 const parsed = envSchema.parse(process.env);
 const isValidIpOrCidr = (entry: string) => {
@@ -179,10 +183,7 @@ if (parsed.ALLOW_SELF_FUNDED_ONBOARDING && !parsed.USER_PAYS_HANDOFF_SECRET) {
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
 }
-if (
-  parsed.BREAK_GLASS_DISABLE_STRICT &&
-  parsed.NODE_ENV === "production"
-) {
+if (parsed.BREAK_GLASS_DISABLE_STRICT && parsed.NODE_ENV === "production") {
   throw new Error("break_glass_forbidden_in_production");
 }
 if (parsed.BREAK_GLASS_DISABLE_STRICT) {

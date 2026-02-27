@@ -65,4 +65,3 @@ export async function down(knex: Knex): Promise<void> {
   // Non-destructive: leave schema extensions in place.
   void knex;
 }
-

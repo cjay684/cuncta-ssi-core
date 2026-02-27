@@ -37,4 +37,3 @@ export async function down(knex: Knex): Promise<void> {
     if (hasDeadLetterReason) table.dropColumn("purge_dead_letter_reason");
   });
 }
-

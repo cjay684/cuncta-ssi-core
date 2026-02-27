@@ -12,7 +12,11 @@ export type FeeBudgets = {
 
 const TxBudgetSchema = z.object({
   maxFeeTinybars: z.number().int().min(1).max(1_000_000_000),
-  maxTxBytes: z.number().int().min(1024).max(256 * 1024)
+  maxTxBytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(256 * 1024)
 });
 
 const FeeBudgetsSchema = z.object({
@@ -47,7 +51,10 @@ const toTinybarsNumber = (value: unknown): number | null => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
-  if (typeof value === "object" && typeof (value as { toNumber?: unknown }).toNumber === "function") {
+  if (
+    typeof value === "object" &&
+    typeof (value as { toNumber?: unknown }).toNumber === "function"
+  ) {
     return (value as { toNumber: () => number }).toNumber();
   }
   return null;
@@ -81,7 +88,9 @@ export const enforceSignedTopicMessageSubmitBudget = (input: {
   return { ok: true, tx, maxFeeTinybars: maxFee };
 };
 
-export const applyTopicSubmitMaxFee = (tx: TopicMessageSubmitTransaction, maxFeeTinybars: number) => {
+export const applyTopicSubmitMaxFee = (
+  tx: TopicMessageSubmitTransaction,
+  maxFeeTinybars: number
+) => {
   return tx.setMaxTransactionFee(Hbar.fromTinybars(maxFeeTinybars));
 };
-

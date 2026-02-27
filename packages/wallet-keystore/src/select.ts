@@ -13,7 +13,12 @@ export const selectWalletKeyStore = (input: {
   filename?: string;
   mode?: string;
 }): WalletKeyStore => {
-  const rawMode = (input.mode ?? process.env.WALLET_KEYSTORE ?? process.env.WALLET_KEYSTORE_MODE ?? "file").trim();
+  const rawMode = (
+    input.mode ??
+    process.env.WALLET_KEYSTORE ??
+    process.env.WALLET_KEYSTORE_MODE ??
+    "file"
+  ).trim();
   const mode = ModeSchema.parse(rawMode);
   if (mode === "file") {
     if (isProd() && !allowInsecureFileKeys()) {
@@ -40,4 +45,3 @@ export const selectWalletKeyStore = (input: {
   // "hardware" remains an integration point (future passkeys/mobile keystores).
   throw new Error("wallet_keystore_hardware_unavailable");
 };
-

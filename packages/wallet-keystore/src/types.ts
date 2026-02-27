@@ -23,16 +23,13 @@ export type WalletKeyStore = {
   sign(purpose: WalletKeyPurpose, payload: Uint8Array): Promise<Uint8Array>;
   // Optional: overwrite/import a key (used for rotation/migration).
   // Implementations MUST persist without writing raw private key material to disk in plaintext.
-  saveKeyMaterial?: (
-    key: {
-      purpose: WalletKeyPurpose;
-      alg: WalletKeyAlg;
-      privateKey: Uint8Array;
-      publicKey: Uint8Array;
-      publicKeyMultibase?: string;
-    }
-  ) => Promise<void>;
+  saveKeyMaterial?: (key: {
+    purpose: WalletKeyPurpose;
+    alg: WalletKeyAlg;
+    privateKey: Uint8Array;
+    publicKey: Uint8Array;
+    publicKeyMultibase?: string;
+  }) => Promise<void>;
   // Deletes a key (used for "lost primary" simulations / resets).
   deleteKey(purpose: WalletKeyPurpose): Promise<void>;
 };
-

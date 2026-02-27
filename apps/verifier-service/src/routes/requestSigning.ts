@@ -68,7 +68,9 @@ export const registerRequestSigningRoutes = (app: FastifyInstance) => {
         response_type: body.response_type,
         client_id: body.client_id,
         client_id_scheme: body.client_id_scheme,
-        presentation_definition: body.presentation_definition as Record<string, unknown> | undefined,
+        presentation_definition: body.presentation_definition as
+          | Record<string, unknown>
+          | undefined,
         zk_context: body.zk_context as Record<string, unknown> | undefined
       });
       return reply.send({ request_jwt: requestJwt });

@@ -16,7 +16,9 @@ const parseJson = (value: unknown): Record<string, unknown> => {
 export async function up(knex: Knex): Promise<void> {
   // 1) Replace unsafe wildcard domains with a scoped prefix pattern.
   // "*" is effectively cross-domain and risks "global scoring". Use "space:*" for per-space capabilities.
-  await knex("aura_rules").where({ domain: "*" }).update({ domain: "space:*", updated_at: new Date().toISOString() });
+  await knex("aura_rules")
+    .where({ domain: "*" })
+    .update({ domain: "space:*", updated_at: new Date().toISOString() });
 
   // 2) Ensure every rule has a human-readable purpose text (capability framing).
   // Purpose is stored inside rule_logic so it is integrity-protected by the existing rule signature scheme.
@@ -58,6 +60,7 @@ export async function up(knex: Knex): Promise<void> {
 export async function down(knex: Knex): Promise<void> {
   // Non-destructive: do not attempt to remove `purpose` from rule_logic.
   // Reverting domain pattern also risks reintroducing unsafe wildcard behavior.
-  await knex("aura_rules").where({ domain: "space:*" }).update({ domain: "*", updated_at: new Date().toISOString() });
+  await knex("aura_rules")
+    .where({ domain: "space:*" })
+    .update({ domain: "*", updated_at: new Date().toISOString() });
 }
-

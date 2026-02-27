@@ -1,6 +1,7 @@
 const truthy = (value: string | undefined) => value === "true" || value === "1" || value === "yes";
 
-const notEmpty = (value: string | undefined) => typeof value === "string" && value.trim().length > 0;
+const notEmpty = (value: string | undefined) =>
+  typeof value === "string" && value.trim().length > 0;
 
 const failures: string[] = [];
 
@@ -95,4 +96,3 @@ if (failures.length) {
 }
 
 console.log("Mainnet readiness check OK");
-

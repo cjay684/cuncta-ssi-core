@@ -21,4 +21,3 @@ test("/v1/aura/claim is rejected without service auth in production", async () =
   assert.ok(response.statusCode >= 401 && response.statusCode <= 403);
   await app.close();
 });
-

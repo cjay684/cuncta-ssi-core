@@ -10,7 +10,10 @@ export async function up(knex: Knex): Promise<void> {
     });
   }
   const hasJsonSchemaColumn = await knex.schema.hasColumn("credential_types", "json_schema");
-  const hasRevocationConfigColumn = await knex.schema.hasColumn("credential_types", "revocation_config");
+  const hasRevocationConfigColumn = await knex.schema.hasColumn(
+    "credential_types",
+    "revocation_config"
+  );
 
   await knex.schema.createTable("zk_age_groups", (table) => {
     table.text("group_id").primary();
@@ -72,4 +75,3 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists("zk_age_group_members");
   await knex.schema.dropTableIfExists("zk_age_groups");
 }
-

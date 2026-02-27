@@ -137,4 +137,3 @@ export const isCnfKeyAuthorizedByDidDocument = (
   }
   return { ok: false, reason: "did_key_not_authorized" };
 };
-

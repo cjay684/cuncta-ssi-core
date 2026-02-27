@@ -31,4 +31,3 @@ export type TrustRegistrySignedBundle = {
   signature_jws: string;
   verify_jwk: Record<string, unknown>;
 };
-

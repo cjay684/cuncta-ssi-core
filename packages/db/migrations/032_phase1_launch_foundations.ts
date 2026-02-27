@@ -152,8 +152,12 @@ export async function down(knex: Knex): Promise<void> {
       table.dropColumn("image_refs");
     });
   }
-  await knex("policies").whereIn("action_id", ["media.image.publish", "realtime.channel.broadcast"]).del();
-  await knex("actions").whereIn("action_id", ["media.image.publish", "realtime.channel.broadcast"]).del();
+  await knex("policies")
+    .whereIn("action_id", ["media.image.publish", "realtime.channel.broadcast"])
+    .del();
+  await knex("actions")
+    .whereIn("action_id", ["media.image.publish", "realtime.channel.broadcast"])
+    .del();
   await knex.schema.dropTableIfExists("social_realtime_events");
   await knex.schema.dropTableIfExists("social_realtime_permissions");
   await knex.schema.dropTableIfExists("social_media_assets");

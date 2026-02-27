@@ -62,7 +62,9 @@ export const registerAuraRoutes = (app: FastifyInstance) => {
     const lookupHashes = getLookupHashes(hashes);
     const privacy = await getPrivacyStatus(hashes);
     if (privacy.tombstoned) {
-      return reply.code(410).send(makeErrorResponse("not_found", "Subject erased", { devMode: config.DEV_MODE }));
+      return reply
+        .code(410)
+        .send(makeErrorResponse("not_found", "Subject erased", { devMode: config.DEV_MODE }));
     }
     const db = await getDb();
     await db.transaction(async (trx) => {

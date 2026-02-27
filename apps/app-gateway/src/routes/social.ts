@@ -23,7 +23,9 @@ export const extractRealtimeToken = (input: {
   queryToken: string | null;
   allowQueryToken: boolean;
 }) => {
-  const tokenProtocol = input.protocols.find((entry) => entry.startsWith(REALTIME_PROTOCOL_TOKEN_PREFIX));
+  const tokenProtocol = input.protocols.find((entry) =>
+    entry.startsWith(REALTIME_PROTOCOL_TOKEN_PREFIX)
+  );
   if (tokenProtocol) {
     const token = tokenProtocol.slice(REALTIME_PROTOCOL_TOKEN_PREFIX.length).trim();
     if (!token) {
@@ -114,7 +116,10 @@ const sendProxyResponseWithFeeQuote = async (
   let payload: Record<string, unknown> | null = null;
   try {
     const parsed = JSON.parse(raw) as unknown;
-    payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null;
+    payload =
+      parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
   } catch {
     payload = null;
   }
@@ -370,9 +375,10 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
         if (!response.ok) {
           throw new Error(`realtime_events_fetch_failed:${response.status}`);
         }
-        const payload = (await response.json().catch(() => null)) as
-          | { events?: Array<{ createdAt?: string; cursor?: string | null }>; nextCursor?: string | null }
-          | null;
+        const payload = (await response.json().catch(() => null)) as {
+          events?: Array<{ createdAt?: string; cursor?: string | null }>;
+          nextCursor?: string | null;
+        } | null;
         const events = payload?.events ?? [];
         for (const event of events) {
           if (event.cursor && /^\d+$/.test(event.cursor)) {
@@ -433,7 +439,8 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
             try {
               await pushEvents();
             } catch (error) {
-              const message = error instanceof Error ? error.message : "realtime_events_fetch_failed";
+              const message =
+                error instanceof Error ? error.message : "realtime_events_fetch_failed";
               if (message === "social_proxy_timeout") {
                 closeWithRealtimeError("upstream_timeout", "upstream_timeout");
               } else {
@@ -486,7 +493,9 @@ export const registerSocialRoutes = (app: FastifyInstance, context: GatewayConte
       connection.socket.send(
         JSON.stringify({
           type: "ready",
-          protocol: offeredProtocols.includes(REALTIME_PROTOCOL_NAME) ? REALTIME_PROTOCOL_NAME : null,
+          protocol: offeredProtocols.includes(REALTIME_PROTOCOL_NAME)
+            ? REALTIME_PROTOCOL_NAME
+            : null,
           token_source: extracted.tokenSource
         })
       );

@@ -43,7 +43,11 @@ const run = () => {
     const compiled = compileSurfaceRoutesForService(registry, "svc");
     const matched = matchSurfaceRoute(compiled, { method: "GET", path: "/v1/social/xyz" });
     assert.ok(matched, "expected a match");
-    assert.equal(matched.surface, "public", "more-specific glob should override less-specific glob");
+    assert.equal(
+      matched.surface,
+      "public",
+      "more-specific glob should override less-specific glob"
+    );
   }
 
   {
@@ -82,4 +86,3 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-

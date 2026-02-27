@@ -47,10 +47,12 @@ const poseidon = async () => {
 export const AGE_COMMITMENT_DOMAIN_TAG =
   3805445632897706479387916969139462601971875644687406422943513851068976456195n;
 
-export const commitDobDaysPoseidonV1Bn254Ds1 = async (input: { birthdateDays: number; rand: bigint }) => {
+export const commitDobDaysPoseidonV1Bn254Ds1 = async (input: {
+  birthdateDays: number;
+  rand: bigint;
+}) => {
   const p = await poseidon();
   const out = p([AGE_COMMITMENT_DOMAIN_TAG, BigInt(input.birthdateDays), toField(input.rand)]);
   const asBig = BigInt(p.F.toObject(out));
   return toField(asBig);
 };
-

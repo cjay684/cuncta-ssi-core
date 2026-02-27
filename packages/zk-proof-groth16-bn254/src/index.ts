@@ -45,7 +45,11 @@ export const fullProveGroth16 = async (input: {
   zkeyFile: string;
 }) => {
   const start = Date.now();
-  const { proof, publicSignals } = await snark().groth16.fullProve(input.witness, input.wasmFile, input.zkeyFile);
+  const { proof, publicSignals } = await snark().groth16.fullProve(
+    input.witness,
+    input.wasmFile,
+    input.zkeyFile
+  );
   return { proof, publicSignals, proveMs: Date.now() - start };
 };
 
@@ -57,4 +61,3 @@ export const verifyGroth16 = async (input: {
   const ok = await snark().groth16.verify(input.verificationKey, input.publicSignals, input.proof);
   return { ok: Boolean(ok) };
 };
-

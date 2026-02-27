@@ -6,7 +6,10 @@ export async function up(knex: Knex): Promise<void> {
     "social_media_assets",
     "last_purge_attempt_at"
   );
-  const hasPurgeAttemptCount = await knex.schema.hasColumn("social_media_assets", "purge_attempt_count");
+  const hasPurgeAttemptCount = await knex.schema.hasColumn(
+    "social_media_assets",
+    "purge_attempt_count"
+  );
   await knex.schema.alterTable("social_media_assets", (table) => {
     if (!hasPurgePending) {
       table.boolean("purge_pending").notNullable().defaultTo(false);
@@ -29,7 +32,10 @@ export async function down(knex: Knex): Promise<void> {
     "social_media_assets",
     "last_purge_attempt_at"
   );
-  const hasPurgeAttemptCount = await knex.schema.hasColumn("social_media_assets", "purge_attempt_count");
+  const hasPurgeAttemptCount = await knex.schema.hasColumn(
+    "social_media_assets",
+    "purge_attempt_count"
+  );
   await knex.raw('drop index if exists "social_media_assets_purge_pending_idx"');
   await knex.schema.alterTable("social_media_assets", (table) => {
     if (hasPurgePending) table.dropColumn("purge_pending");

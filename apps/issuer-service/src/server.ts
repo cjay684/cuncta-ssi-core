@@ -87,7 +87,11 @@ export const buildServer = () => {
         .select("domain", "output_vct")
         .count("rule_id as count")
         .groupBy("domain", "output_vct")
-        .havingRaw("COUNT(rule_id) > 1")) as Array<{ domain: string; output_vct: string; count: string }>;
+        .havingRaw("COUNT(rule_id) > 1")) as Array<{
+        domain: string;
+        output_vct: string;
+        count: string;
+      }>;
       if (duplicates.length > 0) {
         log.error("aura.rules.invariant_violated", { count: duplicates.length });
         throw new Error("aura_rules_invariant_violated");

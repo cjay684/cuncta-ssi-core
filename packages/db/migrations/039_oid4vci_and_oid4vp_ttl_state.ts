@@ -42,4 +42,3 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists("oid4vci_c_nonces");
   await knex.schema.dropTableIfExists("oid4vci_preauth_codes");
 }
-

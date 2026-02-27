@@ -21,4 +21,3 @@ export type PayerKeyStore = {
   signTransaction(ref: PayerRef, txBytes: Uint8Array): Promise<Uint8Array>;
   listPayerKeys(): Promise<Array<{ ref: PayerRef; entry: PayerKeyEntry }>>;
 };
-

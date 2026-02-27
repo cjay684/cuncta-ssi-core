@@ -22,9 +22,14 @@ test("issuer OID4VCI metadata: ZK credential configs derived from registry", asy
   });
   const configs = (metadata.credential_configurations_supported ?? {}) as Record<string, unknown>;
 
-  assert.ok(configs.age_credential_v1, "age_credential_v1 must be advertised when ALLOW_EXPERIMENTAL_ZK=true");
+  assert.ok(
+    configs.age_credential_v1,
+    "age_credential_v1 must be advertised when ALLOW_EXPERIMENTAL_ZK=true"
+  );
   assert.equal((configs.age_credential_v1 as Record<string, unknown>).format, "dc+sd-jwt");
 
-  assert.ok(!configs.tier_credential_v1, "stub statements must not appear as issuable credential configs");
+  assert.ok(
+    !configs.tier_credential_v1,
+    "stub statements must not appear as issuable credential configs"
+  );
 });
-

@@ -7,7 +7,8 @@ const run = async () => {
     nonce: "nonce-nonce-nonce",
     audience: "origin:http://localhost:3003",
     expires_at: "2026-01-01T00:00:00.000Z",
-    request_jwt: "eyJhbGciOiJFZERTQSIsInR5cCI6Im9pZDR2cC1yZXF1ZXN0K2p3dCJ9.eyJpc3MiOiJodHRwOi8vZ2F0ZXdheS5leGFtcGxlIiwibm9uY2UiOiJub25jZS1ub25jZS1ub25jZSIsImF1ZCI6Im9yaWdpbjpodHRwOi8vbG9jYWxob3N0OjMwMDMiLCJleHAiOjE4OTM0NTYwMDB9.signature",
+    request_jwt:
+      "eyJhbGciOiJFZERTQSIsInR5cCI6Im9pZDR2cC1yZXF1ZXN0K2p3dCJ9.eyJpc3MiOiJodHRwOi8vZ2F0ZXdheS5leGFtcGxlIiwibm9uY2UiOiJub25jZS1ub25jZS1ub25jZSIsImF1ZCI6Im9yaWdpbjpodHRwOi8vbG9jYWxob3N0OjMwMDMiLCJleHAiOjE4OTM0NTYwMDB9.signature",
     requirements: [{ vct: "cuncta.marketplace.seller_good_standing", disclosures: [] }],
     presentation_definition: { id: "cuncta:marketplace.list_item", input_descriptors: [] }
   };
@@ -35,4 +36,3 @@ run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

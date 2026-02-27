@@ -30,7 +30,8 @@ export const registerCapabilitiesRoutes = (app: FastifyInstance, context: Gatewa
           maxFeeTinybars: context.config.USER_PAYS_MAX_FEE_TINYBARS,
           maxTxBytes: context.config.USER_PAYS_MAX_TX_BYTES,
           requestTtlSeconds: context.config.USER_PAYS_REQUEST_TTL_SECONDS,
-          feeBudgets: (context.config as unknown as { USER_PAYS_FEE_BUDGETS?: unknown }).USER_PAYS_FEE_BUDGETS
+          feeBudgets: (context.config as unknown as { USER_PAYS_FEE_BUDGETS?: unknown })
+            .USER_PAYS_FEE_BUDGETS
         },
         network: context.config.HEDERA_NETWORK,
         requirements: { requireDeviceId: context.config.REQUIRE_DEVICE_ID_FOR_REQUIREMENTS }

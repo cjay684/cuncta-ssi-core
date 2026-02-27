@@ -47,13 +47,19 @@ const nextBestActions = (action: CommandAction) => {
   return ["Create profile", "Join space", "Post first message"];
 };
 
-const getSortedCapabilities = (requirements: Array<{ vct: string; label?: string }> | null | undefined) =>
+const getSortedCapabilities = (
+  requirements: Array<{ vct: string; label?: string }> | null | undefined
+) =>
   [...(requirements ?? [])].sort((a, b) => {
     if (a.vct !== b.vct) return a.vct.localeCompare(b.vct);
     return (a.label ?? "").localeCompare(b.label ?? "");
   });
 
-const inferReasonCode = (input: { readyState: ReadyState; denyReason: string | null; action: CommandAction | null }) => {
+const inferReasonCode = (input: {
+  readyState: ReadyState;
+  denyReason: string | null;
+  action: CommandAction | null;
+}) => {
   if (input.readyState === "READY") return null;
   if (input.denyReason === DEPENDENCY_UNAVAILABLE_REASON) return DEPENDENCY_UNAVAILABLE_REASON;
   if (input.readyState === "MISSING_PROOF") return "proof_missing";
@@ -72,7 +78,10 @@ const fetchJsonWithTimeout = async (
   }, input.timeoutMs);
   timeout.unref?.();
   try {
-    const response = await context.fetchImpl(input.url, { ...input.init, signal: controller.signal });
+    const response = await context.fetchImpl(input.url, {
+      ...input.init,
+      signal: controller.signal
+    });
     const payload = (await response.json().catch(() => null)) as unknown;
     if (!response.ok || payload === null) {
       throw new Error("planner_dependency_unavailable");
@@ -140,55 +149,204 @@ export const registerCommandRoutes = (app: FastifyInstance, context: GatewayCont
           message: "IP rate limit exceeded"
         });
       }
-    const body = (request.body ?? {}) as {
-      intent?: string;
-      spaceId?: string;
-      subjectDid?: string;
-      proof?: { presentation?: string; nonce?: string; audience?: string };
-    };
-    const intent = body.intent?.trim();
-    if (!intent) {
-      return reply
-        .code(400)
-        .send(makeErrorResponse("invalid_request", "Missing intent", { devMode: context.config.DEV_MODE }));
-    }
-    const action = resolveAction(intent);
-    if (!action) {
-      const feeQuote = context.getFeeQuoteForPlan({ actionId: null, intent });
+      const body = (request.body ?? {}) as {
+        intent?: string;
+        spaceId?: string;
+        subjectDid?: string;
+        proof?: { presentation?: string; nonce?: string; audience?: string };
+      };
+      const intent = body.intent?.trim();
+      if (!intent) {
+        return reply.code(400).send(
+          makeErrorResponse("invalid_request", "Missing intent", {
+            devMode: context.config.DEV_MODE
+          })
+        );
+      }
+      const action = resolveAction(intent);
+      if (!action) {
+        const feeQuote = context.getFeeQuoteForPlan({ actionId: null, intent });
+        const feeQuoteFingerprint = feeQuote?.quoteFingerprint ?? null;
+        const feeScheduleFingerprint = context.feeScheduleFingerprint;
+        const paymentsConfigFingerprint = context.paymentsConfigFingerprint;
+        const paymentRequest = context.getPaymentRequest({
+          feeQuote,
+          purposeScope: `command.plan:intent:${intent}`
+        });
+        const paymentRequestFingerprint = paymentRequest?.paymentRequestFingerprint ?? null;
+        const readyState: ReadyState = "NEEDS_REFINEMENT";
+        const denyReason =
+          "Intent not recognized yet. Try 'join hangout', 'send banter', 'complete challenge', or 'open space'.";
+        const reasonCode = inferReasonCode({ readyState, denyReason, action });
+        const policyFloorApplied = null;
+        const policyPinFingerprint = DEFAULT_POLICY_PIN_FINGERPRINT;
+        const planDeterminismKey = hashCanonicalJson({
+          plannerVersion: PLANNER_VERSION,
+          appVersionFloor: PLANNER_APP_VERSION_FLOOR,
+          intent,
+          spaceId: body.spaceId ?? null,
+          actionId: null,
+          policyPinFingerprint,
+          policyFloorApplied,
+          feeScheduleFingerprint,
+          paymentsConfigFingerprint
+        });
+        const subjectHash = body.subjectDid?.trim()
+          ? context.pseudonymizer.didToHash(body.subjectDid.trim())
+          : "unknown";
+        await emitCommandPlanAuditEvent({
+          context,
+          actionId: null,
+          subjectHash,
+          readyState,
+          denyReason,
+          reasonCode
+        });
+        void context.maybeCleanupCommandCenterAuditEvents().catch((error) => {
+          log.warn("command.plan.cleanup_failed", {
+            error: error instanceof Error ? error.message : "unknown_error"
+          });
+        });
+        return reply.send({
+          action_plan: [],
+          required_capabilities: [],
+          ready_state: readyState,
+          deny_reason: denyReason,
+          next_best_actions: ["Choose a supported intent", "Open Orb quick actions"],
+          plannerVersion: PLANNER_VERSION,
+          policyFloorApplied,
+          policyPinFingerprint,
+          planDeterminismKey,
+          feeQuote,
+          feeQuoteFingerprint,
+          feeScheduleFingerprint,
+          paymentsConfigFingerprint,
+          paymentRequest,
+          paymentRequestFingerprint,
+          computedAt: new Date().toISOString()
+        });
+      }
+      const feeQuote = context.getFeeQuoteForPlan({ actionId: action, intent });
       const feeQuoteFingerprint = feeQuote?.quoteFingerprint ?? null;
       const feeScheduleFingerprint = context.feeScheduleFingerprint;
       const paymentsConfigFingerprint = context.paymentsConfigFingerprint;
       const paymentRequest = context.getPaymentRequest({
         feeQuote,
-        purposeScope: `command.plan:intent:${intent}`
+        purposeScope: `command.plan:action:${action}`
       });
       const paymentRequestFingerprint = paymentRequest?.paymentRequestFingerprint ?? null;
-      const readyState: ReadyState = "NEEDS_REFINEMENT";
-      const denyReason =
-        "Intent not recognized yet. Try 'join hangout', 'send banter', 'complete challenge', or 'open space'.";
+      let requiredCapabilities: Array<{ vct: string; label?: string }> = [];
+      let policyFloorApplied: string | number | null = null;
+      let policyPinFingerprint = DEFAULT_POLICY_PIN_FINGERPRINT;
+      let dependencyUnavailable = !context.config.POLICY_SERVICE_BASE_URL;
+      if (context.config.POLICY_SERVICE_BASE_URL && !dependencyUnavailable) {
+        const requirementsUrl = new URL("/v1/requirements", context.config.POLICY_SERVICE_BASE_URL);
+        requirementsUrl.searchParams.set("action", action);
+        if (body.spaceId) {
+          requirementsUrl.searchParams.set("space_id", body.spaceId);
+        }
+        try {
+          const requirementsPayload = (await fetchJsonWithTimeout(context, {
+            url: requirementsUrl,
+            init: { method: "GET" },
+            timeoutMs: context.config.COMMAND_PLANNER_REQUIREMENTS_TIMEOUT_MS
+          })) as {
+            requirements?: Array<{ vct: string; label?: string }>;
+            version?: string | number;
+            policyHash?: string;
+            policyId?: string;
+          } | null;
+          requiredCapabilities = getSortedCapabilities(requirementsPayload?.requirements);
+          policyFloorApplied = requirementsPayload?.version ?? null;
+          policyPinFingerprint =
+            typeof requirementsPayload?.policyHash === "string" &&
+            requirementsPayload.policyHash.length > 0
+              ? requirementsPayload.policyHash
+              : hashCanonicalJson({
+                  action,
+                  policyId: requirementsPayload?.policyId ?? null,
+                  policyFloorApplied
+                });
+        } catch {
+          dependencyUnavailable = true;
+        }
+      }
+      let readyState: ReadyState = "MISSING_PROOF";
+      let denyReason = "Presentation proof required.";
+      if (dependencyUnavailable) {
+        readyState = "DENIED";
+        denyReason = DEPENDENCY_UNAVAILABLE_REASON;
+      } else if (
+        body.proof?.presentation &&
+        body.proof.nonce &&
+        body.proof.audience &&
+        context.config.VERIFIER_SERVICE_BASE_URL
+      ) {
+        const verifyUrl = new URL("/v1/verify", context.config.VERIFIER_SERVICE_BASE_URL);
+        verifyUrl.searchParams.set("action", action);
+        try {
+          const verifyPayload = (await fetchJsonWithTimeout(context, {
+            url: verifyUrl,
+            init: {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                presentation: body.proof.presentation,
+                nonce: body.proof.nonce,
+                audience: body.proof.audience,
+                context: body.spaceId ? { space_id: body.spaceId } : undefined
+              })
+            },
+            timeoutMs: context.config.COMMAND_PLANNER_VERIFY_TIMEOUT_MS
+          })) as { decision?: "ALLOW" | "DENY"; reasons?: string[] } | null;
+          if (verifyPayload?.decision === "ALLOW") {
+            readyState = "READY";
+            denyReason = "";
+          } else {
+            readyState = "DENIED";
+            denyReason = verifyPayload?.reasons?.[0] ?? "Policy denied this action.";
+          }
+        } catch {
+          readyState = "DENIED";
+          denyReason = DEPENDENCY_UNAVAILABLE_REASON;
+        }
+      } else if (body.proof?.presentation && body.proof.nonce && body.proof.audience) {
+        readyState = "DENIED";
+        denyReason = DEPENDENCY_UNAVAILABLE_REASON;
+      }
       const reasonCode = inferReasonCode({ readyState, denyReason, action });
-      const policyFloorApplied = null;
-      const policyPinFingerprint = DEFAULT_POLICY_PIN_FINGERPRINT;
       const planDeterminismKey = hashCanonicalJson({
         plannerVersion: PLANNER_VERSION,
         appVersionFloor: PLANNER_APP_VERSION_FLOOR,
         intent,
         spaceId: body.spaceId ?? null,
-        actionId: null,
+        actionId: action,
+        requiredCapabilities: requiredCapabilities.map((entry) => ({
+          vct: entry.vct,
+          label: entry.label ?? null
+        })),
+        nextBestActions: nextBestActions(action),
+        readyState,
+        denyReason: denyReason || null,
         policyPinFingerprint,
         policyFloorApplied,
         feeScheduleFingerprint,
-        paymentsConfigFingerprint
+        paymentsConfigFingerprint,
+        proofShape: {
+          hasPresentation: Boolean(body.proof?.presentation),
+          hasNonce: Boolean(body.proof?.nonce),
+          hasAudience: Boolean(body.proof?.audience)
+        }
       });
       const subjectHash = body.subjectDid?.trim()
         ? context.pseudonymizer.didToHash(body.subjectDid.trim())
         : "unknown";
       await emitCommandPlanAuditEvent({
         context,
-        actionId: null,
+        actionId: action,
         subjectHash,
         readyState,
-        denyReason,
+        denyReason: denyReason || null,
         reasonCode
       });
       void context.maybeCleanupCommandCenterAuditEvents().catch((error) => {
@@ -197,11 +355,17 @@ export const registerCommandRoutes = (app: FastifyInstance, context: GatewayCont
         });
       });
       return reply.send({
-        action_plan: [],
-        required_capabilities: [],
+        action_plan: [
+          {
+            intent,
+            action_id: action,
+            space_id: body.spaceId ?? null
+          }
+        ],
+        required_capabilities: requiredCapabilities,
         ready_state: readyState,
-        deny_reason: denyReason,
-        next_best_actions: ["Choose a supported intent", "Open Orb quick actions"],
+        deny_reason: denyReason || null,
+        next_best_actions: nextBestActions(action),
         plannerVersion: PLANNER_VERSION,
         policyFloorApplied,
         policyPinFingerprint,
@@ -214,157 +378,6 @@ export const registerCommandRoutes = (app: FastifyInstance, context: GatewayCont
         paymentRequestFingerprint,
         computedAt: new Date().toISOString()
       });
-    }
-    const feeQuote = context.getFeeQuoteForPlan({ actionId: action, intent });
-    const feeQuoteFingerprint = feeQuote?.quoteFingerprint ?? null;
-    const feeScheduleFingerprint = context.feeScheduleFingerprint;
-    const paymentsConfigFingerprint = context.paymentsConfigFingerprint;
-    const paymentRequest = context.getPaymentRequest({
-      feeQuote,
-      purposeScope: `command.plan:action:${action}`
-    });
-    const paymentRequestFingerprint = paymentRequest?.paymentRequestFingerprint ?? null;
-    let requiredCapabilities: Array<{ vct: string; label?: string }> = [];
-    let policyFloorApplied: string | number | null = null;
-    let policyPinFingerprint = DEFAULT_POLICY_PIN_FINGERPRINT;
-    let dependencyUnavailable = !context.config.POLICY_SERVICE_BASE_URL;
-    if (context.config.POLICY_SERVICE_BASE_URL && !dependencyUnavailable) {
-      const requirementsUrl = new URL("/v1/requirements", context.config.POLICY_SERVICE_BASE_URL);
-      requirementsUrl.searchParams.set("action", action);
-      if (body.spaceId) {
-        requirementsUrl.searchParams.set("space_id", body.spaceId);
-      }
-      try {
-        const requirementsPayload = (await fetchJsonWithTimeout(context, {
-          url: requirementsUrl,
-          init: { method: "GET" },
-          timeoutMs: context.config.COMMAND_PLANNER_REQUIREMENTS_TIMEOUT_MS
-        })) as
-          | {
-              requirements?: Array<{ vct: string; label?: string }>;
-              version?: string | number;
-              policyHash?: string;
-              policyId?: string;
-            }
-          | null;
-        requiredCapabilities = getSortedCapabilities(requirementsPayload?.requirements);
-        policyFloorApplied = requirementsPayload?.version ?? null;
-        policyPinFingerprint =
-          typeof requirementsPayload?.policyHash === "string" && requirementsPayload.policyHash.length > 0
-            ? requirementsPayload.policyHash
-            : hashCanonicalJson({
-                action,
-                policyId: requirementsPayload?.policyId ?? null,
-                policyFloorApplied
-              });
-      } catch {
-        dependencyUnavailable = true;
-      }
-    }
-    let readyState: ReadyState = "MISSING_PROOF";
-    let denyReason = "Presentation proof required.";
-    if (dependencyUnavailable) {
-      readyState = "DENIED";
-      denyReason = DEPENDENCY_UNAVAILABLE_REASON;
-    } else if (
-      body.proof?.presentation &&
-      body.proof.nonce &&
-      body.proof.audience &&
-      context.config.VERIFIER_SERVICE_BASE_URL
-    ) {
-      const verifyUrl = new URL("/v1/verify", context.config.VERIFIER_SERVICE_BASE_URL);
-      verifyUrl.searchParams.set("action", action);
-      try {
-        const verifyPayload = (await fetchJsonWithTimeout(context, {
-          url: verifyUrl,
-          init: {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              presentation: body.proof.presentation,
-              nonce: body.proof.nonce,
-              audience: body.proof.audience,
-              context: body.spaceId ? { space_id: body.spaceId } : undefined
-            })
-          },
-          timeoutMs: context.config.COMMAND_PLANNER_VERIFY_TIMEOUT_MS
-        })) as { decision?: "ALLOW" | "DENY"; reasons?: string[] } | null;
-        if (verifyPayload?.decision === "ALLOW") {
-          readyState = "READY";
-          denyReason = "";
-        } else {
-          readyState = "DENIED";
-          denyReason = verifyPayload?.reasons?.[0] ?? "Policy denied this action.";
-        }
-      } catch {
-        readyState = "DENIED";
-        denyReason = DEPENDENCY_UNAVAILABLE_REASON;
-      }
-    } else if (body.proof?.presentation && body.proof.nonce && body.proof.audience) {
-      readyState = "DENIED";
-      denyReason = DEPENDENCY_UNAVAILABLE_REASON;
-    }
-    const reasonCode = inferReasonCode({ readyState, denyReason, action });
-    const planDeterminismKey = hashCanonicalJson({
-      plannerVersion: PLANNER_VERSION,
-      appVersionFloor: PLANNER_APP_VERSION_FLOOR,
-      intent,
-      spaceId: body.spaceId ?? null,
-      actionId: action,
-      requiredCapabilities: requiredCapabilities.map((entry) => ({ vct: entry.vct, label: entry.label ?? null })),
-      nextBestActions: nextBestActions(action),
-      readyState,
-      denyReason: denyReason || null,
-      policyPinFingerprint,
-      policyFloorApplied,
-      feeScheduleFingerprint,
-      paymentsConfigFingerprint,
-      proofShape: {
-        hasPresentation: Boolean(body.proof?.presentation),
-        hasNonce: Boolean(body.proof?.nonce),
-        hasAudience: Boolean(body.proof?.audience)
-      }
-    });
-    const subjectHash = body.subjectDid?.trim()
-      ? context.pseudonymizer.didToHash(body.subjectDid.trim())
-      : "unknown";
-    await emitCommandPlanAuditEvent({
-      context,
-      actionId: action,
-      subjectHash,
-      readyState,
-      denyReason: denyReason || null,
-      reasonCode
-    });
-    void context.maybeCleanupCommandCenterAuditEvents().catch((error) => {
-      log.warn("command.plan.cleanup_failed", {
-        error: error instanceof Error ? error.message : "unknown_error"
-      });
-    });
-    return reply.send({
-      action_plan: [
-        {
-          intent,
-          action_id: action,
-          space_id: body.spaceId ?? null
-        }
-      ],
-      required_capabilities: requiredCapabilities,
-      ready_state: readyState,
-      deny_reason: denyReason || null,
-      next_best_actions: nextBestActions(action),
-      plannerVersion: PLANNER_VERSION,
-      policyFloorApplied,
-      policyPinFingerprint,
-      planDeterminismKey,
-      feeQuote,
-      feeQuoteFingerprint,
-      feeScheduleFingerprint,
-      paymentsConfigFingerprint,
-      paymentRequest,
-      paymentRequestFingerprint,
-      computedAt: new Date().toISOString()
-    });
     }
   );
 };

@@ -17,9 +17,15 @@ const revokeSchema = z
       return Number.isInteger(n) && n >= 0 ? n : undefined;
     }, z.number().int().min(0).optional())
   })
-  .refine((value) => value.eventId || value.credentialFingerprint || (value.statusListId && value.statusListIndex !== undefined), {
-    message: "eventId_or_fingerprint_or_status_list_required"
-  });
+  .refine(
+    (value) =>
+      value.eventId ||
+      value.credentialFingerprint ||
+      (value.statusListId && value.statusListIndex !== undefined),
+    {
+      message: "eventId_or_fingerprint_or_status_list_required"
+    }
+  );
 
 export const registerStatusListRoutes = (app: FastifyInstance) => {
   app.get("/status-lists/:listId", async (request, reply) => {
