@@ -32,13 +32,13 @@ const run = async () => {
   await ensureMarketplaceListPolicy();
 
   const db = await getDb();
-  const auraRules = (await db("aura_rules").where({ enabled: true }).select("output_vct")) as Array<{
+  const auraRules = (await db("aura_rules")
+    .where({ enabled: true })
+    .select("output_vct")) as Array<{
     output_vct?: unknown;
   }>;
   const auraVcts = new Set(
-    auraRules
-      .map((r) => String(r.output_vct ?? "").trim())
-      .filter((vct) => vct.length > 0)
+    auraRules.map((r) => String(r.output_vct ?? "").trim()).filter((vct) => vct.length > 0)
   );
   assert.ok(auraVcts.size > 0, "expected enabled aura_rules to exist");
 
@@ -60,7 +60,10 @@ const run = async () => {
   for (const actionId of privilegedActions) {
     const policy = await getPolicyForAction(actionId);
     assert.ok(policy, `missing_policy:${actionId}`);
-    const requirementVcts = (policy?.logic.requirements ?? []).map((r) => String((r as any).vct ?? ""));
+    const requirementVcts = (policy?.logic.requirements ?? []).map((r) => {
+      const requirement = r as { vct?: unknown };
+      return String(requirement.vct ?? "");
+    });
     assert.ok(requirementVcts.length > 0, `missing_requirements:${actionId}`);
     const hasAuraCapability = requirementVcts.some((vct) => auraVcts.has(vct));
     assert.ok(
@@ -74,4 +77,3 @@ run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-
