@@ -30,7 +30,7 @@ test("AURA_BATCH anchor payload is privacy-safe (no subject hashes)", async () =
 
   await db("anchor_outbox").where({ event_type: "AURA_BATCH" }).del();
   await db("aura_signals").where({ domain: "social" }).del();
-  await db("aura_rules").where({ rule_id: "test.batch.privacy.v1" }).del();
+  await db("aura_rules").where({ domain: "social" }).del();
 
   await db("aura_rules").insert({
     rule_id: "test.batch.privacy.v1",
