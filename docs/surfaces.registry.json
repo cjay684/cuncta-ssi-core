@@ -115,25 +115,6 @@
         },
 
         {
-          "method": "GET",
-          "path": "/v1/realtime/*",
-          "surface": "public",
-          "probe": { "path": "/v1/realtime/events?permissionToken=tok" }
-        },
-        {
-          "method": "POST",
-          "path": "/v1/realtime/*",
-          "surface": "public",
-          "probe": { "path": "/v1/realtime/token", "body": {} }
-        },
-        {
-          "method": "POST",
-          "path": "/v1/media/*",
-          "surface": "public",
-          "probe": { "path": "/v1/media/upload/request", "body": {} }
-        },
-
-        {
           "method": "POST",
           "path": "/v1/verify",
           "surface": "dev_test_only",
