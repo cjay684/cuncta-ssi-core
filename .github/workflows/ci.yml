@@ -162,19 +162,19 @@ jobs:
       - name: Surface registry verify (blocking)
         env:
           # Base64url-encoded JWK JSON (public key). Rotate via docs/runbooks/surface-registry-signing.md
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: node scripts/security/sign-surface-registry.mjs --verify
 
       - name: Surface registry deterministic bytes guard (blocking)
         env:
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: |
           node scripts/security/sign-surface-registry.mjs --sync
           git diff --exit-code docs/surfaces.registry.bundle.json
 
       - name: Surface registry drift simulation (CI-only)
         env:
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: node scripts/security/surface-registry-drift.test.mjs
 
       - name: Dev flag scan (blocking)

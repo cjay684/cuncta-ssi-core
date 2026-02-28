@@ -206,6 +206,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("privacy_requests", (table) => {
     table.text("request_id").primary();
     table.text("did_hash").notNullable();
+    table.text("did_hash_legacy");
     table.text("nonce_hash").notNullable();
     table.text("audience").notNullable();
     table.timestamp("expires_at", { useTz: true }).notNullable();
@@ -218,6 +219,7 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable("privacy_tokens", (table) => {
     table.text("token_hash").primary();
     table.text("did_hash").notNullable();
+    table.text("did_hash_legacy");
     table.timestamp("expires_at", { useTz: true }).notNullable();
     table.timestamp("created_at", { useTz: true }).notNullable().defaultTo(knex.fn.now());
     table.index(["did_hash", "expires_at"]);

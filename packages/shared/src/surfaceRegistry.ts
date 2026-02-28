@@ -251,7 +251,7 @@ type SurfaceRegistryLogger = {
 // Public (non-secret) local dev key for signature verification when no env key is provided.
 // This is ONLY used in non-production flows.
 const DEV_FALLBACK_PUBLIC_JWK_B64URL =
-  "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ";
+  "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ";
 
 let cachedRuntimeRegistry: {
   cacheKey: string;
