@@ -150,11 +150,11 @@ jobs:
       - name: ZK no-hardcode scan (blocking)
         run: node scripts/security/zk-no-hardcode-scan.mjs
 
-      - name: Aura guardrails scan (blocking)
-        run: node scripts/security/aura-guardrails-scan.mjs
+      - name: Capability guardrails scan (blocking)
+        run: node scripts/security/capability-guardrails-scan.mjs
 
-      - name: Aura no-hardcode scan (blocking)
-        run: node scripts/security/aura-no-hardcode-scan.mjs
+      - name: Capability no-hardcode scan (blocking)
+        run: node scripts/security/capability-no-hardcode-scan.mjs
 
       - name: Public surface scan (blocking)
         run: node scripts/security/surface-scan.mjs

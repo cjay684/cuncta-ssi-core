@@ -9,7 +9,7 @@ const BUNDLE_PATH = path.join(repoRoot, "docs", "surfaces.registry.bundle.json")
 const SERVICES = [
   { id: "app-gateway", routesDir: "apps/app-gateway/src/routes" },
   { id: "issuer-service", routesDir: "apps/issuer-service/src/routes" }
-  // did-service / verifier-service / policy-service / social-service are private in production;
+  // did-service / verifier-service / policy-service are private in production;
   // this scan focuses on consumer/public + issuer metadata surfaces tracked in docs/surfaces.md.
 ];
 

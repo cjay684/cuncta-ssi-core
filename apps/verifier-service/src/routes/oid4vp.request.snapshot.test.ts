@@ -26,7 +26,7 @@ const run = async () => {
   }
 
   const payload = {
-    action: "marketplace.list_item",
+    action: "identity.verify",
     challenge: {
       nonce: "nonce-nonce-nonce",
       audience: "origin:http://localhost:3003",
@@ -34,7 +34,7 @@ const run = async () => {
     },
     requirements: [
       {
-        vct: "cuncta.marketplace.seller_good_standing",
+        vct: "cuncta.age_over_18",
         formats: ["dc+sd-jwt"],
         zk_predicates: [],
         disclosures: ["seller_good_standing", "tier"],
@@ -52,13 +52,13 @@ const run = async () => {
     assert.equal(
       snapshot,
       JSON.stringify({
-        action: "marketplace.list_item",
+        action: "identity.verify",
         nonce: "nonce-nonce-nonce",
         audience: "origin:http://localhost:3003",
         expires_at: "2026-01-01T00:00:00.000Z",
         requirements: [
           {
-            vct: "cuncta.marketplace.seller_good_standing",
+            vct: "cuncta.age_over_18",
             formats: ["dc+sd-jwt"],
             zk_predicates: [],
             disclosures: ["seller_good_standing", "tier"],
@@ -66,10 +66,10 @@ const run = async () => {
           }
         ],
         presentation_definition: {
-          id: "cuncta:marketplace.list_item",
+          id: "cuncta:identity.verify",
           input_descriptors: [
             {
-              id: "cuncta.marketplace.seller_good_standing",
+              id: "cuncta.age_over_18",
               format: { "sd-jwt-vc": {} },
               disclosures: ["seller_good_standing", "tier"]
             }

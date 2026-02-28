@@ -107,7 +107,7 @@ const envSchema = z.object({
     clampNumber(120_000, 10_000, 600_000),
     z.number().int().min(10_000).max(600_000)
   ),
-  AURA_WORKER_POLL_MS: z.preprocess(
+  CAPABILITY_WORKER_POLL_MS: z.preprocess(
     clampNumber(5000, 250, 30_000),
     z.number().int().min(250).max(30_000)
   ),
@@ -161,16 +161,16 @@ const envSchema = z.object({
     clampNumber(30, 1, 365),
     z.number().int().min(1).max(365)
   ),
-  RETENTION_AURA_SIGNALS_DAYS: z.preprocess(
-    // Aura signals are the most surveillance-sensitive store; keep short by default.
+  RETENTION_CAPABILITY_SIGNALS_DAYS: z.preprocess(
+    // Capability signals are the most surveillance-sensitive store; keep short by default.
     clampNumber(30, 1, 365),
     z.number().int().min(1).max(365)
   ),
-  RETENTION_AURA_STATE_DAYS: z.preprocess(
+  RETENTION_CAPABILITY_STATE_DAYS: z.preprocess(
     clampNumber(180, 7, 730),
     z.number().int().min(7).max(730)
   ),
-  RETENTION_AURA_ISSUANCE_QUEUE_DAYS: z.preprocess(
+  RETENTION_CAPABILITY_ISSUANCE_QUEUE_DAYS: z.preprocess(
     clampNumber(30, 7, 365),
     z.number().int().min(7).max(365)
   ),

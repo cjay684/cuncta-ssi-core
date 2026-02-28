@@ -27,7 +27,7 @@ fragments data and makes historical state appear missing.
 - Services start.
 - Single log event: `pseudonymizer.mismatch`
 - Metric `legacy_rows_present` unaffected.
-- Observable symptoms: fragmented Aura/DSR/rate-limit data (missing historical state).
+- Observable symptoms: fragmented capability/DSR/rate-limit data (missing historical state).
 
 **Operator action**
 

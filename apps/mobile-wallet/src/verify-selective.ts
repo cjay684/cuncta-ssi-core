@@ -65,7 +65,7 @@ const main = async () => {
     throw new Error("network_mismatch");
   }
 
-  const action = process.env.WALLET_VERIFY_ACTION ?? "marketplace.list_item";
+  const action = process.env.WALLET_VERIFY_ACTION ?? "identity.verify";
   const requirements = await gateway.getRequirements({ action, deviceId: config.deviceId });
   const requirement = requirements.requirements[0];
   if (!requirement) {

@@ -1010,13 +1010,12 @@ export const verifyPresentationCore = async (
         }
       }
 
-      // Backward-compatible hardening for existing space policies that predate context predicates.
+      // Backward-compatible hardening for space-scoped policies that predate context predicates.
+      // Keep this generic (no domain-specific action-name coupling).
       if (
         decision === "ALLOW" &&
         requirement &&
-        ["social.space.join", "social.space.post.create", "social.space.moderate"].includes(
-          input.actionId
-        ) &&
+        typeof (input.context as Record<string, unknown> | undefined)?.space_id === "string" &&
         (requirement.context_predicates ?? []).length === 0
       ) {
         const requestSpaceId = getByPath(

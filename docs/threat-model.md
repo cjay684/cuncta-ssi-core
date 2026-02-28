@@ -7,7 +7,6 @@
 - SSRF into internal services or metadata endpoints
 - Replay of presentations or access tokens
 - Correlation attempts across domains
-- Sybil / wash-trade behavior in reputation inputs
 
 ## Mitigations implemented in code
 
@@ -21,7 +20,6 @@
 - Service-to-service JWT auth (aud/exp required) on sensitive endpoints
 - Rate limits on public endpoints
 - Audit logs with hashes only (no secrets or raw presentations)
-- Reputation anti-wash-trade weighting (diminishing returns, diversity)
 
 ## What we do NOT store
 
@@ -37,7 +35,7 @@
 - verification_challenges: 7 days (expired/consumed only)
 - rate_limit_events: 7 days
 - obligation_events: 30 days
-- aura_signals: 90 days (aura_state retained as current summary)
+- capability_signals: 90 days (capability_state retained as current summary)
 - audit_logs: 90 days
 
 ## Data subject rights (DSR)
@@ -50,4 +48,3 @@
 
 - Metadata correlation via access patterns (mitigated by minimization)
 - Client misuse of compat mode for legacy typ
-- Reputation gaming beyond heuristics (requires monitoring and policy updates)

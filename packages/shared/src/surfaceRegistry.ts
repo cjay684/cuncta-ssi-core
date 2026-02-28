@@ -393,7 +393,7 @@ export const compileSurfaceRoutesForService = (
     re: compileSurfacePathPattern(r.path),
     specificity: specificityScore(r.path)
   }));
-  // Prefer the most specific match (lets exact routes override globs like `/v1/social/*`).
+  // Prefer the most specific match (lets exact routes override broader globs).
   compiled.sort((a, b) => b.specificity - a.specificity);
   return compiled;
 };

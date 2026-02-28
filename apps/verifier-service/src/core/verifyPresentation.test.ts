@@ -9,7 +9,7 @@ const dbUrl = process.env.DATABASE_URL ?? "postgres://cuncta:cuncta@localhost:54
 
 const nowIso = () => new Date().toISOString();
 const makeNonce = () => `nonce-${randomUUID()}-1234567890`;
-const makeAction = () => `marketplace.list_item.${randomUUID()}`;
+const makeAction = () => `identity.verify.${randomUUID()}`;
 
 const seedPolicy = async (input: {
   db: ReturnType<typeof createDb>;
@@ -195,7 +195,7 @@ test("verifyPresentationCore: consumes challenge on first attempt even when late
       logic: {
         requirements: [
           {
-            vct: `cuncta.marketplace.${randomUUID()}`,
+            vct: `cuncta.identity.${randomUUID()}`,
             disclosures: [],
             predicates: [],
             revocation: { required: false }

@@ -16,7 +16,7 @@ process.env.POLICY_SIGNING_BOOTSTRAP = "false";
 
 const run = async () => {
   const { config } = await import("../config.js");
-  const { ensureMarketplaceListPolicy } = await import("../testUtils/seedPolicy.js");
+  const { ensureIdentityVerifyPolicy } = await import("../testUtils/seedPolicy.js");
   config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
   config.POLICY_SIGNING_BOOTSTRAP = false;
 
@@ -27,9 +27,9 @@ const run = async () => {
   await app.ready();
 
   const db = await getDb();
-  await ensureMarketplaceListPolicy();
-  const policyRows = await db("policies").where({ action_id: "marketplace.list_item" });
-  assert.ok(policyRows.length > 0, "expected at least one marketplace.list_item policy");
+  await ensureIdentityVerifyPolicy();
+  const policyRows = await db("policies").where({ action_id: "identity.verify" });
+  assert.ok(policyRows.length > 0, "expected at least one identity.verify policy");
 
   const originals = policyRows.map((row) => ({
     policy_id: row.policy_id as string,
@@ -61,7 +61,7 @@ const run = async () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/v1/requirements?action=marketplace.list_item"
+      url: "/v1/requirements?action=identity.verify"
     });
     assert.equal(response.statusCode, 503);
     const payload = response.json() as { error?: string };

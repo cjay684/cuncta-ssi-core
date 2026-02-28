@@ -43,4 +43,4 @@ Policies can express issuer trust as data by using:
 ## Security Notes
 
 - Registry bundles must not contain PII (no emails, phone numbers, addresses).
-- Trust marks are not “social credit”; they are simple accreditation/allowlist signals.
+- Trust marks are simple accreditation/allowlist signals, not a user scoring mechanism.

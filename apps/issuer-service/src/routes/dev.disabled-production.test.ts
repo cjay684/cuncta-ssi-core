@@ -51,7 +51,7 @@ const run = async () => {
     const response = await app.inject({
       method: "POST",
       url: "/v1/dev/issue",
-      payload: { subjectDid: "did:example:holder", vct: "cuncta.marketplace.seller_good_standing" }
+      payload: { subjectDid: "did:example:holder", vct: "cuncta.age_over_18" }
     });
     assert.equal(response.statusCode, 404);
     await app.close();

@@ -86,7 +86,7 @@ await run("sponsored onboard issue returns 410 Gone", async () => {
     headers: { "x-device-id": "device-test-3" },
     payload: {
       subjectDid: "did:hedera:testnet:0.0.1",
-      vct: "cuncta.marketplace.seller_good_standing",
+      vct: "cuncta.age_over_18",
       claims: {}
     }
   });
@@ -111,7 +111,7 @@ await run("verify proxy normalizes reasons by default", async () => {
   });
   const response = await app.inject({
     method: "POST",
-    url: "/v1/verify?action=marketplace.list_item",
+    url: "/v1/verify?action=identity.verify",
     payload: { presentation: "x~y", nonce: "nonce-value-123", audience: "audience-value-123" }
   });
   assert.equal(response.statusCode, 200);
@@ -137,7 +137,7 @@ await run("verify proxy includes reasons only when enabled", async () => {
   });
   const response = await app.inject({
     method: "POST",
-    url: "/v1/verify?action=marketplace.list_item",
+    url: "/v1/verify?action=identity.verify",
     payload: { presentation: "x~y", nonce: "nonce-value-123", audience: "audience-value-123" }
   });
   assert.equal(response.statusCode, 200);

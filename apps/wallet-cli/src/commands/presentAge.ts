@@ -62,7 +62,7 @@ export const presentAge = async () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        policyId: "dating_age_gate"
+        policyId: "identity_verify"
       })
     });
   } catch (error) {

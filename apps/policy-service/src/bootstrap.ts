@@ -44,11 +44,10 @@ export const ensureBaselinePolicies = async (db: DbClient) => {
     });
   };
 
-  // ZK age gate policies (used by OID4VP `dating_enter` in the integration harness).
-  await ensureAction("dating_age_gate", "Dating age gate entry");
-  await ensureAction("dating_enter", "Dating enter action");
+  // SSI baseline policy for relying-party verification.
+  await ensureAction("identity.verify", "Verify holder identity capability");
 
-  const datingLogic = {
+  const identityVerifyLogic = {
     binding: { mode: "kb-jwt", require: true },
     requirements: [
       {
@@ -64,6 +63,5 @@ export const ensureBaselinePolicies = async (db: DbClient) => {
     obligations: [{ type: "ANCHOR_EVENT", event: "VERIFY", when: "ON_ALLOW" }]
   };
 
-  await upsertPolicy("dating_age_gate.v1", "dating_age_gate", datingLogic);
-  await upsertPolicy("dating_enter.v1", "dating_enter", datingLogic);
+  await upsertPolicy("identity.verify.v1", "identity.verify", identityVerifyLogic);
 };

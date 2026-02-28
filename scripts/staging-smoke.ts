@@ -142,8 +142,8 @@ const runStagingSmoke = async () => {
   }
 
   // What we prove.
-  const action = (process.env.SMOKE_ACTION ?? "marketplace.list_item").trim();
-  const vct = (process.env.SMOKE_VCT ?? "cuncta.marketplace.seller_good_standing").trim();
+  const action = (process.env.SMOKE_ACTION ?? "identity.verify").trim();
+  const vct = (process.env.SMOKE_VCT ?? "cuncta.age_over_18").trim();
 
   // Keep CI runs isolated from developer state.
   const workspaceRoot = path.resolve(process.cwd());

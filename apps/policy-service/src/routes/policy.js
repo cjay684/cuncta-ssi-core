@@ -110,9 +110,9 @@ export const registerPolicyRoutes = (app) => {
     });
     const obligations = (policy.logic.obligations ?? []).map((ob) => {
       const o = ob ?? {};
-      if (o.type === "AURA_SIGNAL" && typeof o.domain !== "string") {
+      if (o.type === "CAPABILITY_SIGNAL" && typeof o.domain !== "string") {
         const signal = typeof o.signal === "string" ? o.signal : "";
-        if (signal.startsWith("social.space.") && typeof responseContext?.space_id === "string") {
+        if (signal.includes(".space.") && typeof responseContext?.space_id === "string") {
           return { ...o, domain: `space:${responseContext.space_id}` };
         }
       }

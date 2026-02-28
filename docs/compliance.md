@@ -2,7 +2,7 @@
 
 ## Scope
 
-- CUNCTA SSI Core is a trust and identity layer for issuance, verification, and reputation signals.
+- CUNCTA SSI Core is a trust and identity layer for issuance and verification.
 - It is not a user database, not a wallet custodian, and not a consumer account system.
 
 ## Data minimisation
@@ -15,7 +15,7 @@
 ## Data subject rights (DSR)
 
 - Access/export uses proof-of-control of the holder DID (KB-JWT bound to nonce/audience).
-- Restriction/objection stops further Aura and obligation processing for the subject.
+- Restriction/objection stops further capability and obligation processing for the subject.
 - Erasure unlinks off-chain state and adds a tombstone; on-chain HCS anchors remain immutable.
 - Tombstoned subjects are blocked from new issuance and verification (error: `privacy_erased`).
 - DSR bearer tokens rotate on each operation (export/restrict/erase); old tokens are invalidated immediately.
@@ -23,7 +23,7 @@
 ## Retention & storage limitation
 
 - Default retention windows are configurable in `.env.example` (verification challenges 7d, rate limits 7d,
-  obligations 30d, aura signals 90d, audit logs 90d).
+  obligations 30d, audit logs 90d).
 - Cleanup removes expired/consumed challenges and telemetry tables only.
 - Status lists and anchor receipts/outbox are intentionally retained for integrity.
 
@@ -33,10 +33,9 @@
 - Limits should be tuned per deployment based on expected traffic and user onboarding volume.
 - Monitor `rate_limit_rejects_total` and `requests_total` for sustained spikes and investigate anomalies.
 
-## Automated decision-making (Aura)
+## Automated decision-making
 
-- Aura issues domain-scoped capability credentials; there is no global score.
-- Explainability is available via `/v1/aura/explain` (aggregates and thresholds only).
+- Decisioning is policy-driven and capability-based; there is no global score.
 - Human review hooks live in application policy and governance processes.
 
 ## Roles & responsibilities

@@ -38,31 +38,24 @@ const walk = async (dir) => {
 
 const rel = (abs) => path.relative(repoRoot, abs).replaceAll("\\", "/");
 
-const extractSeededAuraIds = async () => {
+const extractSeededRuleIds = async () => {
   const migrationsRoot = path.join(repoRoot, "packages", "db", "migrations");
   const migrationFiles = (await walk(migrationsRoot)).filter((f) => isTextFile(f));
   const ruleIds = new Set();
-  const outputVcts = new Set();
   const reRuleId = /rule_id\s*:\s*["']([^"']+)["']/g;
-  const reOutput = /output_vct\s*:\s*["']([^"']+)["']/g;
   for (const file of migrationFiles) {
     const content = await readFile(file, "utf8").catch(() => "");
     for (const match of content.matchAll(reRuleId)) {
       const id = String(match[1] ?? "").trim();
       if (id) ruleIds.add(id);
     }
-    for (const match of content.matchAll(reOutput)) {
-      const vct = String(match[1] ?? "").trim();
-      if (vct) outputVcts.add(vct);
-    }
   }
-  const auraConfigIds = new Set(Array.from(outputVcts).map((vct) => `aura:${vct}`));
-  return { ruleIds, auraConfigIds };
+  return { ruleIds };
 };
 
 const fail = (failures) => {
   if (!failures.length) return;
-  console.error("[aura-no-hardcode-scan] FAIL");
+  console.error("[capability-no-hardcode-scan] FAIL");
   for (const f of failures) {
     console.error(`- ${f.kind}: ${f.file} (${f.detail})`);
   }
@@ -70,15 +63,11 @@ const fail = (failures) => {
 };
 
 const main = async () => {
-  const { ruleIds, auraConfigIds } = await extractSeededAuraIds();
-  const forbiddenStrings = [
-    ...Array.from(ruleIds).map((s) => ({ kind: "seeded_rule_id_literal", value: s })),
-    ...Array.from(auraConfigIds).map((s) => ({ kind: "seeded_aura_config_id_literal", value: s }))
-  ];
+  const { ruleIds } = await extractSeededRuleIds();
+  const forbiddenStrings = [...Array.from(ruleIds).map((s) => ({ kind: "seeded_rule_id_literal", value: s }))];
 
   const roots = [
     path.join(repoRoot, "apps", "issuer-service", "src"),
-    path.join(repoRoot, "apps", "social-service", "src"),
     path.join(repoRoot, "apps", "verifier-service", "src"),
     path.join(repoRoot, "apps", "policy-service", "src"),
     path.join(repoRoot, "apps", "did-service", "src"),
@@ -101,7 +90,7 @@ const main = async () => {
   }
 
   fail(failures);
-  console.log("[aura-no-hardcode-scan] OK");
+  console.log("[capability-no-hardcode-scan] OK");
 };
 
 main().catch((error) => {

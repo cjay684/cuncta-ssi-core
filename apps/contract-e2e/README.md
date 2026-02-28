@@ -34,8 +34,8 @@ For self-funded mode (required):
 
 ### Optional env
 
-- `CONTRACT_ACTION` (default: `marketplace.list_item`)
-- `CONTRACT_VCT` (default: `cuncta.marketplace.seller_good_standing`)
+- `CONTRACT_ACTION` (default: `identity.verify`)
+- `CONTRACT_VCT` (default: `cuncta.age_over_18`)
 - `CONTRACT_DEVICE_ID` (default: `contract-e2e-device`)
 - `CONTRACT_HTTP_TIMEOUT_MS` (default: 15000)
 - `CONTRACT_HTTP_RETRY_MAX` (default: 2; transport errors only)

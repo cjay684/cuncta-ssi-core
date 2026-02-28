@@ -52,7 +52,7 @@ grant select, insert, update on table obligations_executions to db_role_verifier
 grant select, insert on table rate_limit_events to db_role_verifier;
 grant insert on table anchor_outbox to db_role_verifier;
 grant insert on table obligation_events to db_role_verifier;
-grant insert on table aura_signals to db_role_verifier;
+grant insert on table capability_signals to db_role_verifier;
 grant select, insert, update on table system_metadata to db_role_verifier;
 
 -- issuer role
@@ -65,10 +65,10 @@ grant select, insert, update on table anchor_outbox to db_role_issuer;
 grant select, insert on table anchor_receipts to db_role_issuer;
 grant insert on table audit_logs to db_role_issuer;
 grant select, insert, update on table system_metadata to db_role_issuer;
-grant select, insert, update on table aura_state to db_role_issuer;
-grant select, insert, update, delete on table aura_signals to db_role_issuer;
-grant select, insert, update, delete on table aura_issuance_queue to db_role_issuer;
-grant select on table aura_rules to db_role_issuer;
+grant select, insert, update on table capability_state to db_role_issuer;
+grant select, insert, update, delete on table capability_signals to db_role_issuer;
+grant select, insert, update, delete on table capability_issuance_queue to db_role_issuer;
+grant select on table capability_rules to db_role_issuer;
 grant select, insert, update, delete on table privacy_requests to db_role_issuer;
 grant select, insert, update, delete on table privacy_tokens to db_role_issuer;
 grant select, insert, update, delete on table privacy_restrictions to db_role_issuer;

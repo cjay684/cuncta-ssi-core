@@ -50,12 +50,9 @@ const run = async () => {
   const subjectDid = "did:example:holder:subject";
   const result = await issueCredential({
     subjectDid,
-    vct: "cuncta.marketplace.seller_good_standing",
+    vct: "cuncta.age_over_18",
     claims: {
-      seller_good_standing: true,
-      domain: "marketplace",
-      as_of: new Date().toISOString(),
-      tier: "bronze"
+      age_over_18: true
     }
   });
 
@@ -72,12 +69,9 @@ const run = async () => {
   try {
     await issueCredential({
       subjectDid,
-      vct: "cuncta.marketplace.seller_good_standing",
+      vct: "cuncta.age_over_18",
       claims: {
-        seller_good_standing: true,
-        domain: "marketplace",
-        as_of: new Date().toISOString(),
-        tier: "bronze"
+        age_over_18: true
       }
     });
   } catch (error) {

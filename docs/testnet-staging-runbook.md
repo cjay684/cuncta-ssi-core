@@ -57,8 +57,8 @@ Set these env vars locally before running the harness:
   - `SERVICE_JWT_SECRET_ISSUER=<>=32 chars secret>`
   - `SERVICE_JWT_AUDIENCE_ISSUER=cuncta.service.issuer` (only override if your deployment changed it)
 - Optional (override what the smoke issues/verifies):
-  - `SMOKE_ACTION=marketplace.list_item`
-  - `SMOKE_VCT=cuncta.marketplace.seller_good_standing`
+  - `SMOKE_ACTION=identity.verify`
+  - `SMOKE_VCT=cuncta.age_over_18`
 
 ## Run The Smoke
 

@@ -7,7 +7,7 @@ Production should use separate DB roles per service instead of one shared `DATAB
 - `db_role_gateway`: gateway audit/event tables only (no onboarding sponsorship tables)
 - `db_role_policy`: policy and challenge lifecycle tables
 - `db_role_verifier`: verify read/write obligations and rate-limit side effects
-- `db_role_issuer`: issuance/revocation/aura/privacy/anchor tables
+- `db_role_issuer`: issuance/revocation/capability/privacy/anchor tables
 - `db_role_migrations`: schema migration role
 
 Use `docs/db-roles.sql` as the baseline grant script.

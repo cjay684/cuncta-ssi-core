@@ -38,7 +38,7 @@ Requests without proper scope return `403` with `service_auth_scope_missing`.
 These endpoints are for:
 
 - Gateway → issuer (onboarding, issue)
-- Social service → issuer (privacy status)
+- Internal services → issuer (privacy status)
 - Operators (key rotation, anchor reconciliation, policy floor)
 - Integration tests
 

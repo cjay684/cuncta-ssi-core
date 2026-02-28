@@ -1,32 +1,29 @@
 import { getDb } from "../db.js";
 
-export const ensureMarketplaceListPolicy = async () => {
+export const ensureIdentityVerifyPolicy = async () => {
   const db = await getDb();
-  const actionId = "marketplace.list_item";
-  const policyId = "marketplace.list_item.v1";
+  const actionId = "identity.verify";
+  const policyId = "identity.verify.v1";
 
   const now = new Date().toISOString();
   await db("actions")
     .insert({
       action_id: actionId,
-      description: "List an item in the marketplace",
+      description: "Verify holder identity capability",
       created_at: now,
       updated_at: now
     })
     .onConflict("action_id")
-    .merge({ description: "List an item in the marketplace", updated_at: now });
+    .merge({ description: "Verify holder identity capability", updated_at: now });
 
   const logic = {
     binding: { mode: "kb-jwt", require: true },
     requirements: [
       {
-        vct: "cuncta.marketplace.seller_good_standing",
+        vct: "cuncta.age_over_18",
         issuer: { mode: "env", env: "ISSUER_DID" },
-        disclosures: ["seller_good_standing", "tier"],
-        predicates: [
-          { path: "seller_good_standing", op: "eq", value: true },
-          { path: "domain", op: "eq", value: "marketplace" }
-        ],
+        disclosures: ["age_over_18"],
+        predicates: [{ path: "age_over_18", op: "eq", value: true }],
         revocation: { required: true }
       }
     ]

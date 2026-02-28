@@ -110,7 +110,6 @@ export const buildOid4vciIssuerMetadata = async (input: {
         }
       };
     }
-
   }
 
   return {
@@ -125,7 +124,7 @@ export const buildOid4vciIssuerMetadata = async (input: {
 };
 
 export const registerIssuerRoutes = (app: FastifyInstance) => {
-  // Internal helper: one-time offer challenges for Aura capability offers (used by gateway).
+  // Internal helper: one-time offer challenges for capability offers (used by gateway).
   app.post(
     "/v1/internal/oid4vci/offer-challenge",
     {

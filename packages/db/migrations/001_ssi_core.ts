@@ -122,18 +122,6 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(["topic_id", "sequence_number"]);
   });
 
-  // ── Reputation events ───────────────────────────────────────────────
-  await knex.schema.createTable("reputation_events", (table) => {
-    table.bigIncrements("id").primary();
-    table.text("actor_pseudonym").notNullable();
-    table.text("counterparty_pseudonym").notNullable();
-    table.text("domain").notNullable();
-    table.text("event_type").notNullable();
-    table.timestamp("timestamp", { useTz: true }).notNullable();
-    table.text("evidence_hash");
-    table.timestamp("created_at", { useTz: true }).notNullable().defaultTo(knex.fn.now());
-  });
-
   // ── Audit logs ──────────────────────────────────────────────────────
   await knex.schema.createTable("audit_logs", (table) => {
     table.bigIncrements("id").primary();
@@ -346,7 +334,7 @@ export async function up(knex: Knex): Promise<void> {
         title: "Age 18+",
         claims: [{ path: "age_over_18", label: "Over 18" }],
       }),
-      purpose_limits: toJson({ actions: ["dating_age_gate", "dating_enter"] }),
+      purpose_limits: toJson({ actions: ["identity.verify"] }),
       presentation_templates: toJson({ required_disclosures: ["age_over_18"] }),
       revocation_config: toJson({
         statusPurpose: "revocation",
@@ -367,7 +355,7 @@ export async function up(knex: Knex): Promise<void> {
       }),
       sd_defaults: toJson(["dob_commitment", "commitment_scheme_version"]),
       display: toJson({ title: "Age credential (ZK-ready)" }),
-      purpose_limits: toJson({ actions: ["dating_enter", "dating_age_gate"] }),
+      purpose_limits: toJson({ actions: ["identity.verify"] }),
       presentation_templates: toJson({
         required_disclosures: ["dob_commitment", "commitment_scheme_version"],
       }),
@@ -460,7 +448,6 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists("rate_limit_events");
   await knex.schema.dropTableIfExists("verification_challenges");
   await knex.schema.dropTableIfExists("audit_logs");
-  await knex.schema.dropTableIfExists("reputation_events");
   await knex.schema.dropTableIfExists("anchor_reconciliations");
   await knex.schema.dropTableIfExists("anchor_receipts");
   await knex.schema.dropTableIfExists("anchor_outbox");

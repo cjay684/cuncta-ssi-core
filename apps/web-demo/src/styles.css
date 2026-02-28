@@ -54,11 +54,6 @@ body {
   color: #9ca3af;
 }
 
-.theme-night .pulse-card {
-  border-color: #1f2937;
-  background: #0f172a;
-}
-
 .theme-night input,
 .theme-night textarea,
 .theme-night select {
@@ -206,60 +201,12 @@ pre {
   box-shadow: 0 8px 20px rgba(45, 108, 223, 0.35);
 }
 
-.command-orb.has-pulse::after {
-  content: "";
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
-}
-
 .command-orb-panel {
   position: fixed;
   right: 24px;
   bottom: 92px;
   width: min(320px, calc(100vw - 48px));
   z-index: 10;
-}
-
-.pulse-panel {
-  position: fixed;
-  right: 24px;
-  bottom: 92px;
-  width: min(420px, calc(100vw - 48px));
-  max-height: 70vh;
-  overflow: auto;
-  z-index: 12;
-  animation: pulse-panel-slide 180ms ease-out;
-}
-
-.pulse-card {
-  border: 1px solid #e2e4e8;
-  border-radius: 12px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.pulse-explain-icon {
-  position: static;
-  margin-left: auto;
-}
-
-@keyframes pulse-panel-slide {
-  from {
-    transform: translateY(10px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
 }
 
 .spaces-grid {

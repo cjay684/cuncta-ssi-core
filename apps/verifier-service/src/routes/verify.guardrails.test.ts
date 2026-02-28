@@ -13,7 +13,7 @@ const dbUrl = process.env.DATABASE_URL ?? "postgres://cuncta:cuncta@localhost:54
 
 const nowIso = () => new Date().toISOString();
 const makeNonce = () => `nonce-${randomUUID()}-1234567890`;
-const makeAction = () => `marketplace.list_item.${randomUUID()}`;
+const makeAction = () => `identity.verify.${randomUUID()}`;
 
 const seedPolicy = async (input: {
   db: ReturnType<typeof createDb>;
@@ -255,7 +255,7 @@ test("jwks refresh-on-kid-miss succeeds and records miss/refresh metrics", async
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.marketplace.${randomUUID()}`;
+    const vct = `cuncta.age_over_18.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();
@@ -405,7 +405,7 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.marketplace.${randomUUID()}`;
+    const vct = `cuncta.age_over_18.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();
@@ -532,14 +532,14 @@ test("verifier denies space-scoped credential reuse across spaces", async () => 
   const db = createDb(dbUrl);
   try {
     await runMigrations(db);
-    const actionId = `social.space.post.create.${randomUUID()}`;
+    const actionId = `space.post.create.${randomUUID()}`;
     const audience = `cuncta.action:${actionId}`;
     const nonce = makeNonce();
     const spaceA = randomUUID();
     const spaceB = randomUUID();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.social.space.poster.${randomUUID()}`;
+    const vct = `cuncta.space.poster.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();

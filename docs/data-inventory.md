@@ -32,20 +32,20 @@ Principles:
 - `issuance_events.credential_fingerprint` for `age_credential_v1` is derived from the issued credential and may implicitly cover `dob_commitment` (treat as pseudonymous personal data).
 - `zk_context.current_day` is non-personal and is carried only inside the signed OID4VP request object JWT (verifier enforces drift bounds); it is not stored server-side beyond the hash-only request replay table.
 
-## Aura / Reputation (Capability System) Notes
+## Capability Signal Notes
 
-- Aura is implemented as domain-scoped, product-specific capability derivation. It is not intended as a universal cross-domain score.
-- Persistent identifiers in Aura (`subject_did_hash`, `counterparty_did_hash`) are pseudonymous personal data under GDPR/UK GDPR (linkable within a deployment if the pepper is known).
-- Evidence is stored as hashes only (e.g., `aura_signals.event_hash`, optional `evidence_hash` on ingest), not raw content.
+- Capability signals are domain-scoped and product-specific. They are not intended as a universal cross-domain score.
+- Persistent identifiers in capability signals (`subject_did_hash`, `counterparty_did_hash`) are pseudonymous personal data under GDPR/UK GDPR (linkable within a deployment if the pepper is known).
+- Evidence is stored as hashes only (e.g., `capability_signals.event_hash`, optional `evidence_hash` on ingest), not raw content.
 - Retention:
-  - `aura_signals` is retained short by default (`RETENTION_AURA_SIGNALS_DAYS`, default 30) and cleaned by the cleanup worker.
-  - `aura_state` is bounded (`RETENTION_AURA_STATE_DAYS`, default 180) and cleaned by the cleanup worker.
-  - `aura_issuance_queue` terminal rows are bounded (`RETENTION_AURA_ISSUANCE_QUEUE_DAYS`, default 30) and cleaned by the cleanup worker.
+  - `capability_signals` is retained short by default (`RETENTION_CAPABILITY_SIGNALS_DAYS`, default 30) and cleaned by the cleanup worker.
+  - `capability_state` is bounded (`RETENTION_CAPABILITY_STATE_DAYS`, default 180) and cleaned by the cleanup worker.
+  - `capability_issuance_queue` terminal rows are bounded (`RETENTION_CAPABILITY_ISSUANCE_QUEUE_DAYS`, default 30) and cleaned by the cleanup worker.
 - OID4VCI capability portability state:
   - `oid4vci_preauth_codes` stores `scope_hash` only (hash of wallet-supplied `scope_json`) for short-lived offer binding; it contains no raw DID, no raw scope, and expires quickly.
   - `oid4vci_offer_challenges` stores only `nonce_hash` + TTL for one-time offer challenges (prevents the offer endpoint becoming an eligibility oracle).
 - Lawful basis (deployment-specific): typically Legitimate Interests for abuse prevention / product safety gating, or Contract for providing capability-gated product functionality. Document the basis per domain and capability.
-- DSR: `privacy/erase` deletes aura-linked rows by subject hash and tombstones the subject to prevent re-linking.
+- DSR: `privacy/erase` deletes capability-linked rows by subject hash and tombstones the subject to prevent re-linking.
 
 ## Legacy / Deprecated Stores
 

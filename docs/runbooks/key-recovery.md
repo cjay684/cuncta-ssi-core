@@ -13,7 +13,7 @@ custodial override and no server-side storage of user secrets.
 ## What This Is Not
 
 - Not a helpdesk reset / admin override.
-- Not a social-custody “we can recover your account” mechanism.
+- Not a custody-style “we can recover your account” mechanism.
 - Not a hardware wallet integration (those remain optional, app-specific, and behind flags).
 
 ## Threat Assumptions

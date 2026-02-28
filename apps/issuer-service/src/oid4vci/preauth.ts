@@ -9,7 +9,7 @@ export type CreatePreauthCodeInput = {
   ttlSeconds: number;
   txCode?: string | null;
   // Optional context for preauth codes (hash-only/TTL store).
-  // Used for Aura capability issuance to bind scope (e.g. space_id) without storing any raw DID.
+  // Used for capability issuance to bind scope (e.g. space_id) without storing any raw DID.
   scope?: Record<string, unknown> | null;
 };
 
