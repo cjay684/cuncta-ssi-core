@@ -80,13 +80,18 @@ const verifyAuraRuleSignature = async (ruleHash: string, signature: string) => {
     const key = await getVerifyKey();
     const { payload } = await jwtVerify(signature, key);
     if (!payload || typeof payload !== "object") {
-      throw new Error("aura_integrity_failed");
+      throw new Error("aura_integrity_failed:sig_payload_invalid");
     }
     if (payload.hash !== ruleHash) {
-      throw new Error("aura_integrity_failed");
+      throw new Error("aura_integrity_failed:sig_hash_mismatch");
     }
-  } catch {
-    throw new Error("aura_integrity_failed");
+  } catch (verifyErr) {
+    if (verifyErr instanceof Error && verifyErr.message.startsWith("aura_integrity_failed:")) {
+      throw verifyErr;
+    }
+    throw new Error(
+      `aura_integrity_failed:sig_verify_error:${verifyErr instanceof Error ? verifyErr.message : String(verifyErr)}`
+    );
   }
 };
 
@@ -168,28 +173,27 @@ export const verifyAuraRuleIntegrity = async (row: AuraRuleRow) => {
 };
 
 export const ensureAuraRuleIntegrity = async (row: AuraRuleRow) => {
-  // Capability contract validation (fail-closed in production for enabled rules).
   if (row.enabled) {
     const outputVct = String(row.output_vct ?? "").trim();
     if (!outputVct) {
-      throw new Error("aura_integrity_failed");
+      throw new Error("aura_integrity_failed:empty_output_vct");
     }
     const domainRaw = String(row.domain ?? "");
     const domainValid = isDomainPatternValid(domainRaw);
     if (!domainValid.ok) {
-      throw new Error("aura_integrity_failed");
+      throw new Error(`aura_integrity_failed:domain_invalid:${domainValid.reason}`);
     }
     const ruleLogic = parseRuleLogic(row);
     const purpose = getRulePurpose(ruleLogic);
     if (!purpose) {
-      throw new Error("aura_integrity_failed");
+      throw new Error("aura_integrity_failed:missing_purpose");
     }
   }
 
   const ruleHash = computeAuraRuleHash(row);
   if (!row.rule_signature) {
     if (!config.POLICY_SIGNING_BOOTSTRAP) {
-      throw new Error("aura_integrity_failed");
+      throw new Error("aura_integrity_failed:no_signature_no_bootstrap");
     }
     const signature = await signAuraRuleHash(ruleHash);
     const db = await getDb();
