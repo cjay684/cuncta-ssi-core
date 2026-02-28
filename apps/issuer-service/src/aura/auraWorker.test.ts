@@ -172,6 +172,7 @@ const run = async () => {
     .whereIn("rule_id", ["test.auraWorker.social.high.v1", "test.auraWorker.social.low.v1"])
     .update({
       rule_logic: JSON.stringify({
+        purpose: "Tier downgrade test rule",
         window_seconds: 3600,
         signals: ["social.post_success"],
         score: { min_silver: 999, min_gold: 1000 },
@@ -183,6 +184,7 @@ const run = async () => {
         min_tier: "bronze",
         output: { claims: { domain: "{domain}", tier: "{tier}", as_of: "{now}" } }
       }),
+      rule_signature: null,
       updated_at: new Date().toISOString()
     });
   await insertSignals(
@@ -204,6 +206,6 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
