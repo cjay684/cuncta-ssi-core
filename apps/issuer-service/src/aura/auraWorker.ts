@@ -118,8 +118,9 @@ export const processAuraSignalsOnce = async () => {
   for (const rule of rules) {
     try {
       await ensureAuraRuleIntegrity(rule);
-    } catch {
-      throw new Error("aura_integrity_failed");
+    } catch (integrityErr) {
+      const detail = integrityErr instanceof Error ? integrityErr.message : String(integrityErr);
+      throw new Error(`aura_integrity_failed: rule=${rule.rule_id} detail=${detail}`);
     }
   }
   if (!rules.length) return;
