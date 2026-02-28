@@ -1,4 +1,3 @@
-/* eslint-disable */
 const wc = require("./witness_calculator.js");
 const { readFileSync, writeFile } = require("fs");
 

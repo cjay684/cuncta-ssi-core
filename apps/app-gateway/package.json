@@ -10,7 +10,7 @@
     "dev": "tsx watch src/index.ts",
     "lint": "eslint \"src/**/*.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --loader ts-node/esm src/test/config.secret-length.development.test.js && node --loader ts-node/esm src/test/config.secret-length.production.test.js && node --loader ts-node/esm src/test/gateway.test.js && node --loader ts-node/esm src/test/ip-allowlist.test.js && node --loader ts-node/esm src/routes/oid4vci.aura.offer.test.ts && node --loader ts-node/esm src/surfaces.production.test.ts && node --loader ts-node/esm src/surfaces.signature.production.test.ts"
+    "test": "node --loader ts-node/esm src/test/config.secret-length.development.test.js && node --loader ts-node/esm src/test/config.secret-length.production.test.js && node --loader ts-node/esm src/test/gateway.test.js && node --loader ts-node/esm src/test/ip-allowlist.test.js && node --loader ts-node/esm src/surfaces.production.test.ts && node --loader ts-node/esm src/surfaces.signature.production.test.ts"
   },
   "dependencies": {
     "@cuncta/db": "workspace:*",

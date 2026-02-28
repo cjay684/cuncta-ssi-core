@@ -70,13 +70,12 @@ export const getPepperFingerprint = () =>
   createHash("sha256").update(`${FINGERPRINT_SALT}${getPepper()}`).digest("hex");
 
 const detectLegacyRows = async (db: Awaited<ReturnType<typeof getDb>>) => {
-  const [issuance, auraSignals, obligations, rateLimits] = await Promise.all([
+  const [issuance, obligations, rateLimits] = await Promise.all([
     db("issuance_events").select("subject_did_hash").whereNotNull("subject_did_hash").first(),
-    db("aura_signals").select("subject_did_hash").first(),
     db("obligations_executions").select("subject_did_hash").first(),
     db("rate_limit_events").select("subject_hash").first()
   ]);
-  return Boolean(issuance || auraSignals || obligations || rateLimits);
+  return Boolean(issuance || obligations || rateLimits);
 };
 
 export const ensurePseudonymizerConsistency = async () => {

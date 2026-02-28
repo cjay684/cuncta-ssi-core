@@ -37,12 +37,10 @@ const { ISSUER_DID } = await import("./issuer/identity.js");
 const { getDb } = await import("./db.js");
 const { startAnchorWorker } = await import("./hedera/anchorWorker.js");
 const { startAnchorReconciler } = await import("./hedera/anchorReconciler.js");
-const { startAuraWorker } = await import("./aura/auraWorker.js");
 const { startCleanupWorker } = await import("./cleanup/cleanupWorker.js");
 const { buildServer } = await import("./server.js");
 const { runStartupIntegrityChecks } = await import("./restoreValidation.js");
 const { ensureCatalogIntegrity } = await import("./catalogIntegrity.js");
-const { ensureAuraRuleIntegrity } = await import("./aura/auraIntegrity.js");
 const { enforceStrictDbRole } = await import("./dbRole.js");
 
 const requireEnv = (names: string[]) => {
@@ -67,7 +65,6 @@ if (config.NODE_ENV === "production") {
     "ISSUER_BASE_URL",
     "PSEUDONYMIZER_PEPPER",
     "SERVICE_JWT_SECRET_ISSUER",
-    "POLICY_SIGNING_JWK",
     "ANCHOR_AUTH_SECRET",
     ...(config.ISSUER_ENABLE_OID4VCI ? ["OID4VCI_TOKEN_SIGNING_JWK"] : [])
   ]);
@@ -96,15 +93,10 @@ const bootstrapIntegrityAudits = async () => {
   for (const row of catalogs) {
     await ensureCatalogIntegrity(row);
   }
-  const auraRules = await db("aura_rules").select("*");
-  for (const rule of auraRules) {
-    await ensureAuraRuleIntegrity(rule);
-  }
 };
 await bootstrapIntegrityAudits();
 startAnchorWorker();
 startAnchorReconciler();
-startAuraWorker();
 startCleanupWorker();
 const app = buildServer();
 log.info("issuer.did", { issuerDid: ISSUER_DID });

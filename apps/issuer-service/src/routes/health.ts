@@ -1,7 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { getDb } from "../db.js";
 import { getAnchorWorkerStatus } from "../hedera/anchorWorker.js";
-import { getAuraWorkerStatus } from "../aura/auraWorker.js";
 import { metrics } from "../metrics.js";
 import { getPepperFingerprint } from "../pseudonymizer.js";
 import { config } from "../config.js";
@@ -37,7 +36,6 @@ export const registerHealthRoutes = (app: FastifyInstance) => {
       ok: dbOk,
       db: { ok: dbOk },
       anchorWorker: getAnchorWorkerStatus(),
-      auraWorker: getAuraWorkerStatus(),
       outbox: { pending: outboxPending, dead: outboxDead },
       auditLog: { headHash: auditHead, anchoredAt: auditAnchoredAt },
       pseudonymizer: { fingerprint: getPepperFingerprint() }
@@ -78,16 +76,6 @@ export const registerHealthRoutes = (app: FastifyInstance) => {
       .filter((row) => row.status === "DEAD")
       .reduce((sum, row) => sum + Number(row.count ?? 0), 0);
     metrics.setGauge("anchor_outbox_dead", {}, deadRows);
-    const auraRows = (await db("aura_issuance_queue")
-      .select("status")
-      .count<{ count: string }>("queue_id as count")
-      .groupBy("status")) as Array<{
-      status: string;
-      count: string;
-    }>;
-    for (const row of auraRows) {
-      metrics.setGauge("aura_queue_total", { status: row.status }, Number(row.count ?? 0));
-    }
     metrics.setGauge("backup_restore_mode_active", {}, config.BACKUP_RESTORE_MODE ? 1 : 0);
     metrics.setGauge(
       "startup_integrity_failures_total",

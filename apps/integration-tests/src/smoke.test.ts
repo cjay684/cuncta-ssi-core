@@ -8,18 +8,8 @@ const run = async () => {
   const runTsUrl = new URL("./run.ts", import.meta.url);
   const text = await readFile(runTsUrl, "utf8");
 
-  // Admin API must be /v1/admin/* (no /v1/internal/*).
-  assert.ok(text.includes("/v1/admin/keys/rotate"), "harness must use /v1/admin/keys/rotate");
-  assert.ok(
-    !text.includes("/v1/internal/keys/rotate"),
-    "harness must not use /v1/internal/keys/rotate"
-  );
-
-  // Self-funded only: legacy onboarding endpoints must be exercised as 410 Gone.
-  assert.ok(
-    text.includes("sponsored_onboarding_not_supported"),
-    "harness must assert legacy onboarding returns sponsored_onboarding_not_supported"
-  );
+  // SSI-core: harness must target identity.verify action.
+  assert.ok(text.includes("identity.verify"), "harness must target identity.verify action");
 
   // Customer readiness checklist (offline, deterministic):
   // - Example env must not enable break-glass / dev auth by default

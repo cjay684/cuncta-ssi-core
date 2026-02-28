@@ -118,52 +118,7 @@ export const vcAcquire = async () => {
       if (!env.APP_GATEWAY_BASE_URL) {
         return Promise.resolve(null);
       }
-      // Aura capability portability: obtain an offer via challenge+proof to avoid oracle-style issuance.
-      if (args.configId.startsWith("aura:")) {
-        const domain = typeof claimsForOffer.domain === "string" ? claimsForOffer.domain : "";
-        const spaceId =
-          typeof claimsForOffer.space_id === "string" ? claimsForOffer.space_id : undefined;
-        if (!domain && !spaceId) {
-          throw new Error("aura_offer_requires_domain_or_space_id");
-        }
-        return (async () => {
-          const challenge = await fetchJson<{ nonce: string; audience: string }>(
-            new URL(
-              `/oid4vci/aura/challenge?config_id=${encodeURIComponent(args.configId)}`,
-              env.APP_GATEWAY_BASE_URL
-            ).toString()
-          );
-          const now = Math.floor(Date.now() / 1000);
-          const proofJwt = await buildHolderJwtEdDsa({
-            header: { alg: "EdDSA", typ: "openid4vci-proof+jwt" },
-            payload: {
-              iss: subjectDid,
-              aud: challenge.audience.replace(/\/$/, ""),
-              nonce: challenge.nonce,
-              iat: now,
-              exp: now + 120,
-              cnf: { jwk: { kty: "OKP", crv: "Ed25519", x: holderPublicJwk.x, alg: "EdDSA" } }
-            }
-          });
-          return await fetchJson<unknown>(
-            new URL("/oid4vci/aura/offer", env.APP_GATEWAY_BASE_URL).toString(),
-            {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({
-                credential_configuration_id: args.configId,
-                subjectDid,
-                domain: domain || (spaceId ? `space:${spaceId}` : ""),
-                ...(spaceId ? { space_id: spaceId } : {}),
-                offer_nonce: challenge.nonce,
-                proof_jwt: proofJwt
-              })
-            }
-          );
-        })();
-      }
-
-      // Standard offer surface (non-aura).
+      // Standard offer surface.
       return fetchJson<unknown>(
         new URL(
           `/oid4vci/offer?vct=${encodeURIComponent(args.configId)}${
@@ -217,18 +172,6 @@ export const vcAcquire = async () => {
       grant_type: "urn:ietf:params:oauth:grant-type:pre-authorized_code",
       "pre-authorized_code": preAuthorizedCode
     });
-    if (String(configId).startsWith("aura:")) {
-      const domain = typeof claimsForOffer.domain === "string" ? claimsForOffer.domain : "";
-      const spaceId = typeof claimsForOffer.space_id === "string" ? claimsForOffer.space_id : "";
-      if (spaceId) {
-        tokenParams.set("scope_json", JSON.stringify({ space_id: spaceId }));
-      } else if (domain === "marketplace" || domain === "social") {
-        tokenParams.set("scope_json", JSON.stringify({ domain }));
-      } else {
-        throw new Error("aura_token_requires_scope_json_domain_or_space_id");
-      }
-    }
-
     logStage("issuer.token", "start");
     const tokenRes = await withHeartbeat("issuer.token", async () =>
       fetchJson<unknown>(meta.token_endpoint, {
@@ -297,8 +240,7 @@ export const vcAcquire = async () => {
         body: JSON.stringify({
           subjectDid,
           credential_configuration_id: configId,
-          // Aura capability credentials are derived server-side from eligibility; client does not supply claims.
-          claims: configId.startsWith("aura:") ? {} : claims,
+          claims: claims,
           format: resolved.format,
           proof: { proof_type: "jwt", jwt: proofJwt }
         })

@@ -114,9 +114,7 @@ const run = async () => {
     { table: "rate_limit_events", column: "subject_hash" },
     { table: "audit_logs", column: "data_hash" },
     { table: "obligations_executions", column: "anchor_payload_hash" },
-    { table: "obligation_events", column: "event_hash" },
-    { table: "aura_signals", column: "event_hash" },
-    { table: "aura_issuance_queue", column: "reason_hash" }
+    { table: "obligation_events", column: "event_hash" }
   ];
   for (const check of checks) {
     const row = await db(check.table).where(check.column, "like", jwtPrefix).first();

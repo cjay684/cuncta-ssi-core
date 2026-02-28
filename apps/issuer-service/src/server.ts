@@ -6,8 +6,6 @@ import { registerIssuerRoutes } from "./routes/issuer.js";
 import { registerStatusListRoutes } from "./routes/statusLists.js";
 import { registerDevRoutes } from "./routes/dev.js";
 import { registerCatalogRoutes } from "./routes/catalog.js";
-import { registerReputationRoutes } from "./routes/reputation.js";
-import { registerAuraRoutes } from "./routes/aura.js";
 import { registerPrivacyRoutes } from "./routes/privacy.js";
 import { registerKeyRoutes } from "./routes/keys.js";
 import { registerAnchorRoutes } from "./routes/anchors.js";
@@ -17,8 +15,6 @@ import { metrics } from "./metrics.js";
 import { makeErrorResponse } from "@cuncta/shared";
 import { config } from "./config.js";
 import { ensurePseudonymizerReady, ensurePseudonymizerConsistency } from "./pseudonymizer.js";
-import { getDb } from "./db.js";
-import { ensureAuraRuleIntegrity } from "./aura/auraIntegrity.js";
 import { registerSurfaceEnforcement } from "./surfaceEnforcement.js";
 import net from "node:net";
 
@@ -75,28 +71,6 @@ export const buildServer = () => {
   ensurePseudonymizerReady();
   app.addHook("onReady", async () => {
     await ensurePseudonymizerConsistency();
-    // Fail closed in production if any enabled capability rule violates the Aura capability contract.
-    if (config.NODE_ENV === "production") {
-      const db = await getDb();
-      const rules = await db("aura_rules").where({ enabled: true });
-      for (const rule of rules) {
-        await ensureAuraRuleIntegrity(rule);
-      }
-      const duplicates = (await db("aura_rules")
-        .where({ enabled: true })
-        .select("domain", "output_vct")
-        .count("rule_id as count")
-        .groupBy("domain", "output_vct")
-        .havingRaw("COUNT(rule_id) > 1")) as Array<{
-        domain: string;
-        output_vct: string;
-        count: string;
-      }>;
-      if (duplicates.length > 0) {
-        log.error("aura.rules.invariant_violated", { count: duplicates.length });
-        throw new Error("aura_rules_invariant_violated");
-      }
-    }
   });
   if (config.ALLOW_INSECURE_DEV_AUTH) {
     if (config.NODE_ENV === "production") {
@@ -161,7 +135,6 @@ export const buildServer = () => {
       path === "/token" ||
       path === "/credential" ||
       path.startsWith("/v1/privacy") ||
-      path === "/v1/aura/claim" ||
       path === "/v1/credentials/revoke" ||
       path === "/v1/revoke";
     if (blocked) {
@@ -211,8 +184,6 @@ export const buildServer = () => {
   registerIssuerRoutes(app);
   registerStatusListRoutes(app);
   registerCatalogRoutes(app);
-  registerReputationRoutes(app);
-  registerAuraRoutes(app);
   registerPrivacyRoutes(app);
   registerKeyRoutes(app);
   registerAnchorRoutes(app);

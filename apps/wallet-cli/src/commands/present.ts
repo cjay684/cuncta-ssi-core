@@ -51,7 +51,7 @@ const resolveRequestJwtJwksUrl = (requestJwt: string, options: { strict: boolean
   return `${issRaw.replace(/\/$/, "")}/.well-known/jwks.json`;
 };
 
-export const present = async (action = "marketplace.list_item") => {
+export const present = async (action = "identity.verify") => {
   const env = envSchema.parse(process.env);
   const state = await loadWalletState();
   // Ensure we can emit cnf.jwk even if signing happens via hardware keystore.

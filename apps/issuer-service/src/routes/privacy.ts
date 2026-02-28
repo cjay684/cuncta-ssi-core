@@ -7,12 +7,8 @@ import { config } from "../config.js";
 import { log } from "../log.js";
 import { sha256Hex } from "../crypto/sha256.js";
 import { hashCanonicalJson, makeErrorResponse } from "@cuncta/shared";
-import { getPrivacyStatus } from "../privacy/restrictions.js";
 import { getDidHashes, getLookupHashes } from "../pseudonymizer.js";
 import { metrics } from "../metrics.js";
-import { ensureAuraRuleIntegrity } from "../aura/auraIntegrity.js";
-import { computeAuraScoreAndDiversity } from "../aura/auraWorker.js";
-import { getRulePurpose, parseRuleLogic, ruleAppliesToDomain } from "../aura/ruleContract.js";
 import { bumpPrivacyEraseEpoch, markPrivacyEraseEver } from "../audit.js";
 import { requireServiceAuth } from "../auth.js";
 
@@ -42,7 +38,6 @@ const exportResponseSchema = z.object({
   subject: z.object({ did_hash: z.string() }),
   generated_at: z.string(),
   issuance: z.array(z.record(z.string(), z.unknown())),
-  aura: z.array(z.record(z.string(), z.unknown())),
   telemetry: z.record(z.string(), z.unknown()),
   anchors: z.record(z.string(), z.unknown()),
   nextToken: z.string().min(10).optional()
@@ -275,25 +270,8 @@ const getEraseCompletionState = async (didHash: string, legacyHash: string | nul
     });
   }
 
-  let purgePendingCount = 0;
-  if (await hasTable("social_media_assets")) {
-    const row = await db("social_media_assets")
-      .whereIn("owner_subject_hash", lookup)
-      .where({ purge_pending: true })
-      .count<{ count: string }>("* as count")
-      .first();
-    purgePendingCount = Number(row?.count ?? 0);
-  }
-
-  let purgeDeadLetteredCount = 0;
-  if (await hasTable("social_media_assets")) {
-    const row = await db("social_media_assets")
-      .whereIn("owner_subject_hash", lookup)
-      .whereNotNull("purge_dead_lettered_at")
-      .count<{ count: string }>("* as count")
-      .first();
-    purgeDeadLetteredCount = Number(row?.count ?? 0);
-  }
+  const purgePendingCount = 0;
+  const purgeDeadLetteredCount = 0;
 
   const offchainUnlinkDone = linkedResidualCount === 0 && !inventoryTruncated;
   return {
@@ -449,9 +427,7 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       obligationExecutionsCount,
       obligationExecutionsMax,
       rateLimitsCount,
-      rateLimitsMax,
-      auraSignalsCount,
-      auraSignalsMax
+      rateLimitsMax
     ] = await Promise.all([
       db("obligation_events")
         .whereIn("subject_did_hash", lookupHashes)
@@ -476,20 +452,8 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       db("rate_limit_events")
         .whereIn("subject_hash", lookupHashes)
         .max<{ max: string }>("created_at as max")
-        .first(),
-      db("aura_signals")
-        .whereIn("subject_did_hash", lookupHashes)
-        .count<{ count: string }>("id as count")
-        .first(),
-      db("aura_signals")
-        .whereIn("subject_did_hash", lookupHashes)
-        .max<{ max: string }>("created_at as max")
         .first()
     ]);
-
-    const auraState = await db("aura_state")
-      .whereIn("subject_did_hash", lookupHashes)
-      .select("domain", "state", "updated_at");
 
     const outboxQuery = db("anchor_outbox").select(
       "payload_hash",
@@ -520,11 +484,6 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
       subject: { did_hash: didHash },
       generated_at: new Date().toISOString(),
       issuance,
-      aura: auraState.map((row) => ({
-        domain: row.domain,
-        state: row.state,
-        updated_at: row.updated_at
-      })),
       telemetry: {
         obligation_events: {
           count: Number(obligationEventsCount?.count ?? 0),
@@ -537,10 +496,6 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
         rate_limit_events: {
           count: Number(rateLimitsCount?.count ?? 0),
           last_created_at: rateLimitsMax?.max ?? null
-        },
-        aura_signals: {
-          count: Number(auraSignalsCount?.count ?? 0),
-          last_created_at: auraSignalsMax?.max ?? null
         }
       },
       anchors: {
@@ -609,13 +564,9 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
     const lookup = getLookupHashes({ primary: didHash, legacy: context.legacyHash });
 
     await db.transaction(async (trx) => {
-      await trx("aura_state").whereIn("subject_did_hash", lookup).del();
-      await trx("aura_signals").whereIn("subject_did_hash", lookup).del();
-      await trx("aura_issuance_queue").whereIn("subject_did_hash", lookup).del();
       await trx("obligation_events").whereIn("subject_did_hash", lookup).del();
       await trx("obligations_executions").whereIn("subject_did_hash", lookup).del();
       await trx("rate_limit_events").whereIn("subject_hash", lookup).del();
-      await trx("command_center_audit_events").whereIn("subject_hash", lookup).del();
       await trx("privacy_requests").whereIn("did_hash", lookup).del();
       await trx("privacy_tokens").whereIn("did_hash", lookup).del();
       await trx("privacy_restrictions").whereIn("did_hash", lookup).del();
@@ -682,243 +633,4 @@ export const registerPrivacyRoutes = (app: FastifyInstance) => {
     });
   });
 
-  app.get("/v1/aura/explain", async (request, reply) => {
-    const context = await getDsrContext(request, reply);
-    if (!context) return;
-    const db = await getDb();
-    const didHash = context.didHash;
-    const status = await getPrivacyStatus({
-      primary: context.didHash,
-      legacy: context.legacyHash
-    });
-    if (status.tombstoned) {
-      return reply.send({ subject: { did_hash: didHash }, aura: [], notice: "erased" });
-    }
-
-    const lookup = getLookupHashes({ primary: didHash, legacy: context.legacyHash });
-    const auraStates = await db("aura_state").whereIn("subject_did_hash", lookup);
-    const rules = await db("aura_rules").where({ enabled: true });
-    try {
-      for (const rule of rules) {
-        await ensureAuraRuleIntegrity(rule);
-      }
-    } catch {
-      return reply.code(503).send(
-        makeErrorResponse("aura_integrity_failed", "Aura rules unavailable", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const response = [];
-
-    for (const stateRow of auraStates) {
-      const domain = stateRow.domain as string;
-      const state =
-        typeof stateRow.state === "string"
-          ? (JSON.parse(stateRow.state) as Record<string, unknown>)
-          : (stateRow.state as Record<string, unknown>);
-      const applicable = rules.filter((rule: Record<string, unknown>) =>
-        ruleAppliesToDomain(String(rule.domain ?? ""), domain)
-      );
-      for (const rule of applicable) {
-        const ruleLogic = parseRuleLogic(rule as { rule_logic?: unknown });
-        const purpose = getRulePurpose(ruleLogic);
-        const windowSeconds =
-          typeof ruleLogic.window_seconds === "number" ? ruleLogic.window_seconds : 0;
-        const windowDays = typeof ruleLogic.window_days === "number" ? ruleLogic.window_days : 30;
-        const windowMs =
-          windowSeconds > 0 ? windowSeconds * 1000 : windowDays * 24 * 60 * 60 * 1000;
-        const since = new Date(Date.now() - windowMs).toISOString();
-        const signalNames = Array.isArray(ruleLogic.signals) ? (ruleLogic.signals as string[]) : [];
-        const query = db("aura_signals")
-          .whereIn("subject_did_hash", lookup)
-          .andWhere("domain", domain)
-          .andWhere("created_at", ">=", since);
-        if (signalNames.length) {
-          query.whereIn("signal", signalNames);
-        }
-        const signals = await query;
-        const { score, diversity } = computeAuraScoreAndDiversity(
-          signals as Array<Record<string, unknown>>,
-          ruleLogic
-        );
-
-        const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
-        const minSilver = typeof scoreRule.min_silver === "number" ? scoreRule.min_silver : 0;
-        const minGold = typeof scoreRule.min_gold === "number" ? scoreRule.min_gold : 0;
-        const diversityMin =
-          typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
-        const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
-
-        const reasons: string[] = [];
-        if (diversityMin > 0 && diversity < diversityMin) {
-          reasons.push(`Need ${diversityMin - diversity} more diverse counterparties`);
-        }
-        if (minSilver > 0 && score < minSilver) {
-          reasons.push(`Need ${(minSilver - score).toFixed(2)} more score to reach silver`);
-        } else if (minGold > 0 && score < minGold) {
-          reasons.push(`Need ${(minGold - score).toFixed(2)} more score to reach gold`);
-        }
-
-        response.push({
-          rule_id: rule.rule_id,
-          rule_version: rule.version,
-          domain,
-          output_vct: rule.output_vct,
-          capability: {
-            purpose,
-            benefit_vct: String(rule.output_vct ?? ""),
-            domain,
-            window_days: windowDays
-          },
-          eligibility: {
-            eligible_now: reasons.length === 0,
-            reasons,
-            current: {
-              tier: state.tier ?? "bronze",
-              score: state.score ?? 0,
-              diversity: state.diversity ?? 0
-            },
-            window_aggregates: {
-              signal_count: signals.length,
-              score: Number(score.toFixed(4)),
-              diversity
-            },
-            required_thresholds: {
-              min_tier: minTier,
-              min_silver: minSilver,
-              min_gold: minGold,
-              diversity_min: diversityMin
-            }
-          }
-        });
-      }
-    }
-
-    return reply.send({
-      subject: { did_hash: didHash },
-      generated_at: new Date().toISOString(),
-      aura: response
-    });
-  });
-
-  // Admin/service-auth diagnostics: same safe capability-oriented shape, but allows querying by subjectDid.
-  // This route is intentionally service-auth only; it must not become a third-party reputation oracle.
-  app.get("/v1/admin/aura/explain", async (request, reply) => {
-    await requireServiceAuth(request, reply, { requireAdminScope: ["issuer:aura_admin"] });
-    if (reply.sent) return;
-    const q = z.object({ subjectDid: z.string().min(3) }).parse(request.query ?? {});
-    const hashes = getDidHashes(q.subjectDid);
-    const didHash = hashes.primary;
-    const status = await getPrivacyStatus({
-      primary: hashes.primary,
-      legacy: hashes.legacy ?? null
-    });
-    if (status.tombstoned) {
-      return reply.send({ subject: { did_hash: didHash }, aura: [], notice: "erased" });
-    }
-    const db = await getDb();
-    const lookup = getLookupHashes({ primary: hashes.primary, legacy: hashes.legacy ?? null });
-    const auraStates = await db("aura_state").whereIn("subject_did_hash", lookup);
-    const rules = await db("aura_rules").where({ enabled: true });
-    try {
-      for (const rule of rules) {
-        await ensureAuraRuleIntegrity(rule);
-      }
-    } catch {
-      return reply.code(503).send(
-        makeErrorResponse("aura_integrity_failed", "Aura rules unavailable", {
-          devMode: config.DEV_MODE
-        })
-      );
-    }
-    const response = [];
-    for (const stateRow of auraStates) {
-      const domain = stateRow.domain as string;
-      const state =
-        typeof stateRow.state === "string"
-          ? (JSON.parse(stateRow.state) as Record<string, unknown>)
-          : (stateRow.state as Record<string, unknown>);
-      const applicable = rules.filter((rule: Record<string, unknown>) =>
-        ruleAppliesToDomain(String(rule.domain ?? ""), domain)
-      );
-      for (const rule of applicable) {
-        const ruleLogic = parseRuleLogic(rule as { rule_logic?: unknown });
-        const purpose = getRulePurpose(ruleLogic);
-        const windowSeconds =
-          typeof ruleLogic.window_seconds === "number" ? ruleLogic.window_seconds : 0;
-        const windowDays = typeof ruleLogic.window_days === "number" ? ruleLogic.window_days : 30;
-        const windowMs =
-          windowSeconds > 0 ? windowSeconds * 1000 : windowDays * 24 * 60 * 60 * 1000;
-        const since = new Date(Date.now() - windowMs).toISOString();
-        const signalNames = Array.isArray(ruleLogic.signals) ? (ruleLogic.signals as string[]) : [];
-        const query = db("aura_signals")
-          .whereIn("subject_did_hash", lookup)
-          .andWhere("domain", domain)
-          .andWhere("created_at", ">=", since);
-        if (signalNames.length) {
-          query.whereIn("signal", signalNames);
-        }
-        const signals = await query;
-        const { score, diversity } = computeAuraScoreAndDiversity(
-          signals as Array<Record<string, unknown>>,
-          ruleLogic
-        );
-        const scoreRule = (ruleLogic.score as Record<string, unknown>) ?? {};
-        const minSilver = typeof scoreRule.min_silver === "number" ? scoreRule.min_silver : 0;
-        const minGold = typeof scoreRule.min_gold === "number" ? scoreRule.min_gold : 0;
-        const diversityMin =
-          typeof ruleLogic.diversity_min === "number" ? ruleLogic.diversity_min : 0;
-        const minTier = typeof ruleLogic.min_tier === "string" ? ruleLogic.min_tier : "bronze";
-
-        const reasons: string[] = [];
-        if (diversityMin > 0 && diversity < diversityMin) {
-          reasons.push(`Need ${diversityMin - diversity} more diverse counterparties`);
-        }
-        if (minSilver > 0 && score < minSilver) {
-          reasons.push(`Need ${(minSilver - score).toFixed(2)} more score to reach silver`);
-        } else if (minGold > 0 && score < minGold) {
-          reasons.push(`Need ${(minGold - score).toFixed(2)} more score to reach gold`);
-        }
-
-        response.push({
-          rule_id: rule.rule_id,
-          rule_version: rule.version,
-          domain,
-          output_vct: rule.output_vct,
-          capability: {
-            purpose,
-            benefit_vct: String(rule.output_vct ?? ""),
-            domain,
-            window_days: windowDays
-          },
-          eligibility: {
-            eligible_now: reasons.length === 0,
-            reasons,
-            current: {
-              tier: state.tier ?? "bronze",
-              score: state.score ?? 0,
-              diversity: state.diversity ?? 0
-            },
-            window_aggregates: {
-              signal_count: signals.length,
-              score: Number(score.toFixed(4)),
-              diversity
-            },
-            required_thresholds: {
-              min_tier: minTier,
-              min_silver: minSilver,
-              min_gold: minGold,
-              diversity_min: diversityMin
-            }
-          }
-        });
-      }
-    }
-    return reply.send({
-      subject: { did_hash: didHash },
-      generated_at: new Date().toISOString(),
-      aura: response
-    });
-  });
 };
