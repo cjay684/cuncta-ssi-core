@@ -243,14 +243,55 @@ test(
       __test__.resetIssuerKeyCache();
       __test__.resetPolicyVerifyKey();
 
+      const configSnapshot = {
+        POLICY_SIGNING_JWK: config.POLICY_SIGNING_JWK?.slice(0, 40),
+        POLICY_VERSION_FLOOR_ENFORCED: config.POLICY_VERSION_FLOOR_ENFORCED,
+        ENFORCE_ORIGIN_AUDIENCE: config.ENFORCE_ORIGIN_AUDIENCE
+      };
+      console.log("TEST_DIAG:config_snapshot", JSON.stringify(configSnapshot));
+
+      const challengeBeforeVerify = await db("verification_challenges")
+        .where({
+          action_id: actionId,
+          challenge_hash: createHash("sha256").update(nonce).digest("hex")
+        })
+        .first();
+      console.log(
+        "TEST_DIAG:challenge_before_verify",
+        JSON.stringify({
+          exists: Boolean(challengeBeforeVerify),
+          policy_id: challengeBeforeVerify?.policy_id,
+          policy_version: challengeBeforeVerify?.policy_version,
+          policy_hash: challengeBeforeVerify?.policy_hash?.slice(0, 16)
+        })
+      );
+
+      const policyBeforeVerify = await db("policies").where({ policy_id: policyId }).first();
+      console.log(
+        "TEST_DIAG:policy_before_verify",
+        JSON.stringify({
+          exists: Boolean(policyBeforeVerify),
+          policy_id: policyBeforeVerify?.policy_id,
+          version: policyBeforeVerify?.version,
+          enabled: policyBeforeVerify?.enabled,
+          has_signature: Boolean(policyBeforeVerify?.policy_signature),
+          policy_hash: policyBeforeVerify?.policy_hash?.slice(0, 16),
+          logic_type: typeof policyBeforeVerify?.logic
+        })
+      );
+
       const first = await verifyPresentationCore({
         actionId,
         audience,
         nonce,
         presentation: "presentation-token~"
       });
-      assert.equal(first.decision, "DENY");
-      assert.ok(first.reasons.includes("kb_jwt_missing"));
+      console.log("TEST_DIAG:first_result", JSON.stringify(first));
+      assert.equal(first.decision, "DENY", `expected DENY, got ${first.decision}`);
+      assert.ok(
+        first.reasons.includes("kb_jwt_missing"),
+        `expected reasons to include kb_jwt_missing but got: ${JSON.stringify(first.reasons)}`
+      );
 
       const row = await db("verification_challenges")
         .where({
@@ -258,7 +299,10 @@ test(
           challenge_hash: createHash("sha256").update(nonce).digest("hex")
         })
         .first();
-      assert.ok(row?.consumed_at, "expected consumed_at to be set on first verify attempt");
+      assert.ok(
+        row?.consumed_at,
+        `expected consumed_at to be set, consumed_at=${row?.consumed_at}, row_exists=${Boolean(row)}`
+      );
 
       const second = await verifyPresentationCore({
         actionId,
