@@ -21,6 +21,7 @@ process.env.POLICY_SIGNING_JWK =
 process.env.POLICY_SIGNING_BOOTSTRAP = "true";
 process.env.ANCHOR_AUTH_SECRET =
   process.env.ANCHOR_AUTH_SECRET ?? "test-anchor-auth-secret-please-rotate";
+process.env.ISSUER_DID = process.env.ISSUER_DID ?? "did:hedera:testnet:z6Mkp:test_privacy";
 
 const run = async () => {
   const { config } = await import("../config.js");

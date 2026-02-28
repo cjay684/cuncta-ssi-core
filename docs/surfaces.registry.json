@@ -66,28 +66,6 @@
           "probe": { "path": "/oid4vci/offer?vct=test_vct" }
         },
         {
-          "method": "GET",
-          "path": "/oid4vci/aura/challenge",
-          "surface": "public",
-          "probe": { "path": "/oid4vci/aura/challenge?config_id=aura:test" }
-        },
-        {
-          "method": "POST",
-          "path": "/oid4vci/aura/offer",
-          "surface": "public",
-          "probe": {
-            "path": "/oid4vci/aura/offer",
-            "body": {
-              "credential_configuration_id": "aura:test",
-              "domain": "marketplace",
-              "subjectDid": "did:example:holder",
-              "offer_nonce": "nonce-1234567890",
-              "proof_jwt": "proof-1234567890"
-            }
-          }
-        },
-
-        {
           "method": "POST",
           "path": "/v1/onboard/did/create/user-pays/request",
           "surface": "public",
@@ -137,13 +115,6 @@
         },
 
         {
-          "method": "POST",
-          "path": "/v1/command/plan",
-          "surface": "public",
-          "probe": { "path": "/v1/command/plan", "body": {} }
-        },
-
-        {
           "method": "GET",
           "path": "/v1/realtime/*",
           "surface": "public",
@@ -154,18 +125,6 @@
           "path": "/v1/realtime/*",
           "surface": "public",
           "probe": { "path": "/v1/realtime/token", "body": {} }
-        },
-        {
-          "method": "GET",
-          "path": "/v1/social/*",
-          "surface": "public",
-          "probe": { "path": "/v1/social/feed" }
-        },
-        {
-          "method": "POST",
-          "path": "/v1/social/*",
-          "surface": "public",
-          "probe": { "path": "/v1/social/post", "body": {} }
         },
         {
           "method": "POST",
@@ -320,37 +279,6 @@
         },
         {
           "method": "POST",
-          "path": "/v1/internal/oid4vci/preauth/aura",
-          "surface": "internal",
-          "auth": { "requiredScopes": ["issuer:oid4vci_preauth"] },
-          "probe": {
-            "path": "/v1/internal/oid4vci/preauth/aura",
-            "body": {
-              "credential_configuration_id": "aura:test",
-              "domain": "marketplace",
-              "subjectDid": "did:example:holder",
-              "offer_nonce": "nonce-1234567890",
-              "proof_jwt": "proof-1234567890"
-            }
-          }
-        },
-
-        {
-          "method": "POST",
-          "path": "/v1/aura/claim",
-          "surface": "internal",
-          "auth": { "requiredScopes": ["issuer:aura_claim"] },
-          "probe": { "path": "/v1/aura/claim", "body": {} }
-        },
-        {
-          "method": "GET",
-          "path": "/v1/aura/explain",
-          "surface": "internal",
-          "auth": { "requiredScopes": ["issuer:aura_explain"] },
-          "probe": { "path": "/v1/aura/explain" }
-        },
-        {
-          "method": "POST",
           "path": "/v1/credentials/revoke",
           "surface": "internal",
           "auth": { "requiredScopes": ["issuer:credentials_revoke"] },
@@ -370,21 +298,6 @@
           "auth": { "requiredScopes": ["issuer:internal_issue"] },
           "probe": { "path": "/v1/issue", "body": {} }
         },
-        {
-          "method": "POST",
-          "path": "/v1/reputation/events",
-          "surface": "internal",
-          "auth": { "requiredScopes": ["issuer:reputation_events"] },
-          "probe": { "path": "/v1/reputation/events", "body": {} }
-        },
-        {
-          "method": "POST",
-          "path": "/v1/reputation/recompute/:did",
-          "surface": "internal",
-          "auth": { "requiredScopes": ["issuer:reputation_recompute"] },
-          "probe": { "path": "/v1/reputation/recompute/did:example:alice", "body": {} }
-        },
-
         {
           "method": "POST",
           "path": "/v1/admin/issue",
@@ -420,21 +333,6 @@
           "auth": { "requireAdminScope": ["issuer:privacy_status"] },
           "probe": { "path": "/v1/admin/privacy/status" }
         },
-        {
-          "method": "GET",
-          "path": "/v1/admin/aura/explain",
-          "surface": "admin",
-          "auth": { "requireAdminScope": ["issuer:aura_explain"] },
-          "probe": { "path": "/v1/admin/aura/explain" }
-        },
-        {
-          "method": "POST",
-          "path": "/v1/admin/aura/reset",
-          "surface": "admin",
-          "auth": { "requireAdminScope": ["issuer:aura_reset"] },
-          "probe": { "path": "/v1/admin/aura/reset", "body": {} }
-        },
-
         {
           "method": "POST",
           "path": "/v1/dev/issue",

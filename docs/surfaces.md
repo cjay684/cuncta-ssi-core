@@ -39,8 +39,6 @@ Public entrypoint is `app-gateway` only.
   - `GET /.well-known/jwks.json` (verifier request-signing JWKS, proxied)
 - OID4VCI (wallet-first credential acquisition)
   - `GET /oid4vci/offer`
-  - `GET /oid4vci/aura/challenge`
-  - `POST /oid4vci/aura/offer`
 - Self-funded onboarding (no sponsorship)
   - `POST /v1/onboard/did/create/user-pays/request`
   - `POST /v1/onboard/did/create/user-pays/submit`
@@ -57,16 +55,11 @@ Public entrypoint is `app-gateway` only.
     - `GET /v1/requirements`
   - Verification (legacy adapter; public but returns normalized DENY on verifier dependency failures)
     - `POST /v1/verify`
-  - Command surfaces
-    - `POST /v1/command/plan`
   - Realtime surfaces
     - `GET /v1/realtime/*`
     - `POST /v1/realtime/*`
   - Media surfaces
     - `POST /v1/media/*`
-  - Social surfaces
-    - `GET /v1/social/*`
-    - `POST /v1/social/*`
 
 - Deprecated onboarding surfaces (reachable but hard-disabled in production)
   - `POST /v1/onboard/did/create/request` (410 in production posture)
@@ -101,13 +94,9 @@ Public entrypoint is `app-gateway` only.
 ### issuer-service (internal capability issuance)
 
 - Internal/dev convenience (must not be exposed publicly):
-  - `POST /v1/aura/claim` (service-auth; internal portability shortcut, not the consumer path)
-  - `GET /v1/aura/explain` (service-auth)
   - `POST /v1/issue` (service-auth)
   - `POST /v1/revoke` (service-auth)
   - `POST /v1/credentials/revoke` (service-auth)
-  - `POST /v1/reputation/events` (service-auth)
-  - `POST /v1/reputation/recompute/:did` (service-auth)
   - `POST /v1/internal/oid4vci/*` (service-auth; gateway proxies public OID4VCI surfaces)
 
 ## Operator / Admin Surface (`/v1/admin/*`)
@@ -121,9 +110,6 @@ All admin routes require service JWT auth with either `admin:*` or the specific 
 - `POST /v1/admin/keys/revoke` (`issuer:key_revoke`)
 - `POST /v1/admin/anchors/reconcile` (`issuer:anchor_reconcile`)
 - `GET /v1/admin/privacy/status` (`issuer:privacy_status`)
-- Aura admin/debug
-  - `GET /v1/admin/aura/explain` (`issuer:aura_explain`)
-  - `POST /v1/admin/aura/reset` (`issuer:aura_reset`)
 
 ### issuer-service (dev/test only)
 
