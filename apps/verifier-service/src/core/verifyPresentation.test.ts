@@ -75,6 +75,7 @@ test("verifyPresentationCore: policy floor denies pinned downgraded policy versi
   process.env.NODE_ENV = "development";
   process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
   process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
+  process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
   process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
   process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
 
@@ -132,6 +133,7 @@ test("verifyPresentationCore: policy floor denies pinned downgraded policy versi
     config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
     config.POLICY_VERSION_FLOOR_ENFORCED = true;
     config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
+    config.ENFORCE_ORIGIN_AUDIENCE = false;
     config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
     config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
 
@@ -156,6 +158,7 @@ test("verifyPresentationCore: consumes challenge on first attempt even when late
   process.env.NODE_ENV = "development";
   process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
   process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
+  process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
   process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
   process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
 
@@ -225,6 +228,7 @@ test("verifyPresentationCore: consumes challenge on first attempt even when late
     config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
     config.POLICY_VERSION_FLOOR_ENFORCED = true;
     config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
+    config.ENFORCE_ORIGIN_AUDIENCE = false;
     config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
     config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
 
