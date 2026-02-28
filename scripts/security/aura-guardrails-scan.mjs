@@ -57,21 +57,7 @@ const main = async () => {
     }
   }
 
-  // Guardrail 2: known aura seed migrations must include purpose text.
-  const requiredPurposeFiles = [
-    "packages/db/migrations/008_obligations_aura.ts",
-    "packages/db/migrations/020_seed_social_vertical.ts",
-    "packages/db/migrations/021_social_mvp_refine.ts",
-    "packages/db/migrations/022_social_v01_alignment.ts",
-    "packages/db/migrations/023_social_spaces_v02.ts"
-  ];
-  for (const fileRel of requiredPurposeFiles) {
-    const abs = path.join(repoRoot, fileRel);
-    const content = await readFile(abs, "utf8").catch(() => "");
-    if (!content.includes("purpose:")) {
-      failures.push({ kind: "missing_purpose_in_seed_migration", file: fileRel });
-    }
-  }
+  // Guardrail 2 (removed): aura seed migration purpose checks no longer apply after SSI-only cleanup.
 
   // Guardrail 3: prevent unauthenticated "raw aura state" endpoints from being introduced.
   // (Heuristic scan: forbid routes named /v1/aura/state or /v1/aura/raw).

@@ -198,6 +198,15 @@ const run = async () => {
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  if (error instanceof Error) {
+    console.error(error.message);
+    if (error.stack) console.error(error.stack);
+    if ("cause" in error && error.cause) {
+      console.error("Cause:", error.cause instanceof Error ? error.cause.message : error.cause);
+      if (error.cause instanceof Error && error.cause.stack) console.error(error.cause.stack);
+    }
+  } else {
+    console.error(String(error));
+  }
   process.exit(1);
 });
