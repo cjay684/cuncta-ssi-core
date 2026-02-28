@@ -38,10 +38,11 @@ const run = async () => {
     minGold: number
   ) => {
     const now = new Date().toISOString();
+    const vctSuffix = ruleId.replaceAll(".", "_");
     await db("aura_rules").insert({
       rule_id: ruleId,
       domain,
-      output_vct: `cuncta.${domain}.test`,
+      output_vct: `cuncta.${domain}.${vctSuffix}`,
       rule_logic: JSON.stringify({
         purpose: `Capability for test rule ${ruleId} within domain ${domain}`,
         window_seconds: 3600,
