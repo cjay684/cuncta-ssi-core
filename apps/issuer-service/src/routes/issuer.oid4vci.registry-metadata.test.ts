@@ -7,6 +7,8 @@ const setTestEnv = () => {
   process.env.ALLOW_MAINNET = "false";
   process.env.DEV_MODE = "true";
   process.env.ISSUER_BASE_URL = "http://issuer.test";
+  // Keep test offline: avoid DID bootstrap network calls during module init.
+  process.env.ISSUER_DID = "did:example:issuer";
   process.env.ISSUER_ENABLE_OID4VCI = "true";
   process.env.ALLOW_EXPERIMENTAL_ZK = "true";
   // Avoid env-provided production-only config from a developer `.env`.

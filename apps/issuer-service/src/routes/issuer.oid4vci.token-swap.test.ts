@@ -7,6 +7,7 @@ process.env.DEV_MODE = "true";
 process.env.HEDERA_NETWORK = "testnet";
 process.env.ALLOW_MAINNET = "false";
 process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.ISSUER_DID = "did:example:issuer";
 process.env.ISSUER_ENABLE_OID4VCI = "true";
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://cuncta:cuncta@localhost:5432/cuncta_ssi";
