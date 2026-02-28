@@ -18,7 +18,6 @@ import { log } from "./log.js";
 import { QuotaStore } from "./abuse.js";
 import { createServiceJwt } from "./serviceAuth.js";
 import { metrics } from "./metrics.js";
-import { getDb } from "./db.js";
 import { registerSurfaceEnforcement } from "./surfaceEnforcement.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerOnboardRoutes } from "./routes/onboard.js";
