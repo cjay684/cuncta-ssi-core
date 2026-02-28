@@ -154,8 +154,12 @@ await run("verify proxy debug reasons disabled in production", async () => {
   const { config } = await import("../config.ts");
   assert.throws(() => {
     buildServer({
-      configOverride: { ...config, NODE_ENV: "production", GATEWAY_VERIFY_DEBUG_REASONS: true }
+      configOverride: {
+        ...config,
+        NODE_ENV: "production",
+        TRUST_PROXY: true,
+        GATEWAY_VERIFY_DEBUG_REASONS: true
+      }
     });
   }, /gateway_verify_debug_reasons_disabled/);
 });
-
