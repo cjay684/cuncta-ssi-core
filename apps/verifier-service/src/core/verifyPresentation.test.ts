@@ -71,197 +71,205 @@ const seedChallenge = async (input: {
   });
 };
 
-test("verifyPresentationCore: policy floor denies pinned downgraded policy versions", async () => {
-  process.env.NODE_ENV = "development";
-  process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
-  process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
-  process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
-  process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
-  process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
+test(
+  "verifyPresentationCore: policy floor denies pinned downgraded policy versions",
+  { concurrency: false },
+  async () => {
+    process.env.NODE_ENV = "development";
+    process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
+    process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
+    process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
+    process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
+    process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
 
-  const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
-  const policyJwk = await exportJWK(privateKey);
-  policyJwk.kid = `policy-kid-${randomUUID()}`;
-  process.env.POLICY_SIGNING_JWK = JSON.stringify(policyJwk);
+    const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
+    const policyJwk = await exportJWK(privateKey);
+    policyJwk.kid = `policy-kid-${randomUUID()}`;
+    process.env.POLICY_SIGNING_JWK = JSON.stringify(policyJwk);
 
-  const db = createDb(dbUrl);
-  try {
-    await runMigrations(db);
-    const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
-    const nonce = makeNonce();
+    const db = createDb(dbUrl);
+    try {
+      await runMigrations(db);
+      const actionId = makeAction();
+      const audience = `cuncta.action:${actionId}`;
+      const nonce = makeNonce();
 
-    await db("verification_challenges").del();
-    await db("policy_version_floor").where({ action_id: actionId }).del();
-    await db("policies").where({ action_id: actionId }).del();
-    await db("actions").where({ action_id: actionId }).del();
+      await db("verification_challenges").del();
+      await db("policy_version_floor").where({ action_id: actionId }).del();
+      await db("policies").where({ action_id: actionId }).del();
+      await db("actions").where({ action_id: actionId }).del();
 
-    await db("actions").insert({
-      action_id: actionId,
-      description: "core floor test",
-      created_at: nowIso(),
-      updated_at: nowIso()
-    });
+      await db("actions").insert({
+        action_id: actionId,
+        description: "core floor test",
+        created_at: nowIso(),
+        updated_at: nowIso()
+      });
 
-    const policyIdV1 = `policy.floor.${randomUUID()}.v1`;
-    const policyHashV1 = await seedPolicy({
-      db,
-      actionId,
-      policyId: policyIdV1,
-      version: 1,
-      logic: { requirements: [], obligations: [] },
-      policyJwk
-    });
+      const policyIdV1 = `policy.floor.${randomUUID()}.v1`;
+      const policyHashV1 = await seedPolicy({
+        db,
+        actionId,
+        policyId: policyIdV1,
+        version: 1,
+        logic: { requirements: [], obligations: [] },
+        policyJwk
+      });
 
-    await db("policy_version_floor").insert({
-      action_id: actionId,
-      min_version: 2,
-      updated_at: nowIso()
-    });
-
-    await seedChallenge({
-      db,
-      actionId,
-      policyId: policyIdV1,
-      policyVersion: 1,
-      policyHash: policyHashV1,
-      nonce,
-      audience
-    });
-
-    const { config } = await import("../config.js");
-    config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
-    config.POLICY_VERSION_FLOOR_ENFORCED = true;
-    config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
-    config.ENFORCE_ORIGIN_AUDIENCE = false;
-    config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
-    config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
-
-    const { verifyPresentationCore, __test__ } = await import("./verifyPresentation.js");
-    __test__.resetIssuerKeyCache();
-    __test__.resetPolicyVerifyKey();
-
-    const result = await verifyPresentationCore({
-      actionId,
-      audience,
-      nonce,
-      presentation: "xxxxxxxxxx"
-    });
-    assert.equal(result.decision, "DENY");
-    assert.ok(result.reasons.includes("policy_version_downgrade"));
-  } finally {
-    await db.destroy();
-  }
-});
-
-test("verifyPresentationCore: consumes challenge on first attempt even when later DENY", async () => {
-  process.env.NODE_ENV = "development";
-  process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
-  process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
-  process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
-  process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
-  process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
-
-  const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
-  const policyJwk = await exportJWK(privateKey);
-  policyJwk.kid = `policy-kid-${randomUUID()}`;
-  process.env.POLICY_SIGNING_JWK = JSON.stringify(policyJwk);
-
-  const db = createDb(dbUrl);
-  try {
-    await runMigrations(db);
-    const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
-    const nonce = makeNonce();
-
-    await db("verification_challenges").del();
-    await db("policy_version_floor").where({ action_id: actionId }).del();
-    await db("policies").where({ action_id: actionId }).del();
-    await db("actions").where({ action_id: actionId }).del();
-
-    await db("actions").insert({
-      action_id: actionId,
-      description: "core consume test",
-      created_at: nowIso(),
-      updated_at: nowIso()
-    });
-
-    const policyId = `policy.consume.${randomUUID()}.v2`;
-    const policyHash = await seedPolicy({
-      db,
-      actionId,
-      policyId,
-      version: 2,
-      logic: {
-        requirements: [
-          {
-            vct: `cuncta.identity.${randomUUID()}`,
-            disclosures: [],
-            predicates: [],
-            revocation: { required: false }
-          }
-        ],
-        obligations: []
-      },
-      policyJwk
-    });
-    await db("policy_version_floor")
-      .insert({
+      await db("policy_version_floor").insert({
         action_id: actionId,
         min_version: 2,
         updated_at: nowIso()
-      })
-      .onConflict("action_id")
-      .merge({ min_version: 2, updated_at: nowIso() });
+      });
 
-    await seedChallenge({
-      db,
-      actionId,
-      policyId,
-      policyVersion: 2,
-      policyHash,
-      nonce,
-      audience
-    });
+      await seedChallenge({
+        db,
+        actionId,
+        policyId: policyIdV1,
+        policyVersion: 1,
+        policyHash: policyHashV1,
+        nonce,
+        audience
+      });
 
-    const { config } = await import("../config.js");
-    config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
-    config.POLICY_VERSION_FLOOR_ENFORCED = true;
-    config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
-    config.ENFORCE_ORIGIN_AUDIENCE = false;
-    config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
-    config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+      const { config } = await import("../config.js");
+      config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
+      config.POLICY_VERSION_FLOOR_ENFORCED = true;
+      config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
+      config.ENFORCE_ORIGIN_AUDIENCE = false;
+      config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+      config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
 
-    const { verifyPresentationCore, __test__ } = await import("./verifyPresentation.js");
-    __test__.resetIssuerKeyCache();
-    __test__.resetPolicyVerifyKey();
+      const { verifyPresentationCore, __test__ } = await import("./verifyPresentation.js");
+      __test__.resetIssuerKeyCache();
+      __test__.resetPolicyVerifyKey();
 
-    const first = await verifyPresentationCore({
-      actionId,
-      audience,
-      nonce,
-      presentation: "presentation-token~"
-    });
-    assert.equal(first.decision, "DENY");
-    assert.ok(first.reasons.includes("kb_jwt_missing"));
-
-    const row = await db("verification_challenges")
-      .where({
-        action_id: actionId,
-        challenge_hash: createHash("sha256").update(nonce).digest("hex")
-      })
-      .first();
-    assert.ok(row?.consumed_at, "expected consumed_at to be set on first verify attempt");
-
-    const second = await verifyPresentationCore({
-      actionId,
-      audience,
-      nonce,
-      presentation: "presentation-token~"
-    });
-    assert.equal(second.decision, "DENY");
-    assert.ok(second.reasons.includes("challenge_consumed"));
-  } finally {
-    await db.destroy();
+      const result = await verifyPresentationCore({
+        actionId,
+        audience,
+        nonce,
+        presentation: "xxxxxxxxxx"
+      });
+      assert.equal(result.decision, "DENY");
+      assert.ok(result.reasons.includes("policy_version_downgrade"));
+    } finally {
+      await db.destroy();
+    }
   }
-});
+);
+
+test(
+  "verifyPresentationCore: consumes challenge on first attempt even when later DENY",
+  { concurrency: false },
+  async () => {
+    process.env.NODE_ENV = "development";
+    process.env.POLICY_VERSION_FLOOR_ENFORCED = "true";
+    process.env.VERIFY_MAX_PRESENTATION_BYTES = "65536";
+    process.env.ENFORCE_ORIGIN_AUDIENCE = "false";
+    process.env.ISSUER_SERVICE_BASE_URL = "http://127.0.0.1:1";
+    process.env.POLICY_SERVICE_BASE_URL = "http://127.0.0.1:1";
+
+    const { privateKey } = await generateKeyPair("EdDSA", { extractable: true });
+    const policyJwk = await exportJWK(privateKey);
+    policyJwk.kid = `policy-kid-${randomUUID()}`;
+    process.env.POLICY_SIGNING_JWK = JSON.stringify(policyJwk);
+
+    const db = createDb(dbUrl);
+    try {
+      await runMigrations(db);
+      const actionId = makeAction();
+      const audience = `cuncta.action:${actionId}`;
+      const nonce = makeNonce();
+
+      await db("verification_challenges").del();
+      await db("policy_version_floor").where({ action_id: actionId }).del();
+      await db("policies").where({ action_id: actionId }).del();
+      await db("actions").where({ action_id: actionId }).del();
+
+      await db("actions").insert({
+        action_id: actionId,
+        description: "core consume test",
+        created_at: nowIso(),
+        updated_at: nowIso()
+      });
+
+      const policyId = `policy.consume.${randomUUID()}.v2`;
+      const policyHash = await seedPolicy({
+        db,
+        actionId,
+        policyId,
+        version: 2,
+        logic: {
+          requirements: [
+            {
+              vct: `cuncta.identity.${randomUUID()}`,
+              disclosures: [],
+              predicates: [],
+              revocation: { required: false }
+            }
+          ],
+          obligations: []
+        },
+        policyJwk
+      });
+      await db("policy_version_floor")
+        .insert({
+          action_id: actionId,
+          min_version: 2,
+          updated_at: nowIso()
+        })
+        .onConflict("action_id")
+        .merge({ min_version: 2, updated_at: nowIso() });
+
+      await seedChallenge({
+        db,
+        actionId,
+        policyId,
+        policyVersion: 2,
+        policyHash,
+        nonce,
+        audience
+      });
+
+      const { config } = await import("../config.js");
+      config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
+      config.POLICY_VERSION_FLOOR_ENFORCED = true;
+      config.VERIFY_MAX_PRESENTATION_BYTES = 65536;
+      config.ENFORCE_ORIGIN_AUDIENCE = false;
+      config.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+      config.POLICY_SERVICE_BASE_URL = process.env.POLICY_SERVICE_BASE_URL ?? "http://127.0.0.1:1";
+
+      const { verifyPresentationCore, __test__ } = await import("./verifyPresentation.js");
+      __test__.resetIssuerKeyCache();
+      __test__.resetPolicyVerifyKey();
+
+      const first = await verifyPresentationCore({
+        actionId,
+        audience,
+        nonce,
+        presentation: "presentation-token~"
+      });
+      assert.equal(first.decision, "DENY");
+      assert.ok(first.reasons.includes("kb_jwt_missing"));
+
+      const row = await db("verification_challenges")
+        .where({
+          action_id: actionId,
+          challenge_hash: createHash("sha256").update(nonce).digest("hex")
+        })
+        .first();
+      assert.ok(row?.consumed_at, "expected consumed_at to be set on first verify attempt");
+
+      const second = await verifyPresentationCore({
+        actionId,
+        audience,
+        nonce,
+        presentation: "presentation-token~"
+      });
+      assert.equal(second.decision, "DENY");
+      assert.ok(second.reasons.includes("challenge_consumed"));
+    } finally {
+      await db.destroy();
+    }
+  }
+);
