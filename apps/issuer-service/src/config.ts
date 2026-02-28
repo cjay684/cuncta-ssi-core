@@ -56,7 +56,7 @@ const envSchema = z.object({
   ALLOW_LEGACY_OPERATOR_KEYS: z.preprocess((value) => value === "true", z.boolean()).default(false),
   HEDERA_ANCHOR_TOPIC_ID: z.string().optional(),
   DID_SERVICE_BASE_URL: z.string().url().default("http://localhost:3001"),
-  ISSUER_BASE_URL: z.string().url(),
+  ISSUER_BASE_URL: z.string().url().default("http://localhost:3002"),
   ISSUER_DID: z.string().optional(),
   ISSUER_JWK: z.string().min(10).optional(),
   ISSUER_KEYS_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
