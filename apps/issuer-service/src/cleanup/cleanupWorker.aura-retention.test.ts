@@ -13,6 +13,8 @@ process.env.RETENTION_VERIFICATION_CHALLENGES_DAYS =
 process.env.RETENTION_RATE_LIMIT_EVENTS_DAYS = process.env.RETENTION_RATE_LIMIT_EVENTS_DAYS ?? "1";
 process.env.RETENTION_OBLIGATION_EVENTS_DAYS = process.env.RETENTION_OBLIGATION_EVENTS_DAYS ?? "1";
 process.env.RETENTION_AUDIT_LOGS_DAYS = process.env.RETENTION_AUDIT_LOGS_DAYS ?? "1";
+process.env.ANCHOR_AUTH_SECRET =
+  process.env.ANCHOR_AUTH_SECRET ?? "test-anchor-auth-secret-please-rotate";
 
 test("cleanup worker applies Aura retention (signals/state/terminal queue rows)", async () => {
   const { getDb } = await import("../db.js");
