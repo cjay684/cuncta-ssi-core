@@ -248,6 +248,12 @@ await run("runtime public posture fails closed (issuer-service)", async () => {
   process.env.SURFACE_REGISTRY_PATH = bundlePath;
   process.env.SURFACE_REGISTRY_PUBLIC_KEY = publicKeyEnv;
 
+  // Tests share a DB in CI workers; clear any prior fingerprint to avoid
+  // cross-test pseudonymizer mismatch on production startup invariants.
+  const { getDb } = await import("./db.js");
+  const db = await getDb();
+  await db("system_metadata").where({ key: "pseudonymizer_fingerprint" }).del();
+
   const { buildServer } = await import("./server.js");
   const app = buildServer();
   const appForTest = app as {
