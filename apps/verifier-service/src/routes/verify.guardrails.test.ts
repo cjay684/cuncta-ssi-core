@@ -350,6 +350,25 @@ test("jwks refresh-on-kid-miss succeeds and records miss/refresh metrics", async
     });
     assert.equal(verifyResponse.statusCode, 200);
     const verifyBody = verifyResponse.json() as { decision?: string; reasons?: string[] };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H1",
+        location: "verify.guardrails.test.ts:353",
+        message: "jwks refresh test verify response",
+        data: {
+          statusCode: verifyResponse.statusCode,
+          decision: verifyBody.decision,
+          reasons: verifyBody.reasons ?? []
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(verifyBody.decision, "ALLOW");
     assert.equal(jwksCalls >= 2, true);
 
@@ -497,6 +516,25 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
     });
     assert.equal(verifyResponse.statusCode, 200);
     const verifyBody = verifyResponse.json() as { decision?: string; reasons?: string[] };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H2",
+        location: "verify.guardrails.test.ts:435",
+        message: "jwks miss deny-path response",
+        data: {
+          statusCode: verifyResponse.statusCode,
+          decision: verifyBody.decision,
+          reasons: verifyBody.reasons ?? []
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(verifyBody.decision, "DENY");
     assert.ok(verifyBody.reasons?.includes("jwks_kid_not_found"));
     await app.close();
@@ -643,6 +681,21 @@ test("verifier denies space-scoped credential reuse across spaces", async () => 
     });
     assert.equal(allowResponse.statusCode, 200);
     const allowBody = allowResponse.json() as { decision?: string };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H3",
+        location: "verify.guardrails.test.ts:646",
+        message: "space binding allow-path response",
+        data: { statusCode: allowResponse.statusCode, decision: allowBody.decision },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(allowBody.decision, "ALLOW");
 
     const nonceMismatch = makeNonce();
