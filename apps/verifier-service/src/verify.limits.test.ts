@@ -68,7 +68,7 @@ const run = async () => {
   });
 
   const nonce = `nonce-${randomUUID()}`;
-  const audience = `cuncta.action:${actionId}`;
+  const audience = `origin:https://verifier.cuncta.test/${actionId}`;
   const challengeHash = sha256Hex(nonce);
   const challengeId = randomUUID();
   await db("verification_challenges").insert({
