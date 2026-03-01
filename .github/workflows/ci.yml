@@ -364,6 +364,69 @@ jobs:
             fi
           done
 
+      - name: Start local service stack for loopback endpoints
+        run: |
+          set -euo pipefail
+
+          is_loopback_url() {
+            local url="$1"
+            local host
+            host="$(echo "$url" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#' | tr '[:upper:]' '[:lower:]')"
+            [ "$host" = "localhost" ] || [ "$host" = "127.0.0.1" ] || [ "$host" = "::1" ] || [[ "$host" =~ \.localhost$ ]]
+          }
+
+          loopback_count=0
+          for key in APP_GATEWAY_BASE_URL ISSUER_SERVICE_BASE_URL VERIFIER_SERVICE_BASE_URL DID_SERVICE_BASE_URL; do
+            if is_loopback_url "${!key}"; then
+              loopback_count=$((loopback_count + 1))
+            fi
+          done
+
+          if [ "$loopback_count" -gt 0 ] && [ "$loopback_count" -lt 4 ]; then
+            echo "[testnet_e2e] mixed loopback/non-loopback service URL configuration is not supported"
+            exit 1
+          fi
+
+          if [ "$loopback_count" -eq 0 ]; then
+            echo "[testnet_e2e] external service URLs detected; skipping local service bootstrap"
+            exit 0
+          fi
+
+          echo "[testnet_e2e] loopback service URLs detected; bootstrapping local services"
+          export POLICY_SERVICE_BASE_URL="${POLICY_SERVICE_BASE_URL:-http://localhost:3004}"
+          export USER_PAYS_HANDOFF_SECRET="${USER_PAYS_HANDOFF_SECRET:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_DID="${SERVICE_JWT_SECRET_DID:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_ISSUER="${SERVICE_JWT_SECRET_ISSUER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_VERIFIER="${SERVICE_JWT_SECRET_VERIFIER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_NEXT="${SERVICE_JWT_SECRET_NEXT:-$SERVICE_JWT_SECRET}"
+
+          pnpm -C apps/did-service dev > /tmp/did-service.log 2>&1 &
+          pnpm -C apps/issuer-service dev > /tmp/issuer-service.log 2>&1 &
+          pnpm -C apps/verifier-service dev > /tmp/verifier-service.log 2>&1 &
+          pnpm -C apps/policy-service dev > /tmp/policy-service.log 2>&1 &
+          pnpm -C apps/app-gateway dev > /tmp/app-gateway.log 2>&1 &
+
+          wait_for_health() {
+            local name="$1"
+            local url="$2"
+            for attempt in $(seq 1 60); do
+              if curl -fsS "$url" > /dev/null; then
+                echo "[testnet_e2e] ${name} healthy at ${url}"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "[testnet_e2e] ${name} failed health check at ${url}"
+            tail -n 120 "/tmp/${name}.log" || true
+            return 1
+          }
+
+          wait_for_health "did-service" "${DID_SERVICE_BASE_URL}/healthz"
+          wait_for_health "issuer-service" "${ISSUER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "verifier-service" "${VERIFIER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "policy-service" "${POLICY_SERVICE_BASE_URL}/healthz"
+          wait_for_health "app-gateway" "${APP_GATEWAY_BASE_URL}/healthz"
+
       - name: Testnet preflight
         run: node scripts/ci/testnet-preflight.mjs
 
