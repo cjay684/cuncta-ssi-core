@@ -14,6 +14,22 @@ const optional = (key, fallback) => {
   return String(value).trim();
 };
 
+const describeEndpoint = (value) => {
+  try {
+    const url = new URL(value);
+    const host = (url.hostname || "").toLowerCase();
+    const isLoopback =
+      host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".localhost");
+    return {
+      protocol: url.protocol.replace(":", ""),
+      hasPort: Boolean(url.port),
+      isLoopback
+    };
+  } catch {
+    return { parseError: true };
+  }
+};
+
 const redact = (value) => {
   if (!value) return value;
   // Very conservative: if it looks like a DER-ish private key prefix, redact.
@@ -148,11 +164,43 @@ const main = async () => {
     ["did_service", new URL("/healthz", didBaseUrl).toString()]
   ];
   for (const [name, url] of healthChecks) {
+    const endpointProfile = describeEndpoint(url);
+    console.log(`[preflight] ${name}_endpoint_profile`, JSON.stringify(endpointProfile));
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: process.env.DEBUG_RUN_ID ?? "baseline",
+        hypothesisId: "H10",
+        location: "scripts/ci/testnet-preflight.mjs:healthCheckLoop",
+        message: "health endpoint profile captured",
+        data: { service: name, endpointProfile },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     let health;
     try {
       health = await fetchWithTimeout(url, { timeoutMs: 10_000 });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // #region agent log
+      fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+        body: JSON.stringify({
+          sessionId: "6783de",
+          runId: process.env.DEBUG_RUN_ID ?? "baseline",
+          hypothesisId: "H11",
+          location: "scripts/ci/testnet-preflight.mjs:healthFetchCatch",
+          message: "health fetch threw",
+          data: { service: name, endpointProfile, error: msg },
+          timestamp: Date.now()
+        })
+      }).catch(() => {});
+      // #endregion
       throw new Error(`[preflight] ${name}_health_fetch_failed url=${url} err=${msg}`);
     }
     if (!health.ok) {
