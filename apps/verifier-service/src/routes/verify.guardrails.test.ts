@@ -134,7 +134,7 @@ test("policy floor denies pinned downgraded policy versions deterministically", 
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
 
     await db("verification_challenges").del();
@@ -251,7 +251,7 @@ test("jwks refresh-on-kid-miss succeeds and records miss/refresh metrics", async
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
@@ -420,7 +420,7 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
@@ -571,7 +571,7 @@ test("verifier denies space-scoped credential reuse across spaces", async () => 
   try {
     await runMigrations(db);
     const actionId = `space.post.create.${randomUUID()}`;
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const spaceA = randomUUID();
     const spaceB = randomUUID();

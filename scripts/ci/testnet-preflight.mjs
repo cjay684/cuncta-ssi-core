@@ -148,7 +148,13 @@ const main = async () => {
     ["did_service", new URL("/healthz", didBaseUrl).toString()]
   ];
   for (const [name, url] of healthChecks) {
-    const health = await fetchWithTimeout(url, { timeoutMs: 10_000 });
+    let health;
+    try {
+      health = await fetchWithTimeout(url, { timeoutMs: 10_000 });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`[preflight] ${name}_health_fetch_failed url=${url} err=${msg}`);
+    }
     if (!health.ok) {
       throw new Error(
         `[preflight] ${name}_unhealthy status=${health.status} body=${health.text.slice(0, 500)}`
