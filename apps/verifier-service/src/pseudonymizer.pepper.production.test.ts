@@ -27,6 +27,7 @@ const run = async () => {
       kid: "verifier-1"
     }),
     ISSUER_JWKS: undefined,
+    SERVICE_JWT_SECRET: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     SERVICE_JWT_SECRET_VERIFIER: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     PSEUDONYMIZER_PEPPER: ""
   };
@@ -55,6 +56,27 @@ const run = async () => {
     assert.fail("Expected pseudonymizer_pepper_missing");
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: process.env.DEBUG_RUN_ID ?? "baseline",
+        hypothesisId: "H8",
+        location: "apps/verifier-service/src/pseudonymizer.pepper.production.test.ts:catch",
+        message: "captured thrown message for pseudonymizer production test",
+        data: {
+          thrownMessage: message,
+          nodeEnv: process.env.NODE_ENV,
+          hasPepperEnv: Boolean(process.env.PSEUDONYMIZER_PEPPER),
+          hasServiceJwtSecretVerifier: Boolean(process.env.SERVICE_JWT_SECRET_VERIFIER)
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
+    console.error("TEST_DIAG:pseudonymizer_production_error", message);
     assert.ok(message.includes("pseudonymizer_pepper_missing"));
   } finally {
     for (const [key, value] of previousValues.entries()) {

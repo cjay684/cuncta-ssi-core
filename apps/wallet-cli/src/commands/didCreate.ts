@@ -462,6 +462,26 @@ const isCiTestBuildEnabled = () => {
 const resolvePayerCredentials = (env: z.infer<typeof envSchema>) => {
   const payerAccountId = env.HEDERA_PAYER_ACCOUNT_ID?.trim();
   const payerPrivateKey = env.HEDERA_PAYER_PRIVATE_KEY?.trim();
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H1",
+      location: "apps/wallet-cli/src/commands/didCreate.ts:resolvePayerCredentials",
+      message: "wallet-cli payer credentials path check",
+      data: {
+        hasDirectPayerCredentials: Boolean(payerAccountId && payerPrivateKey),
+        nodeEnv: env.NODE_ENV ?? process.env.NODE_ENV ?? "development",
+        network: env.HEDERA_NETWORK,
+        ciTestBuildEnabled: isCiTestBuildEnabled()
+      },
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   if (payerAccountId && payerPrivateKey) {
     return { payerAccountId, payerPrivateKey, usedFallback: false };
   }
@@ -479,6 +499,24 @@ const resolvePayerCredentials = (env: z.infer<typeof envSchema>) => {
   }
   const operatorAccountId = env.HEDERA_OPERATOR_ID?.trim();
   const operatorPrivateKey = env.HEDERA_OPERATOR_PRIVATE_KEY?.trim();
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H1",
+      location: "apps/wallet-cli/src/commands/didCreate.ts:resolvePayerCredentialsFallback",
+      message: "wallet-cli fallback branch reached",
+      data: {
+        hasOperatorCredentials: Boolean(operatorAccountId && operatorPrivateKey),
+        network: env.HEDERA_NETWORK
+      },
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   if (!operatorAccountId || !operatorPrivateKey) {
     throw new Error("Missing HEDERA_PAYER_* and HEDERA_OPERATOR_* for testnet/dev fallback");
   }

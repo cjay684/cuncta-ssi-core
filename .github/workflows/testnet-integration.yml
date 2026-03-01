@@ -28,6 +28,11 @@ jobs:
           --health-retries 10
     env:
       HEDERA_NETWORK: testnet
+      CI_TEST_MODE: "true"
+      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
+      ISSUER_SERVICE_BASE_URL: ${{ secrets.ISSUER_SERVICE_BASE_URL }}
+      VERIFIER_SERVICE_BASE_URL: ${{ secrets.VERIFIER_SERVICE_BASE_URL }}
+      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
       HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
       HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
       TESTNET_PAYER_ACCOUNT_ID: ${{ secrets.TESTNET_PAYER_ACCOUNT_ID || secrets.HEDERA_PAYER_ACCOUNT_ID }}
@@ -67,6 +72,28 @@ jobs:
 
       - name: Wait for Postgres
         run: node scripts/ci/wait-for-postgres.mjs
+
+      - name: Validate required secret-backed env
+        run: |
+          set -euo pipefail
+          required=(
+            APP_GATEWAY_BASE_URL
+            ISSUER_SERVICE_BASE_URL
+            VERIFIER_SERVICE_BASE_URL
+            DID_SERVICE_BASE_URL
+            TESTNET_PAYER_ACCOUNT_ID
+            TESTNET_PAYER_PRIVATE_KEY
+            HEDERA_OPERATOR_ID
+            HEDERA_OPERATOR_PRIVATE_KEY
+            SERVICE_JWT_SECRET
+            PSEUDONYMIZER_PEPPER
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "[testnet_integration] missing required env: $key (configure in GitHub environment secrets for 'testnet')"
+              exit 1
+            fi
+          done
 
       - name: Testnet preflight
         run: node scripts/ci/testnet-preflight.mjs

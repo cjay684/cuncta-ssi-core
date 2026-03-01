@@ -7,6 +7,8 @@ process.env.ALLOW_MAINNET = "false";
 process.env.NODE_ENV = "test";
 process.env.ISSUER_SERVICE_BASE_URL = "http://issuer.test";
 process.env.POLICY_SERVICE_BASE_URL = "http://policy.test";
+process.env.SERVICE_JWT_SECRET = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+process.env.SERVICE_JWT_SECRET_VERIFIER = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 process.env.STATUS_LIST_CACHE_TTL_SECONDS = "1";
 process.env.STATUS_LIST_CACHE_MAX_ENTRIES = "2";
 

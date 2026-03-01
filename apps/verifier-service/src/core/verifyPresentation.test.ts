@@ -178,7 +178,7 @@ test(
     try {
       await runMigrations(db);
       const actionId = makeAction();
-      const audience = `cuncta.action:${actionId}`;
+      const audience = `origin:https://verifier.cuncta.test/${actionId}`;
       const nonce = makeNonce();
 
       await db("verification_challenges").del();

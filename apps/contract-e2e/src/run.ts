@@ -36,20 +36,46 @@ const fetchJson = async (
   url: string,
   init?: RequestInit
 ): Promise<{ ok: boolean; status: number; body: unknown }> => {
-  const res = await fetch(url, init);
-  const text = await res.text();
-  let body: unknown = null;
   try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
+    const res = await fetch(url, init);
+    const text = await res.text();
+    let body: unknown = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    return { ok: res.ok, status: res.status, body };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 0,
+      body: {
+        error: "network_error",
+        message: error instanceof Error ? error.message : String(error)
+      }
+    };
   }
-  return { ok: res.ok, status: res.status, body };
 };
 
 const run = async () => {
   const gateway = requireEnv("APP_GATEWAY_BASE_URL").replace(/\/$/, "");
   const network = requireEnv("HEDERA_NETWORK");
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H3",
+      location: "apps/contract-e2e/src/run.ts:run",
+      message: "contract e2e startup context",
+      data: { network, gatewayHost: new URL(gateway).host },
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   if (network !== "testnet") {
     throw new Error(`invalid_network_for_contract_e2e:${network}`);
   }
@@ -78,6 +104,21 @@ const run = async () => {
     },
     { timeoutMs: 30_000, intervalMs: 1500 }
   );
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H3",
+      location: "apps/contract-e2e/src/run.ts:postHealthChecks",
+      message: "contract e2e completed gateway probes only",
+      data: { probed: ["healthz", "requirements", "capabilities"] },
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
 
   console.log("PASS contract-e2e (ssi-only)");
 };

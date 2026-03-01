@@ -111,6 +111,21 @@ const run = async (name: string, fn: () => Promise<void>) => {
 };
 
 await run("production startup loads valid signed surface bundle (gateway)", async () => {
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H9",
+      location: "apps/app-gateway/src/surfaces.signature.production.test.ts:valid:start",
+      message: "starting valid signed bundle startup test",
+      data: {},
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   setupProdPublicEnv();
   const registry = readSurfaceRegistry();
   const { bundlePath, publicKeyEnv } = makeSignedBundleFile(registry);
@@ -121,6 +136,21 @@ await run("production startup loads valid signed surface bundle (gateway)", asyn
   const { config } = await import("./config.js");
   const app = buildServer({ configOverride: { ...config } });
   try {
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: process.env.DEBUG_RUN_ID ?? "baseline",
+        hypothesisId: "H9",
+        location: "apps/app-gateway/src/surfaces.signature.production.test.ts:valid:ready",
+        message: "awaiting app.ready for valid bundle",
+        data: {},
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     await app.ready();
   } finally {
     await app.close();
@@ -128,6 +158,21 @@ await run("production startup loads valid signed surface bundle (gateway)", asyn
 });
 
 await run("production startup fails closed on tampered surface bundle (gateway)", async () => {
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H9",
+      location: "apps/app-gateway/src/surfaces.signature.production.test.ts:tampered:start",
+      message: "starting tampered signed bundle startup test",
+      data: {},
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   setupProdPublicEnv();
   const registry = readSurfaceRegistry();
 
@@ -156,6 +201,21 @@ await run("production startup fails closed on tampered surface bundle (gateway)"
   const { config } = await import("./config.js");
   const app = buildServer({ configOverride: { ...config } });
   try {
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: process.env.DEBUG_RUN_ID ?? "baseline",
+        hypothesisId: "H9",
+        location: "apps/app-gateway/src/surfaces.signature.production.test.ts:tampered:ready",
+        message: "awaiting app.ready rejection for tampered bundle",
+        data: {},
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     await assert.rejects(
       async () => app.ready(),
       (e: unknown) => {

@@ -32,6 +32,8 @@ const isTruthy = (raw) => {
 const main = () => {
   const { path: envPath, map } = parseEnvExample();
   const failures = [];
+  let dockerfilesScanned = 0;
+  let dockerfilesWithCiTestMode = 0;
 
   const forbiddenTrueDefaults = [
     "ALLOW_INSECURE_DEV_AUTH",
@@ -73,8 +75,10 @@ const main = () => {
       .map((s) => s.trim())
       .filter(Boolean);
     for (const file of dockerfiles) {
+      dockerfilesScanned += 1;
       const raw = readFileSync(path.join(repoRoot, file), "utf8");
       if (raw.includes("CI_TEST_MODE")) {
+        dockerfilesWithCiTestMode += 1;
         failures.push({
           kind: "ci_test_mode_referenced_in_dockerfile",
           key: file,
@@ -88,6 +92,21 @@ const main = () => {
   }
 
   if (failures.length) {
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: process.env.DEBUG_RUN_ID ?? "baseline",
+        hypothesisId: "H5",
+        location: "scripts/security/dev-flag-scan.mjs:main",
+        message: "dev flag scan failure summary",
+        data: { failureCount: failures.length, dockerfilesScanned, dockerfilesWithCiTestMode },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     console.error("[dev-flag-scan] FAIL");
     console.error(`env=${envPath}`);
     for (const f of failures) {
@@ -96,6 +115,21 @@ const main = () => {
     process.exit(1);
   }
 
+  // #region agent log
+  fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+    body: JSON.stringify({
+      sessionId: "6783de",
+      runId: process.env.DEBUG_RUN_ID ?? "baseline",
+      hypothesisId: "H5",
+      location: "scripts/security/dev-flag-scan.mjs:main",
+      message: "dev flag scan success summary",
+      data: { dockerfilesScanned, dockerfilesWithCiTestMode },
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
   console.log("[dev-flag-scan] OK");
 };
 

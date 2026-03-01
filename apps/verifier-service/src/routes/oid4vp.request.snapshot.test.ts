@@ -12,6 +12,8 @@ const run = async () => {
     POLICY_SERVICE_BASE_URL: "http://policy.test",
     TRUST_PROXY: "false",
     PUBLIC_SERVICE: "false",
+    SERVICE_JWT_SECRET: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    SERVICE_JWT_SECRET_VERIFIER: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     // Avoid env-provided production-only config from a developer `.env`.
     ISSUER_JWKS: undefined
   };
