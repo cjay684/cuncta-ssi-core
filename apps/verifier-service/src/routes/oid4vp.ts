@@ -142,4 +142,3 @@ export const registerOid4vpRoutes = (app: FastifyInstance) => {
 };
 
 export const __test__ = { buildOid4vpRequestObject };
-

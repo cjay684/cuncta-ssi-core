@@ -216,14 +216,19 @@ export const processAnchorOutboxOnce = async (
       const publishStartedAt = Date.now();
       const anchor = publisher
         ? await publisher(row)
-        : await publishAnchorMessage(clientInfo!.client, clientInfo!.topicId, {
-            kind: row.event_type,
-            sha256: row.payload_hash,
-            metadata: payloadMeta
-          }, {
-            maxFeeTinybars: config.ANCHOR_PUBLISH_MAX_FEE_TINYBARS,
-            maxMessageBytes: config.ANCHOR_MESSAGE_MAX_BYTES
-          });
+        : await publishAnchorMessage(
+            clientInfo!.client,
+            clientInfo!.topicId,
+            {
+              kind: row.event_type,
+              sha256: row.payload_hash,
+              metadata: payloadMeta
+            },
+            {
+              maxFeeTinybars: config.ANCHOR_PUBLISH_MAX_FEE_TINYBARS,
+              maxMessageBytes: config.ANCHOR_MESSAGE_MAX_BYTES
+            }
+          );
       log.info("anchor.worker.phase", {
         phase: "publish_hcs",
         outbox_id: row.outbox_id,

@@ -33,7 +33,7 @@ Core does not assume that “any DID can be an issuer we accept”.
 - Trust enforcement is policy-driven and data-driven:
   policies can require issuers to be present in the signed trust registry (`issuer.mode: trust_registry`).
 - The registry bundle is signed (EdDSA) and verified at runtime; verification fails closed if required and unavailable.
-- Trust marks are accreditation/allowlist signals (not “social credit”).
+- Trust marks are accreditation/allowlist signals (not user scoring).
 
 See `docs/trust-registry.md`.
 

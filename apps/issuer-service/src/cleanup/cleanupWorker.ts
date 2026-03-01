@@ -52,9 +52,6 @@ export const runCleanupOnce = async () => {
   const cutoffChallenges = daysAgo(config.RETENTION_VERIFICATION_CHALLENGES_DAYS);
   const cutoffRateLimits = daysAgo(config.RETENTION_RATE_LIMIT_EVENTS_DAYS);
   const cutoffObligations = daysAgo(config.RETENTION_OBLIGATION_EVENTS_DAYS);
-  const cutoffAura = daysAgo(config.RETENTION_AURA_SIGNALS_DAYS);
-  const cutoffAuraState = daysAgo(config.RETENTION_AURA_STATE_DAYS);
-  const cutoffAuraQueue = daysAgo(config.RETENTION_AURA_ISSUANCE_QUEUE_DAYS);
   const cutoffAudit = daysAgo(config.RETENTION_AUDIT_LOGS_DAYS);
 
   const challengesDeleted = await db("verification_challenges")
@@ -73,21 +70,6 @@ export const runCleanupOnce = async () => {
   const obligationsDeleted = await db("obligation_events")
     .where("created_at", "<", cutoffObligations)
     .del();
-
-  const auraSignalsDeleted = await db("aura_signals").where("created_at", "<", cutoffAura).del();
-
-  // Capability state minimization: remove stale state and terminal queue rows.
-  // - `aura_state` is re-derivable from recent signals; keep bounded to reduce long-lived profiling risk.
-  const auraStateDeleted = await db("aura_state").where("updated_at", "<", cutoffAuraState).del();
-
-  // - Queue: keep only active work items; drop old terminal rows.
-  const auraQueueDeleted = await db("aura_issuance_queue")
-    .whereIn("status", ["ISSUED", "FAILED"])
-    .andWhere((builder) => {
-      builder.where("updated_at", "<", cutoffAuraQueue).orWhere("issued_at", "<", cutoffAuraQueue);
-    })
-    .del()
-    .catch(() => 0);
 
   const auditDeleted = await db("audit_logs").where("created_at", "<", cutoffAudit).del();
 
@@ -121,9 +103,6 @@ export const runCleanupOnce = async () => {
     challengesDeleted,
     rateLimitsDeleted,
     obligationsDeleted,
-    auraSignalsDeleted,
-    auraStateDeleted,
-    auraQueueDeleted,
     auditDeleted,
     oid4vciCodesDeleted,
     oid4vciNoncesDeleted,

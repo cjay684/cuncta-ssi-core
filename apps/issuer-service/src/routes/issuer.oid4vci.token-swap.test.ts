@@ -7,12 +7,12 @@ process.env.DEV_MODE = "true";
 process.env.HEDERA_NETWORK = "testnet";
 process.env.ALLOW_MAINNET = "false";
 process.env.ISSUER_BASE_URL = "http://issuer.test";
+process.env.ISSUER_DID = "did:example:issuer";
 process.env.ISSUER_ENABLE_OID4VCI = "true";
 process.env.DATABASE_URL =
   process.env.DATABASE_URL ?? "postgres://cuncta:cuncta@localhost:5432/cuncta_ssi";
 process.env.PSEUDONYMIZER_PEPPER = process.env.PSEUDONYMIZER_PEPPER ?? "issuer-test-pepper-123456";
-process.env.SERVICE_JWT_SECRET =
-  process.env.SERVICE_JWT_SECRET ?? "0123456789abcdef".repeat(4);
+process.env.SERVICE_JWT_SECRET = process.env.SERVICE_JWT_SECRET ?? "0123456789abcdef".repeat(4);
 process.env.SERVICE_JWT_SECRET_ISSUER = process.env.SERVICE_JWT_SECRET;
 process.env.SERVICE_JWT_AUDIENCE = "cuncta-internal";
 process.env.SERVICE_JWT_AUDIENCE_ISSUER = "cuncta.service.issuer";
@@ -65,4 +65,3 @@ test("OID4VCI token swapping is blocked (token.vct must match requested credenti
   assert.equal(credentialRes.statusCode, 401);
   await app.close();
 });
-

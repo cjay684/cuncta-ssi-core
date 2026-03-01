@@ -12,6 +12,8 @@ const run = async () => {
     POLICY_SERVICE_BASE_URL: "http://policy.test",
     TRUST_PROXY: "false",
     PUBLIC_SERVICE: "false",
+    SERVICE_JWT_SECRET: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    SERVICE_JWT_SECRET_VERIFIER: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     ISSUER_JWKS: undefined
   };
   const previousValues = new Map<string, string | undefined>();
@@ -48,4 +50,3 @@ run().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 });
-

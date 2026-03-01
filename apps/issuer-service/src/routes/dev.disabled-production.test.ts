@@ -37,6 +37,9 @@ process.env.POLICY_SIGNING_JWK = JSON.stringify({
 });
 process.env.SERVICE_JWT_SECRET = TEST_SECRET_HEX;
 process.env.SERVICE_JWT_SECRET_ISSUER = TEST_SECRET_HEX;
+process.env.SURFACE_REGISTRY_PUBLIC_KEY =
+  process.env.SURFACE_REGISTRY_PUBLIC_KEY ??
+  "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ";
 
 const run = async () => {
   try {
@@ -48,7 +51,7 @@ const run = async () => {
     const response = await app.inject({
       method: "POST",
       url: "/v1/dev/issue",
-      payload: { subjectDid: "did:example:holder", vct: "cuncta.marketplace.seller_good_standing" }
+      payload: { subjectDid: "did:example:holder", vct: "cuncta.age_over_18" }
     });
     assert.equal(response.statusCode, 404);
     await app.close();

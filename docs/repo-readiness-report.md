@@ -88,4 +88,3 @@ Expected success sentinel:
 ## DID subsystem audit
 
 See `docs/did-subsystem.md`.
-

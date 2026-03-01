@@ -9,7 +9,7 @@ const BUNDLE_PATH = path.join(repoRoot, "docs", "surfaces.registry.bundle.json")
 const SERVICES = [
   { id: "app-gateway", routesDir: "apps/app-gateway/src/routes" },
   { id: "issuer-service", routesDir: "apps/issuer-service/src/routes" }
-  // did-service / verifier-service / policy-service / social-service are private in production;
+  // did-service / verifier-service / policy-service are private in production;
   // this scan focuses on consumer/public + issuer metadata surfaces tracked in docs/surfaces.md.
 ];
 
@@ -96,11 +96,17 @@ const verifyBundlePayloadMatchesRegistry = async () => {
 
   const bundleRaw = await readFile(BUNDLE_PATH, "utf8");
   const bundleJson = JSON.parse(bundleRaw);
-  if (!isObject(bundleJson) || !isObject(bundleJson.signature) || typeof bundleJson.signature.payload !== "string") {
+  if (
+    !isObject(bundleJson) ||
+    !isObject(bundleJson.signature) ||
+    typeof bundleJson.signature.payload !== "string"
+  ) {
     throw new Error("surface_registry_bundle_invalid");
   }
 
-  const payloadText = Buffer.from(String(bundleJson.signature.payload), "base64url").toString("utf8");
+  const payloadText = Buffer.from(String(bundleJson.signature.payload), "base64url").toString(
+    "utf8"
+  );
   if (payloadText !== canonicalRegistry) {
     throw new Error("surface_registry_bundle_registry_mismatch");
   }
@@ -127,12 +133,16 @@ const registryRoutesForService = (registryServices, serviceId) => {
   const routes = service && Array.isArray(service.routes) ? service.routes : [];
   return routes
     .map((r) => ({
-      method: String(r.method ?? "").trim().toUpperCase(),
+      method: String(r.method ?? "")
+        .trim()
+        .toUpperCase(),
       path: String(r.path ?? "").trim(),
       surface: String(r.surface ?? "").trim(),
       probe: r && typeof r === "object" ? r.probe : undefined
     }))
-    .filter((r) => ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(r.method) && r.path.startsWith("/"));
+    .filter(
+      (r) => ["GET", "POST", "PUT", "DELETE", "PATCH"].includes(r.method) && r.path.startsWith("/")
+    );
 };
 
 const extractRoutesFromCode = async (service) => {
@@ -219,8 +229,12 @@ const main = async () => {
       });
     }
 
-    const registryService = registryServices.find((s) => s && typeof s === "object" && s.id === service.id);
-    const publiclyDeployable = Boolean(registryService && registryService.publiclyDeployable === true);
+    const registryService = registryServices.find(
+      (s) => s && typeof s === "object" && s.id === service.id
+    );
+    const publiclyDeployable = Boolean(
+      registryService && registryService.publiclyDeployable === true
+    );
     const assertNoDevTestOnlyRoutes = Boolean(
       registryService && registryService.assertNoDevTestOnlyRoutes === true
     );
@@ -318,4 +332,3 @@ main().catch((err) => {
   console.error("[surface-scan] ERROR", err instanceof Error ? err.message : err);
   process.exit(2);
 });
-

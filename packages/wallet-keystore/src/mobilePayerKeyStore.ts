@@ -5,4 +5,3 @@ import type { PayerKeyStore } from "./payerKeyStore.js";
 export const createMobilePayerKeyStore = (): PayerKeyStore => {
   throw new Error("mobile_payer_keystore_unavailable_in_node_runtime");
 };
-

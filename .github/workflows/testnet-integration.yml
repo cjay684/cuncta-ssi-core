@@ -10,22 +10,40 @@ permissions:
 
 jobs:
   testnet:
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
+    environment: testnet
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cuncta
+          POSTGRES_PASSWORD: cuncta
+          POSTGRES_DB: cuncta_ssi
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U cuncta -d cuncta_ssi"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       HEDERA_NETWORK: testnet
-      HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
-      HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
-      HEDERA_PAYER_ACCOUNT_ID: ${{ secrets.HEDERA_PAYER_ACCOUNT_ID }}
-      HEDERA_PAYER_PRIVATE_KEY: ${{ secrets.HEDERA_PAYER_PRIVATE_KEY }}
-      SERVICE_JWT_SECRET: ${{ secrets.SERVICE_JWT_SECRET }}
-      PSEUDONYMIZER_PEPPER: ${{ secrets.PSEUDONYMIZER_PEPPER }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
+      CI_TEST_MODE: "true"
+      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
       ISSUER_SERVICE_BASE_URL: ${{ secrets.ISSUER_SERVICE_BASE_URL }}
       VERIFIER_SERVICE_BASE_URL: ${{ secrets.VERIFIER_SERVICE_BASE_URL }}
-      POLICY_SERVICE_BASE_URL: ${{ secrets.POLICY_SERVICE_BASE_URL }}
-      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
-      ISSUER_BASE_URL: ${{ secrets.ISSUER_BASE_URL }}
+      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
+      HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
+      HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
+      TESTNET_PAYER_ACCOUNT_ID: ${{ secrets.TESTNET_PAYER_ACCOUNT_ID || secrets.HEDERA_PAYER_ACCOUNT_ID }}
+      TESTNET_PAYER_PRIVATE_KEY: ${{ secrets.TESTNET_PAYER_PRIVATE_KEY || secrets.HEDERA_PAYER_PRIVATE_KEY }}
+      HEDERA_PAYER_ACCOUNT_ID: ${{ secrets.TESTNET_PAYER_ACCOUNT_ID || secrets.HEDERA_PAYER_ACCOUNT_ID }}
+      HEDERA_PAYER_PRIVATE_KEY: ${{ secrets.TESTNET_PAYER_PRIVATE_KEY || secrets.HEDERA_PAYER_PRIVATE_KEY }}
+      SERVICE_JWT_SECRET: ${{ secrets.SERVICE_JWT_SECRET }}
+      PSEUDONYMIZER_PEPPER: ${{ secrets.PSEUDONYMIZER_PEPPER }}
+      DATABASE_URL: postgres://cuncta:cuncta@localhost:5432/cuncta_ssi
+      DYNAMIC_PORTS: "1"
+      HEDERA_MIRROR_URL: ${{ secrets.HEDERA_MIRROR_URL }}
       RUN_TESTNET_INTEGRATION: "1"
     steps:
       - name: Checkout
@@ -35,7 +53,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
-          cache: pnpm
 
       - name: Setup pnpm
         uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
@@ -44,6 +61,105 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Set mirror URL default (allow secret override)
+        run: |
+          echo "HEDERA_MIRROR_URL=${HEDERA_MIRROR_URL:-https://testnet.mirrornode.hedera.com}" >> $GITHUB_ENV
+          echo "Mirror URL: ${HEDERA_MIRROR_URL:-https://testnet.mirrornode.hedera.com}"
+
+      - name: Prebuild workspace for DB wait helper
+        run: pnpm -r build
+
+      - name: Wait for Postgres
+        run: node scripts/ci/wait-for-postgres.mjs
+
+      - name: Validate required secret-backed env
+        run: |
+          set -euo pipefail
+          required=(
+            APP_GATEWAY_BASE_URL
+            ISSUER_SERVICE_BASE_URL
+            VERIFIER_SERVICE_BASE_URL
+            DID_SERVICE_BASE_URL
+            TESTNET_PAYER_ACCOUNT_ID
+            TESTNET_PAYER_PRIVATE_KEY
+            HEDERA_OPERATOR_ID
+            HEDERA_OPERATOR_PRIVATE_KEY
+            SERVICE_JWT_SECRET
+            PSEUDONYMIZER_PEPPER
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "[testnet_integration] missing required env: $key (configure in GitHub environment secrets for 'testnet')"
+              exit 1
+            fi
+          done
+
+      - name: Start local service stack for loopback endpoints
+        run: |
+          set -euo pipefail
+
+          is_loopback_url() {
+            local url="$1"
+            local host
+            host="$(echo "$url" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#' | tr '[:upper:]' '[:lower:]')"
+            [ "$host" = "localhost" ] || [ "$host" = "127.0.0.1" ] || [ "$host" = "::1" ] || [[ "$host" =~ \.localhost$ ]]
+          }
+
+          loopback_count=0
+          for key in APP_GATEWAY_BASE_URL ISSUER_SERVICE_BASE_URL VERIFIER_SERVICE_BASE_URL DID_SERVICE_BASE_URL; do
+            if is_loopback_url "${!key}"; then
+              loopback_count=$((loopback_count + 1))
+            fi
+          done
+
+          if [ "$loopback_count" -gt 0 ] && [ "$loopback_count" -lt 4 ]; then
+            echo "[testnet_integration] mixed loopback/non-loopback service URL configuration is not supported"
+            exit 1
+          fi
+
+          if [ "$loopback_count" -eq 0 ]; then
+            echo "[testnet_integration] external service URLs detected; skipping local service bootstrap"
+            exit 0
+          fi
+
+          echo "[testnet_integration] loopback service URLs detected; bootstrapping local services"
+          export POLICY_SERVICE_BASE_URL="${POLICY_SERVICE_BASE_URL:-http://localhost:3004}"
+          export USER_PAYS_HANDOFF_SECRET="${USER_PAYS_HANDOFF_SECRET:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_DID="${SERVICE_JWT_SECRET_DID:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_ISSUER="${SERVICE_JWT_SECRET_ISSUER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_VERIFIER="${SERVICE_JWT_SECRET_VERIFIER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_NEXT="${SERVICE_JWT_SECRET_NEXT:-$SERVICE_JWT_SECRET}"
+
+          pnpm -C apps/did-service dev > /tmp/did-service.log 2>&1 &
+          pnpm -C apps/issuer-service dev > /tmp/issuer-service.log 2>&1 &
+          pnpm -C apps/verifier-service dev > /tmp/verifier-service.log 2>&1 &
+          pnpm -C apps/policy-service dev > /tmp/policy-service.log 2>&1 &
+          pnpm -C apps/app-gateway dev > /tmp/app-gateway.log 2>&1 &
+
+          wait_for_health() {
+            local name="$1"
+            local url="$2"
+            for attempt in $(seq 1 60); do
+              if curl -fsS "$url" > /dev/null; then
+                echo "[testnet_integration] ${name} healthy at ${url}"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "[testnet_integration] ${name} failed health check at ${url}"
+            tail -n 120 "/tmp/${name}.log" || true
+            return 1
+          }
+
+          wait_for_health "did-service" "${DID_SERVICE_BASE_URL}/healthz"
+          wait_for_health "issuer-service" "${ISSUER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "verifier-service" "${VERIFIER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "policy-service" "${POLICY_SERVICE_BASE_URL}/healthz"
+          wait_for_health "app-gateway" "${APP_GATEWAY_BASE_URL}/healthz"
+
+      - name: Testnet preflight
+        run: node scripts/ci/testnet-preflight.mjs
 
       - name: Verify (direct)
         run: pnpm verify:testnet

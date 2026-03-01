@@ -4,7 +4,7 @@ import { getPublicKey, hashes } from "@noble/ed25519";
 import { sign } from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { base58btc } from "multiformats/bases/base58";
-import type { WalletPublicKeyMaterial, WalletKeyPurpose, WalletKeyStore } from "./types.js";
+import type { WalletKeyPurpose, WalletKeyStore } from "./types.js";
 
 if (!hashes.sha512) {
   hashes.sha512 = sha512;
@@ -15,6 +15,16 @@ const fromBase64 = (value: string) => new Uint8Array(Buffer.from(value, "base64"
 
 const toBase58Multibase = (publicKey: Uint8Array) => base58btc.encode(publicKey);
 
+type StoredNodeKey = {
+  privateKeyBase64: string;
+  publicKeyBase64: string;
+  publicKeyMultibase?: string;
+};
+
+type WalletStateWithKeystore = WalletState & {
+  keystore?: Record<string, StoredNodeKey | undefined>;
+};
+
 const keyPath = (purpose: WalletKeyPurpose) => {
   if (purpose === "primary") return "ed25519";
   if (purpose === "holder") return "holder_ed25519";
@@ -22,7 +32,7 @@ const keyPath = (purpose: WalletKeyPurpose) => {
 };
 
 const readKey = (state: WalletState, purpose: WalletKeyPurpose) => {
-  const bucket = ((state as unknown as { keystore?: unknown }).keystore ?? {}) as Record<string, any>;
+  const bucket = (state as WalletStateWithKeystore).keystore ?? {};
   const entry = bucket[keyPath(purpose)];
   if (!entry || typeof entry !== "object") return null;
   const priv = String(entry.privateKeyBase64 ?? "");
@@ -41,8 +51,8 @@ const writeKey = (
   purpose: WalletKeyPurpose,
   material: { privateKey: Uint8Array; publicKey: Uint8Array; publicKeyMultibase: string }
 ) => {
-  const root = state as unknown as { keystore?: Record<string, any> };
-  const bucket = (root.keystore ?? {}) as Record<string, any>;
+  const root = state as WalletStateWithKeystore;
+  const bucket = root.keystore ?? {};
   bucket[keyPath(purpose)] = {
     privateKeyBase64: toBase64(material.privateKey),
     publicKeyBase64: toBase64(material.publicKey),
@@ -51,8 +61,14 @@ const writeKey = (
   root.keystore = bucket;
 };
 
-export const createNodeFileKeyStore = (input: { walletDir: string; filename?: string }): WalletKeyStore => {
-  const store = new WalletStore({ walletDir: input.walletDir, filename: input.filename ?? "wallet-state.json" });
+export const createNodeFileKeyStore = (input: {
+  walletDir: string;
+  filename?: string;
+}): WalletKeyStore => {
+  const store = new WalletStore({
+    walletDir: input.walletDir,
+    filename: input.filename ?? "wallet-state.json"
+  });
 
   const generate = async (purpose: WalletKeyPurpose) => {
     const privateKey = new Uint8Array(randomBytes(32));
@@ -92,7 +108,12 @@ export const createNodeFileKeyStore = (input: { walletDir: string; filename?: st
       const state = await store.load();
       const existing = readKey(state, purpose);
       if (!existing) return null;
-      return { purpose, alg: "Ed25519", publicKey: existing.publicKey, publicKeyMultibase: existing.publicKeyMultibase };
+      return {
+        purpose,
+        alg: "Ed25519",
+        publicKey: existing.publicKey,
+        publicKeyMultibase: existing.publicKeyMultibase
+      };
     },
     async sign(purpose, payload) {
       const state = await store.load();
@@ -116,12 +137,11 @@ export const createNodeFileKeyStore = (input: { walletDir: string; filename?: st
     },
     async deleteKey(purpose) {
       const state = await store.load();
-      const root = state as unknown as { keystore?: Record<string, any> };
-      const bucket = (root.keystore ?? {}) as Record<string, any>;
+      const root = state as WalletStateWithKeystore;
+      const bucket = root.keystore ?? {};
       delete bucket[keyPath(purpose)];
       root.keystore = bucket;
       await store.save(state);
     }
   };
 };
-

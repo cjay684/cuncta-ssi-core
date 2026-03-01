@@ -135,7 +135,14 @@ const protectedHeaderToDeterministicB64url = (input: {
     if (!Number.isInteger(input.canon)) {
       throw new Error("surface_registry_signature_invalid");
     }
-    return b64url(JSON.stringify({ alg: "EdDSA", typ: "surface-registry+json", kid: input.kid, canon: input.canon }));
+    return b64url(
+      JSON.stringify({
+        alg: "EdDSA",
+        typ: "surface-registry+json",
+        kid: input.kid,
+        canon: input.canon
+      })
+    );
   }
   return b64url(JSON.stringify({ alg: "EdDSA", typ: "surface-registry+json", kid: input.kid }));
 };
@@ -146,9 +153,14 @@ const parseAndValidateProtectedHeader = (
   const protectedHeader = parseProtectedHeader(protectedB64url);
 
   const keys = Object.keys(protectedHeader);
-  const isLegacy = keys.length === 3 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid");
+  const isLegacy =
+    keys.length === 3 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid");
   const isV1Plus =
-    keys.length === 4 && keys.includes("alg") && keys.includes("typ") && keys.includes("kid") && keys.includes("canon");
+    keys.length === 4 &&
+    keys.includes("alg") &&
+    keys.includes("typ") &&
+    keys.includes("kid") &&
+    keys.includes("canon");
   if (!isLegacy && !isV1Plus) {
     throw new Error("surface_registry_signature_invalid");
   }
@@ -181,7 +193,11 @@ const parseAndValidateProtectedHeader = (
   })();
 
   // Strict determinism guard: stable key insertion order; no extra fields.
-  const expectedProtectedB64 = protectedHeaderToDeterministicB64url({ kid, canon, legacy: isLegacy });
+  const expectedProtectedB64 = protectedHeaderToDeterministicB64url({
+    kid,
+    canon,
+    legacy: isLegacy
+  });
   if (protectedB64url !== expectedProtectedB64) {
     throw new Error("surface_registry_signature_invalid");
   }
@@ -235,11 +251,13 @@ type SurfaceRegistryLogger = {
 // Public (non-secret) local dev key for signature verification when no env key is provided.
 // This is ONLY used in non-production flows.
 const DEV_FALLBACK_PUBLIC_JWK_B64URL =
-  "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ";
+  "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ";
 
-let cachedRuntimeRegistry:
-  | { cacheKey: string; registry: SurfaceRegistry; mode: "bundle" | "unsigned" }
-  | null = null;
+let cachedRuntimeRegistry: {
+  cacheKey: string;
+  registry: SurfaceRegistry;
+  mode: "bundle" | "unsigned";
+} | null = null;
 
 export const loadSurfaceRegistryForRuntime = async (input: {
   nodeEnv: string;
@@ -265,7 +283,6 @@ export const loadSurfaceRegistryForRuntime = async (input: {
       input.logger.warn(event, meta);
       return;
     }
-    // eslint-disable-next-line no-console
     console.warn(event, meta ? JSON.stringify(meta) : "");
   };
 
@@ -376,7 +393,7 @@ export const compileSurfaceRoutesForService = (
     re: compileSurfacePathPattern(r.path),
     specificity: specificityScore(r.path)
   }));
-  // Prefer the most specific match (lets exact routes override globs like `/v1/social/*`).
+  // Prefer the most specific match (lets exact routes override broader globs).
   compiled.sort((a, b) => b.specificity - a.specificity);
   return compiled;
 };
@@ -392,4 +409,3 @@ export const matchSurfaceRoute = (
   }
   return null;
 };
-

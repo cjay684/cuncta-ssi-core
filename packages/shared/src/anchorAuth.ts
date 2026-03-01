@@ -31,9 +31,7 @@ export const verifyAnchorMeta = (
     anchor_auth_sig?: unknown;
     anchor_auth_ts?: unknown;
   }
-):
-  | { ok: true }
-  | { ok: false; reason: "missing_auth" | "invalid_auth" | "invalid_format" } => {
+): { ok: true } | { ok: false; reason: "missing_auth" | "invalid_auth" | "invalid_format" } => {
   const sig = input.anchor_auth_sig;
   const ts = input.anchor_auth_ts;
   if (sig === undefined || sig === null || ts === undefined || ts === null) {

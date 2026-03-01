@@ -35,7 +35,10 @@ export const verifyRequiredZkPredicates = async (input: {
   expectedVct?: string;
 }) => {
   const parsed = Array.isArray(input.zkProofs) ? input.zkProofs : [];
-  const entries = parsed.map((e) => zkProofEntrySchema.safeParse(e)).filter((r) => r.success).map((r) => r.data);
+  const entries = parsed
+    .map((e) => zkProofEntrySchema.safeParse(e))
+    .filter((r) => r.success)
+    .map((r) => r.data);
 
   const reasons: string[] = [];
   const deny = (r: string) => reasons.push(r);
@@ -145,7 +148,13 @@ export const verifyRequiredZkPredicates = async (input: {
             ? sha256ToField(input.audience).toString()
             : sha256ToField(input.requestHash).toString();
       if (pub[pubKey] !== expected) {
-        deny(binding === "nonce" ? "nonce_mismatch" : binding === "audience" ? "aud_mismatch" : "request_hash_mismatch");
+        deny(
+          binding === "nonce"
+            ? "nonce_mismatch"
+            : binding === "audience"
+              ? "aud_mismatch"
+              : "request_hash_mismatch"
+        );
       }
     }
 
@@ -214,7 +223,8 @@ export const verifyRequiredZkPredicates = async (input: {
         deny("zk_commitment_mismatch");
       }
     }
-    const allowedSchemes = statement.definition.credential_requirements.commitment_scheme_versions_allowed;
+    const allowedSchemes =
+      statement.definition.credential_requirements.commitment_scheme_versions_allowed;
     if (allowedSchemes && allowedSchemes.length) {
       const scheme = String(input.claims.commitment_scheme_version ?? "");
       if (!allowedSchemes.includes(scheme)) {
@@ -222,13 +232,13 @@ export const verifyRequiredZkPredicates = async (input: {
       }
     }
 
-      // If any earlier check already denied this statement, skip the expensive crypto verify step.
-      // (We still fail closed overall; we just avoid doing unnecessary work.)
-      if (reasons.length > reasonsBeforeStatement) {
-        continue;
-      }
+    // If any earlier check already denied this statement, skip the expensive crypto verify step.
+    // (We still fail closed overall; we just avoid doing unnecessary work.)
+    if (reasons.length > reasonsBeforeStatement) {
+      continue;
+    }
 
-      // Cryptographic verification using the statement's verifying key.
+    // Cryptographic verification using the statement's verifying key.
     const vkRaw = await readFile(statement.verifyingKeyPath, "utf8").catch(() => "");
     if (!vkRaw) {
       deny("zk_verifying_key_missing");
@@ -241,15 +251,15 @@ export const verifyRequiredZkPredicates = async (input: {
       deny("zk_verifying_key_invalid");
       continue;
     }
-      if (statement.definition.proof_system !== "groth16_bn254") {
-        deny("zk_proof_system_unsupported");
-        continue;
-      }
-      const ok = await verifyGroth16({
-        verificationKey: vkJson,
-        proof: proof.proof,
-        publicSignals: proof.public_signals
-      }).catch(() => ({ ok: false }));
+    if (statement.definition.proof_system !== "groth16_bn254") {
+      deny("zk_proof_system_unsupported");
+      continue;
+    }
+    const ok = await verifyGroth16({
+      verificationKey: vkJson,
+      proof: proof.proof,
+      publicSignals: proof.public_signals
+    }).catch(() => ({ ok: false }));
     if (!ok.ok) {
       deny("zk_proof_invalid");
     }
@@ -257,4 +267,3 @@ export const verifyRequiredZkPredicates = async (input: {
 
   return { ok: reasons.length === 0, reasons };
 };
-

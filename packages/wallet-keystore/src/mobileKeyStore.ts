@@ -5,4 +5,3 @@ import type { WalletKeyStore } from "./types.js";
 export const createMobileKeyStore = (): WalletKeyStore => {
   throw new Error("mobile_keystore_unavailable_in_node_runtime");
 };
-

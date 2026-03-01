@@ -28,11 +28,8 @@ const ProfileSchema = z.object({
 
 // Bundled JSON imports keep this data-driven, but ship it as part of the package
 // so production does not need filesystem access.
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import defaultProfile from "../profiles/default.json" with { type: "json" };
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import ukProfile from "../profiles/uk.json" with { type: "json" };
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import euProfile from "../profiles/eu.json" with { type: "json" };
 
 const parsed = [
@@ -51,4 +48,3 @@ export const listComplianceProfiles = (): ComplianceProfile[] => parsed.slice();
 export const getComplianceProfile = (profileId: ComplianceProfileId): ComplianceProfile | null => {
   return byId.get(profileId) ?? null;
 };
-

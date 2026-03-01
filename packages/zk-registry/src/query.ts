@@ -49,4 +49,3 @@ export const getZkStatementsForCredentialConfig = async (credentialConfiguration
   }
   return out;
 };
-

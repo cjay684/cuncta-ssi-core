@@ -37,16 +37,18 @@ const walletStateSchema: z.ZodType<WalletState> = z
       .optional(),
     credentials: z
       .array(
-        z.object({
-          vct: z.string().min(1),
-          // SD-JWT is a compact string; DI+BBS credentials are JSON objects.
-          credential: z.union([z.string().min(10), z.record(z.string(), z.unknown())]),
-          // Legacy wallet-cli used `sdJwt` in some commands; keep permissive parsing.
-          sdJwt: z.union([z.string().min(10), z.record(z.string(), z.unknown())]).optional(),
-          credentialId: z.string().min(1).optional(),
-          eventId: z.string().min(1).optional(),
-          credentialFingerprint: z.string().min(1).optional()
-        }).passthrough()
+        z
+          .object({
+            vct: z.string().min(1),
+            // SD-JWT is a compact string; DI+BBS credentials are JSON objects.
+            credential: z.union([z.string().min(10), z.record(z.string(), z.unknown())]),
+            // Legacy wallet-cli used `sdJwt` in some commands; keep permissive parsing.
+            sdJwt: z.union([z.string().min(10), z.record(z.string(), z.unknown())]).optional(),
+            credentialId: z.string().min(1).optional(),
+            eventId: z.string().min(1).optional(),
+            credentialFingerprint: z.string().min(1).optional()
+          })
+          .passthrough()
       )
       .optional(),
     lastPresentation: z
@@ -98,4 +100,3 @@ export class WalletStore {
     await writeFile(p, json, "utf8");
   }
 }
-

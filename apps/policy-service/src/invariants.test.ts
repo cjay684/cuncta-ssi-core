@@ -34,25 +34,39 @@ const run = async () => {
   const files = [...(await walk(appSrc)), ...(await walk(pkgSrc))];
   const networkAllowlist = [
     path.join("apps", "app-gateway", "src", "config.ts"),
+    path.join("apps", "app-gateway", "src", "server.ts"),
+    path.join("apps", "app-gateway", "src", "routes", "onboard.ts"),
     path.join("apps", "did-service", "src", "config.ts"),
     path.join("apps", "did-service", "src", "hedera", "client.ts"),
     path.join("apps", "did-service", "src", "routes", "dids.ts"),
     path.join("apps", "did-service", "src", "state", "ephemeralState.ts"),
     path.join("apps", "issuer-service", "src", "config.ts"),
+    path.join("apps", "issuer-service", "src", "hedera", "anchorReconciler.ts"),
     path.join("apps", "issuer-service", "src", "hedera", "anchorWorker.ts"),
     path.join("apps", "policy-service", "src", "config.ts"),
     path.join("apps", "policy-service", "src", "config.d.ts"),
     path.join("apps", "verifier-service", "src", "config.ts"),
+    path.join("apps", "verifier-service", "src", "zk", "verifyZkPredicates.ts"),
+    path.join("packages", "payments", "src", "index.ts"),
     path.join("packages", "hedera", "src", "index.ts")
+  ];
+  const ignoredPrefixes = [
+    path.join("apps", "contract-e2e"),
+    path.join("apps", "integration-tests"),
+    path.join("apps", "mobile-wallet"),
+    path.join("apps", "wallet-cli")
   ];
 
   for (const file of files) {
+    const relative = path.relative(repoRoot, file);
+    if (ignoredPrefixes.some((entry) => relative.startsWith(entry))) {
+      continue;
+    }
     if (file.endsWith("invariants.test.ts")) {
       continue;
     }
     const content = await readFile(file, "utf8");
     if (content.includes("mainnet") || content.includes("previewnet")) {
-      const relative = path.relative(repoRoot, file);
       const allowed = networkAllowlist.some((entry) => relative.endsWith(entry));
       if (!allowed) {
         throw new Error(`network_invariant_failed: ${file}`);
@@ -114,9 +128,7 @@ const run = async () => {
     { table: "rate_limit_events", column: "subject_hash" },
     { table: "audit_logs", column: "data_hash" },
     { table: "obligations_executions", column: "anchor_payload_hash" },
-    { table: "obligation_events", column: "event_hash" },
-    { table: "aura_signals", column: "event_hash" },
-    { table: "aura_issuance_queue", column: "reason_hash" }
+    { table: "obligation_events", column: "event_hash" }
   ];
   for (const check of checks) {
     const row = await db(check.table).where(check.column, "like", jwtPrefix).first();

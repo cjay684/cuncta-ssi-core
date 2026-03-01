@@ -4,8 +4,6 @@ import { didResolve } from "./didResolve.js";
 import { issueRequest } from "./issueRequest.js";
 import { present } from "./present.js";
 import { verify } from "./verify.js";
-import { auraSimulate } from "./auraSimulate.js";
-import { auraClaim } from "./auraClaim.js";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -58,9 +56,8 @@ const revokeLatest = async (issuerBaseUrl: string, vct: string) => {
 
 export const coreSmoke = async () => {
   const results: Array<{ step: string; ok: boolean; detail?: string }> = [];
-  const devMode = process.env.DEV_MODE === "true";
   const env = envSchema.parse(process.env);
-  const action = devMode ? "dev.aura.signal" : "marketplace.list_item";
+  const action = "identity.verify";
 
   const runStep = async (step: string, fn: () => Promise<void>) => {
     try {
@@ -86,18 +83,6 @@ export const coreSmoke = async () => {
     await issueRequest();
   });
 
-  if (devMode) {
-    await runStep("requirements_dev_aura", async () => {
-      const response = await fetch(
-        `${env.POLICY_SERVICE_BASE_URL}/v1/requirements?action=dev.aura.signal`
-      );
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`requirements_failed: ${text}`);
-      }
-    });
-  }
-
   await runStep("present_verify_allow", async () => {
     await present(action);
     const result = await verify(action);
@@ -107,17 +92,8 @@ export const coreSmoke = async () => {
     }
   });
 
-  if (devMode) {
-    await runStep("aura_simulate", async () => {
-      await auraSimulate(action, 2);
-    });
-    await runStep("aura_claim", async () => {
-      await auraClaim("cuncta.marketplace.seller_good_standing");
-    });
-  }
-
   await runStep("revoke_and_verify_deny", async () => {
-    await revokeLatest(env.ISSUER_SERVICE_BASE_URL, "cuncta.marketplace.seller_good_standing");
+    await revokeLatest(env.ISSUER_SERVICE_BASE_URL, "cuncta.age_over_18");
     await present(action);
     const result = await verify(action);
     const payload = result as { decision?: string } | undefined;

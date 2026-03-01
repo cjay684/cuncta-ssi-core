@@ -15,7 +15,7 @@ const decodeDisclosure = (disclosure: string) =>
   JSON.parse(Buffer.from(disclosure, "base64url").toString("utf8")) as unknown[];
 
 const isSensitiveName = (name: string) =>
-  /ssn|social|dob|birth|email|phone|address|name|passport|license/i.test(name);
+  /ssn|dob|birth|email|phone|address|name|passport|license/i.test(name);
 
 const disclosureId = (disclosure: string, path?: string, label?: string) => {
   const suffix = path ?? label ?? "";

@@ -36,8 +36,11 @@ const registrarGenerateUpdateRequest = async (
   input: { did: string; updates: unknown[]; topicReader?: unknown },
   providers: RegistrarProviders
 ): Promise<RegistrarUpdateRequestResult> => {
-  const fn = (registrar as unknown as { generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return (await fn(input, providers)) as RegistrarUpdateRequestResult;
 };
@@ -51,8 +54,11 @@ const registrarSubmitUpdateRequest = async (
   },
   providers: RegistrarProviders
 ): Promise<unknown> => {
-  const fn = (registrar as unknown as { submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return await fn(input, providers);
 };
@@ -61,8 +67,11 @@ const registrarGenerateDeactivateRequest = async (
   input: { did: string; topicReader?: unknown },
   providers: RegistrarProviders
 ): Promise<RegistrarDeactivateRequestResult> => {
-  const fn = (registrar as unknown as { generateDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateDeactivateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateDeactivateDIDRequest;
   if (!fn) throw new Error("did_deactivate_not_supported");
   return (await fn(input, providers)) as RegistrarDeactivateRequestResult;
 };
@@ -76,8 +85,11 @@ const registrarSubmitDeactivateRequest = async (
   },
   providers: RegistrarProviders
 ): Promise<unknown> => {
-  const fn = (registrar as unknown as { submitDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitDeactivateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitDeactivateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitDeactivateDIDRequest;
   if (!fn) throw new Error("did_deactivate_not_supported");
   return await fn(input, providers);
 };
@@ -159,7 +171,12 @@ const extractCreateResponse = (result: Registrar.CreateDIDRequest) => {
 
 const extractSubmitResponse = (
   // Registrar update/deactivate return shapes vary across SDK versions; we only rely on a small subset.
-  result: { did: string; didDocument?: unknown; transactionId?: string; consensusTimestamp?: string },
+  result: {
+    did: string;
+    didDocument?: unknown;
+    transactionId?: string;
+    consensusTimestamp?: string;
+  },
   fallbackTopicId: string | undefined,
   visibility: "pending" | "confirmed"
 ) => {
@@ -419,20 +436,20 @@ export const registerDidRoutes = (app: FastifyInstance) => {
     const requestId = (request as { requestId?: string }).requestId;
     const body = updateSubmitSchema.parse(request.body);
     const query = submitQuerySchema.parse(request.query ?? {});
-    const stateEntry = stateStore.consume(body.state) as
-      | {
-          operationState?: {
-            states?: unknown[];
-            signingRequests?: Record<string, { serializedPayload?: Uint8Array }>;
-            did?: string;
-            op?: "update";
-          };
-        }
-      | null;
+    const stateEntry = stateStore.consume(body.state) as {
+      operationState?: {
+        states?: unknown[];
+        signingRequests?: Record<string, { serializedPayload?: Uint8Array }>;
+        did?: string;
+        op?: "update";
+      };
+    } | null;
     if (!stateEntry) {
-      return reply.code(404).send(
-        makeErrorResponse("invalid_request", "State not found", { devMode: config.DEV_MODE })
-      );
+      return reply
+        .code(404)
+        .send(
+          makeErrorResponse("invalid_request", "State not found", { devMode: config.DEV_MODE })
+        );
     }
     try {
       assertOperatorConfigured();
@@ -441,7 +458,9 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       return reply.code(500).send(
         makeErrorResponse("internal_error", "Operator not configured", {
           devMode: config.DEV_MODE,
-          debug: config.DEV_MODE ? { cause: error instanceof Error ? error.message : "Error" } : undefined
+          debug: config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "Error" }
+            : undefined
         })
       );
     }
@@ -453,7 +472,8 @@ export const registerDidRoutes = (app: FastifyInstance) => {
     }
     try {
       const defaultWaitForVisibility = config.DID_WAIT_FOR_VISIBILITY;
-      const waitForVisibility = body.waitForVisibility ?? query.waitForVisibility ?? defaultWaitForVisibility;
+      const waitForVisibility =
+        body.waitForVisibility ?? query.waitForVisibility ?? defaultWaitForVisibility;
       const response = await registrarSubmitUpdateRequest(
         {
           states,
@@ -465,7 +485,12 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       );
       return reply.send(
         extractSubmitResponse(
-          response as unknown as { did: string; didDocument?: unknown; transactionId?: string; consensusTimestamp?: string },
+          response as unknown as {
+            did: string;
+            didDocument?: unknown;
+            transactionId?: string;
+            consensusTimestamp?: string;
+          },
           config.HEDERA_DID_TOPIC_ID,
           waitForVisibility ? "confirmed" : "pending"
         )
@@ -475,7 +500,9 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       return reply.code(500).send(
         makeErrorResponse("internal_error", "Update submit failed", {
           devMode: config.DEV_MODE,
-          debug: config.DEV_MODE ? { cause: error instanceof Error ? error.message : "Error" } : undefined
+          debug: config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "Error" }
+            : undefined
         })
       );
     }
@@ -487,16 +514,19 @@ export const registerDidRoutes = (app: FastifyInstance) => {
     const requestId = (request as { requestId?: string }).requestId;
     const body = deactivateRequestSchema.parse(request.body);
     if (body.network !== config.HEDERA_NETWORK) {
-      return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Network mismatch", { devMode: config.DEV_MODE })
-      );
+      return reply
+        .code(400)
+        .send(
+          makeErrorResponse("invalid_request", "Network mismatch", { devMode: config.DEV_MODE })
+        );
     }
     try {
       const response = await registrarGenerateDeactivateRequest(
         { did: body.did, topicReader: undefined },
         buildRegistrarProviders(config.HEDERA_NETWORK) as RegistrarProviders
       );
-      const payloadToSign = (response?.signingRequest?.serializedPayload ?? new Uint8Array()) as Uint8Array;
+      const payloadToSign = (response?.signingRequest?.serializedPayload ??
+        new Uint8Array()) as Uint8Array;
       const publicKeyMultibase = String(response?.signingRequest?.multibasePublicKey ?? "");
       const { entry, state } = stateStore.create({
         publicKeyMultibase,
@@ -521,7 +551,9 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       return reply.code(500).send(
         makeErrorResponse("internal_error", "Deactivate request failed", {
           devMode: config.DEV_MODE,
-          debug: config.DEV_MODE ? { cause: error instanceof Error ? error.message : "Error" } : undefined
+          debug: config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "Error" }
+            : undefined
         })
       );
     }
@@ -535,9 +567,11 @@ export const registerDidRoutes = (app: FastifyInstance) => {
     const query = submitQuerySchema.parse(request.query ?? {});
     const stateEntry = stateStore.consume(body.state);
     if (!stateEntry) {
-      return reply.code(404).send(
-        makeErrorResponse("invalid_request", "State not found", { devMode: config.DEV_MODE })
-      );
+      return reply
+        .code(404)
+        .send(
+          makeErrorResponse("invalid_request", "State not found", { devMode: config.DEV_MODE })
+        );
     }
     try {
       assertOperatorConfigured();
@@ -546,13 +580,16 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       return reply.code(500).send(
         makeErrorResponse("internal_error", "Operator not configured", {
           devMode: config.DEV_MODE,
-          debug: config.DEV_MODE ? { cause: error instanceof Error ? error.message : "Error" } : undefined
+          debug: config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "Error" }
+            : undefined
         })
       );
     }
     try {
       const defaultWaitForVisibility = config.DID_WAIT_FOR_VISIBILITY;
-      const waitForVisibility = body.waitForVisibility ?? query.waitForVisibility ?? defaultWaitForVisibility;
+      const waitForVisibility =
+        body.waitForVisibility ?? query.waitForVisibility ?? defaultWaitForVisibility;
       const response = await registrarSubmitDeactivateRequest(
         {
           state: stateEntry.operationState as unknown,
@@ -564,7 +601,12 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       );
       return reply.send(
         extractSubmitResponse(
-          response as unknown as { did: string; didDocument?: unknown; transactionId?: string; consensusTimestamp?: string },
+          response as unknown as {
+            did: string;
+            didDocument?: unknown;
+            transactionId?: string;
+            consensusTimestamp?: string;
+          },
           config.HEDERA_DID_TOPIC_ID,
           waitForVisibility ? "confirmed" : "pending"
         )
@@ -574,7 +616,9 @@ export const registerDidRoutes = (app: FastifyInstance) => {
       return reply.code(500).send(
         makeErrorResponse("internal_error", "Deactivate submit failed", {
           devMode: config.DEV_MODE,
-          debug: config.DEV_MODE ? { cause: error instanceof Error ? error.message : "Error" } : undefined
+          debug: config.DEV_MODE
+            ? { cause: error instanceof Error ? error.message : "Error" }
+            : undefined
         })
       );
     }

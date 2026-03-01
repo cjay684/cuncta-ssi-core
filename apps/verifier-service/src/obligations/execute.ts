@@ -138,42 +138,6 @@ const recordEmitEvent = async (input: {
     .ignore();
 };
 
-const recordAuraSignal = async (input: {
-  signal: string;
-  domain?: string;
-  weight?: number;
-  subjectDidHash: string;
-  tokenHash: string;
-  challengeHash: string;
-  counterpartyDidHash?: string;
-}) => {
-  const db = await getDb();
-  const domain = input.domain ?? input.signal.split(".")[0] ?? "unknown";
-  const payload = {
-    signal: input.signal,
-    domain,
-    weight: input.weight ?? 1,
-    subjectDidHash: input.subjectDidHash,
-    counterpartyDidHash: input.counterpartyDidHash ?? null,
-    tokenHash: input.tokenHash,
-    challengeHash: input.challengeHash,
-    createdAt: new Date().toISOString()
-  };
-  const eventHash = hashCanonicalJson(payload);
-  await db("aura_signals")
-    .insert({
-      subject_did_hash: input.subjectDidHash,
-      domain,
-      signal: input.signal,
-      weight: input.weight ?? 1,
-      counterparty_did_hash: input.counterpartyDidHash ?? null,
-      event_hash: eventHash,
-      created_at: new Date().toISOString()
-    })
-    .onConflict("event_hash")
-    .ignore();
-};
-
 export const executeObligations = async (input: ExecutionInput): Promise<ExecutionResult> => {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -324,23 +288,6 @@ export const executeObligations = async (input: ExecutionInput): Promise<Executi
           subjectDidHash: input.subjectDidHash,
           tokenHash: input.tokenHash,
           challengeHash: input.challengeHash
-        });
-        results.push({ type: obligation.type, status: "EXECUTED" });
-        continue;
-      }
-
-      if (obligation.type === "AURA_SIGNAL") {
-        await recordAuraSignal({
-          signal: String(obligation.signal ?? "unknown"),
-          domain: typeof obligation.domain === "string" ? obligation.domain : undefined,
-          weight: typeof obligation.weight === "number" ? obligation.weight : 1,
-          subjectDidHash: input.subjectDidHash,
-          tokenHash: input.tokenHash,
-          challengeHash: input.challengeHash,
-          counterpartyDidHash:
-            typeof obligation.counterparty_did_hash === "string"
-              ? obligation.counterparty_did_hash
-              : undefined
         });
         results.push({ type: obligation.type, status: "EXECUTED" });
         continue;

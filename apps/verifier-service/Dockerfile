@@ -11,4 +11,6 @@ COPY --from=base /app /app
 USER app
 ENV NODE_ENV=production
 EXPOSE 3003
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:3003/healthz" >/dev/null || exit 1
 CMD ["node", "--import", "tsx", "apps/verifier-service/src/index.ts"]

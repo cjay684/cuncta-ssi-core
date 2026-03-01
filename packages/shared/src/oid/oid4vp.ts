@@ -69,4 +69,3 @@ export const Oid4vpRequestObjectSchema = z
   .strict();
 
 export type Oid4vpRequestObject = z.infer<typeof Oid4vpRequestObjectSchema>;
-

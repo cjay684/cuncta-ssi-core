@@ -21,4 +21,3 @@ export const getIssuerDiBbsKeyPair = async (): Promise<DiBbsKeyPair> => {
   }
   throw new Error("issuer_bbs_keys_missing");
 };
-

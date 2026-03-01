@@ -22,8 +22,6 @@ import { present } from "./commands/present.js";
 import { verify } from "./commands/verify.js";
 import { vcAcquire } from "./commands/vcAcquire.js";
 import { vpRespond } from "./commands/vpRespond.js";
-import { auraSimulate } from "./commands/auraSimulate.js";
-import { auraClaim } from "./commands/auraClaim.js";
 import { coreSmoke } from "./commands/coreSmoke.js";
 import { privacyKbjwt } from "./commands/privacyKbjwt.js";
 import { privacyFlow } from "./commands/privacyFlow.js";
@@ -77,7 +75,9 @@ const run = async () => {
     const modeIndex = args.findIndex((arg) => arg === "--mode");
     const mode = modeIndex === -1 ? undefined : args[modeIndex + 1];
     if (mode && mode !== "user_pays") {
-      throw new Error("Invalid --mode (expected user_pays). CUNCTA supports self-funded onboarding only.");
+      throw new Error(
+        "Invalid --mode (expected user_pays). CUNCTA supports self-funded onboarding only."
+      );
     }
     await didCreateAuto(mode as "user_pays" | undefined);
     return;
@@ -154,16 +154,6 @@ const run = async () => {
     await vpRespond();
     return;
   }
-  if (command === "aura:simulate") {
-    const action = process.argv[3];
-    const count = Number(process.argv[4] ?? 3);
-    await auraSimulate(action, count);
-    return;
-  }
-  if (command === "aura:claim") {
-    await auraClaim(process.argv[3]);
-    return;
-  }
   if (command === "core:smoke") {
     await coreSmoke();
     return;
@@ -203,13 +193,11 @@ const run = async () => {
   console.log("  vc:issue:age Issue age_over_18 credential");
   console.log("  present:age Present age_over_18 credential");
   console.log("  smoke:strict Strict SD-JWT KB-JWT flow");
-  console.log("  issue:request Issue marketplace.list_item credential");
+  console.log("  issue:request Issue SSI credential");
   console.log("  present      Build presentation for an action");
   console.log("  verify       Verify last presentation for action");
   console.log("  vc:acquire   Acquire credential via OID4VCI");
   console.log("  vp:respond   Respond to OID4VP request via gateway");
-  console.log("  aura:simulate Loop present+verify to emit aura signals");
-  console.log("  aura:claim    Claim derived aura credential if ready");
   console.log("  core:smoke    Run full core smoke flow");
   console.log("  privacy:kbjwt Generate a KB-JWT for DSR confirm");
   console.log("  privacy:flow  Run DSR request+confirm demo flow");
@@ -224,7 +212,7 @@ run()
   .catch((error) => {
     if (error instanceof Error) {
       const wantStack = process.env.WALLET_DEBUG_STACK === "1";
-      console.error(wantStack ? error.stack ?? error.message : error.message);
+      console.error(wantStack ? (error.stack ?? error.message) : error.message);
     } else {
       console.error(String(error));
     }

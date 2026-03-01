@@ -5,7 +5,7 @@ const envSchema = z.object({
   VERIFIER_SERVICE_BASE_URL: z.string().url()
 });
 
-export const verify = async (action = "marketplace.list_item") => {
+export const verify = async (action = "identity.verify") => {
   const env = envSchema.parse(process.env);
   const state = await loadWalletState();
   const last = state.lastPresentation;

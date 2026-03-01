@@ -45,14 +45,14 @@ Rules:
 
 If (and only if) canonicalization logic ever changes:
 
-1) Increment the pinned version intentionally:
+1. Increment the pinned version intentionally:
    - `scripts/security/sign-surface-registry.mjs`: `CANON_VERSION`
    - `packages/shared/src/surfaceRegistry.ts`: `SURFACE_REGISTRY_CANON_VERSION`
-2) Expect verification to fail with:
+2. Expect verification to fail with:
    - `surface_registry_canonicalization_version_mismatch`
-3) Re-sign the bundle with the new version (no auto-repair):
+3. Re-sign the bundle with the new version (no auto-repair):
    - `SURFACE_REGISTRY_PRIVATE_KEY='...' SURFACE_REGISTRY_PUBLIC_KEY='...' node scripts/security/sign-surface-registry.mjs`
-4) Commit the updated `docs/surfaces.registry.bundle.json` and deploy.
+4. Commit the updated `docs/surfaces.registry.bundle.json` and deploy.
 
 Explicit instruction: bump `canon` only as a deliberate, reviewed migration step. Never allow canonicalization changes to ship “implicitly” without a version bump and a fresh re-sign.
 
@@ -120,13 +120,13 @@ CI does not require the private key.
 
 ## Key Rotation Procedure
 
-1) Generate a new keypair.
-2) Update the production deployment configuration:
+1. Generate a new keypair.
+2. Update the production deployment configuration:
    - Set `SURFACE_REGISTRY_PUBLIC_KEY` to the new public key value.
-3) Re-sign the registry and commit:
+3. Re-sign the registry and commit:
    - `SURFACE_REGISTRY_PRIVATE_KEY` = new private key
    - Run `scripts/security/sign-surface-registry.mjs`
-4) Deploy services and roll restart.
+4. Deploy services and roll restart.
 
 If you need a grace period for rotation, plan a coordinated deployment (old bundle verifies with old key; new bundle verifies with new key) and switch the bundle + env var together.
 
@@ -134,27 +134,26 @@ If you need a grace period for rotation, plan a coordinated deployment (old bund
 
 If you suspect `docs/surfaces.registry.bundle.json` or `docs/surfaces.registry.json` was tampered with:
 
-1) Treat it as a production security incident (route exposure risk).
-2) Immediately rotate keys:
+1. Treat it as a production security incident (route exposure risk).
+2. Immediately rotate keys:
    - Generate new keypair
    - Update `SURFACE_REGISTRY_PUBLIC_KEY` in production
    - Re-sign and commit a new bundle
-3) Audit:
+3. Audit:
    - Review recent changes touching `docs/surfaces.registry*.json`
    - Re-run CI security gates locally
-4) Redeploy and verify services fail closed without the correct key.
+4. Redeploy and verify services fail closed without the correct key.
 
 ## Emergency Recovery Procedure (Signing Key Compromise)
 
 If the private signing key (`SURFACE_REGISTRY_PRIVATE_KEY`) is suspected compromised:
 
-1) Rotate keys immediately (generate a new Ed25519 keypair).
-2) Re-sign the current registry with the new private key and commit the new bundle.
-3) Update production `SURFACE_REGISTRY_PUBLIC_KEY` to the new public key and roll restart services.
-4) Verify:
+1. Rotate keys immediately (generate a new Ed25519 keypair).
+2. Re-sign the current registry with the new private key and commit the new bundle.
+3. Update production `SURFACE_REGISTRY_PUBLIC_KEY` to the new public key and roll restart services.
+4. Verify:
    - Production fails closed if the public key is missing/incorrect.
    - CI `--verify` passes for the new bundle and fails for the old key.
-5) Incident follow-up:
+5. Incident follow-up:
    - Confirm the old key is revoked/removed from all secret stores.
    - Review git history + deployment logs for unauthorized route exposure.
-

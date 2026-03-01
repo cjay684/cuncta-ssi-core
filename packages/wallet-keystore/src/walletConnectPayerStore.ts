@@ -7,7 +7,9 @@ type SignerDelegate = (input: {
   txBytes: Uint8Array;
 }) => Promise<Uint8Array>;
 
-export const createWalletConnectPayerStore = (input: { signWithConnector: SignerDelegate }): PayerKeyStore => {
+export const createWalletConnectPayerStore = (input: {
+  signWithConnector: SignerDelegate;
+}): PayerKeyStore => {
   const entries = new Map<string, PayerKeyEntry>();
 
   const resolveEntry = (ref: PayerRef) => {
@@ -49,4 +51,3 @@ export const createWalletConnectPayerStore = (input: { signWithConnector: Signer
     }
   };
 };
-

@@ -1,6 +1,6 @@
 [
   {
-    "action": "dating.enter",
+    "action": "identity.verify",
     "requirements": [
       {
         "vct": "cuncta.age_over_18",
@@ -9,9 +9,5 @@
         }
       }
     ]
-  },
-  {
-    "action": "marketplace.list.high_value",
-    "requirements": [{ "vct": "cuncta.kyc" }, { "vct": "cuncta.reputation" }]
   }
 ]

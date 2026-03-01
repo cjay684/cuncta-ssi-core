@@ -8,7 +8,13 @@ export type IssuerRule =
 export const checkIssuerRule = async (input: {
   issuerDid: string;
   rule: IssuerRule;
-}): Promise<{ ok: true } | { ok: false; reason: "issuer_not_allowed" | "issuer_not_trusted" | "issuer_trust_registry_unavailable" }> => {
+}): Promise<
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "issuer_not_allowed" | "issuer_not_trusted" | "issuer_trust_registry_unavailable";
+    }
+> => {
   const rule = input.rule;
   if (rule.mode === "allowlist") {
     const allowed = rule.allowed ?? [];
@@ -37,4 +43,3 @@ export const checkIssuerRule = async (input: {
     return { ok: false, reason: "issuer_trust_registry_unavailable" };
   }
 };
-

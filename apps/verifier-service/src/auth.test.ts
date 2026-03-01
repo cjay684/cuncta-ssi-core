@@ -6,7 +6,10 @@ process.env.ALLOW_MAINNET = "false";
 
 process.env.NODE_ENV = "development";
 process.env.ALLOW_INSECURE_DEV_AUTH = "false";
+process.env.ISSUER_SERVICE_BASE_URL = "http://issuer.test";
 delete process.env.SERVICE_JWT_SECRET;
+delete process.env.SERVICE_JWT_SECRET_VERIFIER;
+delete process.env.SERVICE_JWT_SECRET_NEXT;
 
 const run = async () => {
   const { requireServiceAuth } = await import("./auth.js");

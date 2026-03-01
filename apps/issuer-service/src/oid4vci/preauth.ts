@@ -9,7 +9,7 @@ export type CreatePreauthCodeInput = {
   ttlSeconds: number;
   txCode?: string | null;
   // Optional context for preauth codes (hash-only/TTL store).
-  // Used for Aura capability issuance to bind scope (e.g. space_id) without storing any raw DID.
+  // Used for capability issuance to bind scope (e.g. space_id) without storing any raw DID.
   scope?: Record<string, unknown> | null;
 };
 
@@ -34,7 +34,7 @@ export const createPreauthCode = async (input: CreatePreauthCodeInput) => {
       ...baseRow,
       scope_hash: scopeHash
     });
-  } catch (error) {
+  } catch {
     // Backward compatibility: older dev DBs might not have scope columns yet.
     await db("oid4vci_preauth_codes").insert(baseRow);
   }
@@ -109,4 +109,3 @@ export const consumeCNonce = async (input: { cNonce: string; tokenJti: string })
     throw new Error("c_nonce_invalid_or_consumed");
   }
 };
-

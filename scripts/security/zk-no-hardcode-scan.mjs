@@ -102,4 +102,3 @@ main().catch((err) => {
   console.error("[zk-no-hardcode-scan] ERROR", err instanceof Error ? err.message : err);
   process.exit(2);
 });
-

@@ -12,8 +12,16 @@ delete process.env.SERVICE_JWT_SECRET_NEXT;
 const { requireServiceAuth } = await import("../auth.ts");
 
 const request = { headers: { authorization: "" } };
-const reply = { sent: false, code() { return this; }, send() { this.sent = true; return this; } };
+const reply = {
+  sent: false,
+  code() {
+    return this;
+  },
+  send() {
+    this.sent = true;
+    return this;
+  }
+};
 
 await requireServiceAuth(request, reply);
 assert.equal(reply.sent, false);
-

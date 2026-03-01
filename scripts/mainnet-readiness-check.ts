@@ -1,6 +1,7 @@
 const truthy = (value: string | undefined) => value === "true" || value === "1" || value === "yes";
 
-const notEmpty = (value: string | undefined) => typeof value === "string" && value.trim().length > 0;
+const notEmpty = (value: string | undefined) =>
+  typeof value === "string" && value.trim().length > 0;
 
 const failures: string[] = [];
 
@@ -86,6 +87,28 @@ if ((process.env.ONBOARDING_STRATEGY_DEFAULT ?? "").toLowerCase().includes("spon
   failures.push("ONBOARDING_STRATEGY_DEFAULT must not be sponsored");
 }
 
+// #region agent log
+fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+  body: JSON.stringify({
+    sessionId: "6783de",
+    runId: process.env.DEBUG_RUN_ID ?? "baseline",
+    hypothesisId: "H4",
+    location: "scripts/mainnet-readiness-check.ts:preResult",
+    message: "mainnet readiness evaluated",
+    data: {
+      failureCount: failures.length,
+      hasCiTestMode: Boolean(process.env.CI_TEST_MODE),
+      hasWalletVaultKey: Boolean(process.env.WALLET_VAULT_KEY),
+      hasWalletAllowSoftwareKeys: Boolean(process.env.WALLET_ALLOW_SOFTWARE_KEYS),
+      hasAllowInsecureWalletKeys: Boolean(process.env.ALLOW_INSECURE_WALLET_KEYS)
+    },
+    timestamp: Date.now()
+  })
+}).catch(() => {});
+// #endregion
+
 if (failures.length) {
   console.error("Mainnet readiness check FAILED:");
   for (const line of failures) {
@@ -95,4 +118,3 @@ if (failures.length) {
 }
 
 console.log("Mainnet readiness check OK");
-

@@ -3,7 +3,6 @@ import { z } from "zod";
 import { canonicalizeJson, hashCanonicalJson } from "@cuncta/shared";
 import type { TrustRegistry, TrustRegistrySignedBundle, TrustMark } from "./types.js";
 
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports
 import registryBundle from "../registries/default/bundle.json" with { type: "json" };
 
 const TrustedIssuerSchema = z.object({
@@ -77,4 +76,3 @@ export const isTrustedIssuer = async (input: { issuerDid: string; requireMark?: 
   }
   return { trusted: true as const };
 };
-

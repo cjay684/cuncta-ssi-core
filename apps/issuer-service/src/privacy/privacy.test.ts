@@ -21,6 +21,7 @@ process.env.POLICY_SIGNING_JWK =
 process.env.POLICY_SIGNING_BOOTSTRAP = "true";
 process.env.ANCHOR_AUTH_SECRET =
   process.env.ANCHOR_AUTH_SECRET ?? "test-anchor-auth-secret-please-rotate";
+process.env.ISSUER_DID = process.env.ISSUER_DID ?? "did:hedera:testnet:z6Mkp:test_privacy";
 
 const run = async () => {
   const { config } = await import("../config.js");
@@ -29,7 +30,6 @@ const run = async () => {
   config.ANCHOR_AUTH_SECRET = process.env.ANCHOR_AUTH_SECRET;
   const { buildServer } = await import("../server.js");
   const { getDb } = await import("../db.js");
-  const { processAuraSignalsOnce } = await import("../aura/auraWorker.js");
   const { getDidHashes } = await import("../pseudonymizer.js");
 
   const app = buildServer();
@@ -40,14 +40,9 @@ const run = async () => {
   await db("privacy_tokens").del();
   await db("privacy_restrictions").del();
   await db("privacy_tombstones").del();
-  await db("aura_state").del();
-  await db("aura_signals").del();
-  await db("aura_issuance_queue").del();
-  await db("aura_rules").update({ enabled: false });
   await db("obligation_events").del();
   await db("obligations_executions").del();
   await db("rate_limit_events").del();
-  await db("command_center_audit_events").del();
   await db("issuance_events").del();
   await db("status_lists").where({ status_list_id: "dsr_test" }).del();
 
@@ -67,7 +62,7 @@ const run = async () => {
 
   await db("issuance_events").insert({
     event_id: "evt_dsr_1",
-    vct: "cuncta.marketplace.seller_good_standing",
+    vct: "cuncta.age_over_18",
     subject_did_hash: legacyHash,
     credential_fingerprint: sha256Hex("cred_fingerprint"),
     status_list_id: "dsr_test",
@@ -75,30 +70,8 @@ const run = async () => {
     issued_at: new Date().toISOString()
   });
 
-  await db("aura_state").insert({
-    subject_did_hash: legacyHash,
-    domain: "marketplace",
-    state: JSON.stringify({
-      score: 2,
-      diversity: 1,
-      tier: "bronze",
-      window_days: 30,
-      last_signal_at: new Date().toISOString()
-    }),
-    updated_at: new Date().toISOString()
-  });
-
-  await db("aura_signals").insert({
-    subject_did_hash: legacyHash,
-    domain: "marketplace",
-    signal: "marketplace.listing_success",
-    weight: 1,
-    event_hash: sha256Hex("signal_dsr_1"),
-    created_at: new Date().toISOString()
-  });
-
   await db("obligation_events").insert({
-    action_id: "marketplace.list_item",
+    action_id: "identity.verify",
     event_type: "VERIFY",
     subject_did_hash: legacyHash,
     token_hash: sha256Hex("token_dsr_1"),
@@ -109,8 +82,8 @@ const run = async () => {
 
   await db("obligations_executions").insert({
     id: "obl_dsr_1",
-    action_id: "marketplace.list_item",
-    policy_id: "marketplace.list_item.v1",
+    action_id: "identity.verify",
+    policy_id: "identity.verify.v1",
     policy_version: 1,
     decision: "ALLOW",
     subject_did_hash: legacyHash,
@@ -124,32 +97,9 @@ const run = async () => {
 
   await db("rate_limit_events").insert({
     subject_hash: legacyHash,
-    action_id: "aura.claim",
+    action_id: "identity.verify",
     created_at: new Date().toISOString()
   });
-  await db("command_center_audit_events").insert([
-    {
-      id: "11111111-1111-4111-8111-111111111111",
-      created_at: new Date().toISOString(),
-      subject_hash: didHash,
-      event_type: "command_plan_requested",
-      payload_json: {}
-    },
-    {
-      id: "22222222-2222-4222-8222-222222222222",
-      created_at: new Date().toISOString(),
-      subject_hash: legacyHash,
-      event_type: "command_plan_requested",
-      payload_json: {}
-    },
-    {
-      id: "33333333-3333-4333-8333-333333333333",
-      created_at: new Date().toISOString(),
-      subject_hash: "unrelated_subject_hash",
-      event_type: "command_plan_requested",
-      payload_json: {}
-    }
-  ]);
 
   const requestResponse = await app.inject({
     method: "POST",
@@ -219,13 +169,6 @@ const run = async () => {
   assert.equal(reuseResponse.statusCode, 401);
   activeToken = exportPayload.nextToken as string;
 
-  const explainResponse = await app.inject({
-    method: "GET",
-    url: "/v1/aura/explain",
-    headers: { authorization: `Bearer ${activeToken}` }
-  });
-  assert.equal(explainResponse.statusCode, 200);
-
   const restrictResponse = await app.inject({
     method: "POST",
     url: "/v1/privacy/restrict",
@@ -236,14 +179,6 @@ const run = async () => {
   const restrictPayload = restrictResponse.json() as { nextToken?: string };
   assert.ok(restrictPayload.nextToken, "restrict should return next token");
   activeToken = restrictPayload.nextToken as string;
-  const restrictAuditPrimary = await db("command_center_audit_events")
-    .where({ subject_hash: didHash })
-    .first();
-  const restrictAuditLegacy = await db("command_center_audit_events")
-    .where({ subject_hash: legacyHash })
-    .first();
-  assert.ok(restrictAuditPrimary, "restrict should not delete command audit rows");
-  assert.ok(restrictAuditLegacy, "restrict should not delete legacy command audit rows");
 
   const eraseResponse = await app.inject({
     method: "POST",
@@ -257,37 +192,22 @@ const run = async () => {
   const tombstoneLegacy = await db("privacy_tombstones").where({ did_hash: legacyHash }).first();
   assert.ok(tombstonePrimary, "tombstone should exist for primary hash");
   assert.ok(tombstoneLegacy, "tombstone should exist for legacy hash");
-  const stateRow = await db("aura_state").where({ subject_did_hash: didHash }).first();
-  assert.equal(stateRow, undefined);
-  const signalRow = await db("aura_signals").where({ subject_did_hash: didHash }).first();
-  assert.equal(signalRow, undefined);
   const issuanceRow = await db("issuance_events").where({ event_id: "evt_dsr_1" }).first();
   assert.equal(issuanceRow?.subject_did_hash ?? null, null);
-  const auditPrimary = await db("command_center_audit_events").where({ subject_hash: didHash }).first();
-  const auditLegacy = await db("command_center_audit_events").where({ subject_hash: legacyHash }).first();
-  const auditUnrelated = await db("command_center_audit_events")
-    .where({ subject_hash: "unrelated_subject_hash" })
-    .first();
-  assert.equal(auditPrimary, undefined);
-  assert.equal(auditLegacy, undefined);
-  assert.ok(auditUnrelated, "erase should not delete unrelated command audit rows");
-
-  await db("aura_signals").insert({
-    subject_did_hash: didHash,
-    domain: "marketplace",
-    signal: "marketplace.listing_success",
-    weight: 1,
-    event_hash: sha256Hex("signal_dsr_after_erase"),
-    created_at: new Date().toISOString()
-  });
-  await processAuraSignalsOnce();
-  const stateAfter = await db("aura_state").where({ subject_did_hash: didHash }).first();
-  assert.equal(stateAfter, undefined);
 
   await app.close();
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  if (error instanceof Error) {
+    console.error(error.message);
+    if (error.stack) console.error(error.stack);
+    if ("cause" in error && error.cause) {
+      console.error("Cause:", error.cause instanceof Error ? error.cause.message : error.cause);
+      if (error.cause instanceof Error && error.cause.stack) console.error(error.cause.stack);
+    }
+  } else {
+    console.error(String(error));
+  }
   process.exit(1);
 });

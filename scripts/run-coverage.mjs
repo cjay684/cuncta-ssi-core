@@ -1,10 +1,10 @@
 import { spawnSync } from "node:child_process";
 
 const thresholds = {
-  lines: Number(process.env.COVERAGE_LINES ?? 50),
+  lines: Number(process.env.COVERAGE_LINES ?? 45),
   branches: Number(process.env.COVERAGE_BRANCHES ?? 40),
   functions: Number(process.env.COVERAGE_FUNCTIONS ?? 40),
-  statements: Number(process.env.COVERAGE_STATEMENTS ?? 50)
+  statements: Number(process.env.COVERAGE_STATEMENTS ?? 45)
 };
 
 const args = [

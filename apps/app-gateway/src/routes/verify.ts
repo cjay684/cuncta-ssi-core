@@ -13,8 +13,9 @@ const ipAllowed = (ip: string | undefined, context: GatewayContext, limitPerMinu
 export const registerVerifyRoutes = (app: FastifyInstance, context: GatewayContext) => {
   // Consumer surface is OID4VP (/oid4vp/*). Legacy endpoints are disabled when the gateway is
   // intentionally deployed as a public production service.
-  const legacyVerifyEnabled =
-    !(context.config.NODE_ENV === "production" && context.config.PUBLIC_SERVICE);
+  const legacyVerifyEnabled = !(
+    context.config.NODE_ENV === "production" && context.config.PUBLIC_SERVICE
+  );
 
   if (
     context.config.VERIFIER_SERVICE_BASE_URL &&
@@ -231,9 +232,13 @@ export const registerVerifyRoutes = (app: FastifyInstance, context: GatewayConte
           if (
             policyBody &&
             typeof policyBody.error === "string" &&
-            ["policy_integrity_failed", "catalog_integrity_failed", "policy_not_found", "invalid_request", "not_found"].includes(
-              policyBody.error
-            )
+            [
+              "policy_integrity_failed",
+              "catalog_integrity_failed",
+              "policy_not_found",
+              "invalid_request",
+              "not_found"
+            ].includes(policyBody.error)
           ) {
             return reply.code(response.status).send(policyBody);
           }
@@ -267,11 +272,15 @@ export const registerVerifyRoutes = (app: FastifyInstance, context: GatewayConte
         ) {
           const verifierSecret =
             context.config.SERVICE_JWT_SECRET_VERIFIER ??
-            (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+            (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+              ? context.config.SERVICE_JWT_SECRET
+              : undefined);
           if (verifierSecret) {
             try {
               const authHeader = await createServiceAuthHeader(context, {
-                audience: context.config.SERVICE_JWT_AUDIENCE_VERIFIER ?? context.config.SERVICE_JWT_AUDIENCE,
+                audience:
+                  context.config.SERVICE_JWT_AUDIENCE_VERIFIER ??
+                  context.config.SERVICE_JWT_AUDIENCE,
                 secret: verifierSecret,
                 scope: ["verifier:request_sign"]
               });

@@ -39,7 +39,6 @@ type DiBbsEnvelope = {
   kb_jwt: string;
 };
 
-
 const toBytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
 const deriveBindingPayloadHash = (payload: unknown) => sha256Base64Url(canonicalizeJson(payload));
@@ -70,8 +69,13 @@ let cachedIssuerBbsPublicKeyB64u: string | null = null;
 const getIssuerBbsPublicKeyB64u = async () => {
   if (cachedIssuerBbsPublicKeyB64u !== null) return cachedIssuerBbsPublicKeyB64u;
   const url = `${config.ISSUER_SERVICE_BASE_URL.replace(/\/$/, "")}/.well-known/openid-credential-issuer`;
-  const meta = await fetchJsonWithTimeout<{ issuer_bbs_public_key_b64u?: string }>(url).catch(() => ({} as any));
-  const pk = typeof meta.issuer_bbs_public_key_b64u === "string" ? meta.issuer_bbs_public_key_b64u.trim() : "";
+  const meta = await fetchJsonWithTimeout<{ issuer_bbs_public_key_b64u?: string }>(url).catch(
+    () => ({}) as { issuer_bbs_public_key_b64u?: string }
+  );
+  const pk =
+    typeof meta.issuer_bbs_public_key_b64u === "string"
+      ? meta.issuer_bbs_public_key_b64u.trim()
+      : "";
   cachedIssuerBbsPublicKeyB64u = pk || "";
   return cachedIssuerBbsPublicKeyB64u;
 };
@@ -236,7 +240,12 @@ const policyLogicSchema = z.object({
 });
 
 const applyComplianceOverlayToPolicyLogic = (
-  profile: { overlay?: { binding?: { require?: true; mode?: "kb-jwt" }; requirements?: { revocationRequired?: true } } },
+  profile: {
+    overlay?: {
+      binding?: { require?: true; mode?: "kb-jwt" };
+      requirements?: { revocationRequired?: true };
+    };
+  },
   logic: z.infer<typeof policyLogicSchema>
 ) => {
   const overlay = profile.overlay ?? {};
@@ -443,7 +452,10 @@ export const verifyPresentationCore = async (
   const requestId = undefined as string | undefined;
   void requestId;
   const selectedProfile = selectComplianceProfile(input.context);
-  let effectiveProfileFlags = flagsFromRequirements({ profile: selectedProfile, requirementsFlags: null });
+  let effectiveProfileFlags = flagsFromRequirements({
+    profile: selectedProfile,
+    requirementsFlags: null
+  });
 
   try {
     const db = await getDb();
@@ -459,7 +471,9 @@ export const verifyPresentationCore = async (
     if (hasPinnedPolicy) {
       pinnedPolicyId = challengeRow?.policy_id as string;
       pinnedPolicyVersion = Number(challengeRow?.policy_version);
-      const floorVersion = config.POLICY_VERSION_FLOOR_ENFORCED ? await getPolicyVersionFloor(input.actionId) : 0;
+      const floorVersion = config.POLICY_VERSION_FLOOR_ENFORCED
+        ? await getPolicyVersionFloor(input.actionId)
+        : 0;
       if (floorVersion > 0 && pinnedPolicyVersion < floorVersion) {
         return {
           decision: "DENY",
@@ -505,7 +519,10 @@ export const verifyPresentationCore = async (
         // Fail-closed and non-oracular: return a normal DENY response even on integrity failure.
         return dependencyFailureDeny();
       }
-      policyLogic = applyComplianceOverlayToPolicyLogic(selectedProfile, policyLogicSchema.parse(logic));
+      policyLogic = applyComplianceOverlayToPolicyLogic(
+        selectedProfile,
+        policyLogicSchema.parse(logic)
+      );
     } else {
       try {
         requirements = await fetchRequirements(input.actionId, input.context);
@@ -522,7 +539,9 @@ export const verifyPresentationCore = async (
         }
         pinnedPolicyId = requirements.policyId;
         pinnedPolicyVersion = requirements.policyVersion;
-        const floorVersion = config.POLICY_VERSION_FLOOR_ENFORCED ? await getPolicyVersionFloor(input.actionId) : 0;
+        const floorVersion = config.POLICY_VERSION_FLOOR_ENFORCED
+          ? await getPolicyVersionFloor(input.actionId)
+          : 0;
         if (floorVersion > 0 && pinnedPolicyVersion < floorVersion) {
           return {
             decision: "DENY",
@@ -562,7 +581,10 @@ export const verifyPresentationCore = async (
       reasons.push(reason);
     };
 
-    if (decision === "ALLOW" && (config.ENFORCE_ORIGIN_AUDIENCE || effectiveProfileFlags.enforceOriginAudience)) {
+    if (
+      decision === "ALLOW" &&
+      (config.ENFORCE_ORIGIN_AUDIENCE || effectiveProfileFlags.enforceOriginAudience)
+    ) {
       if (!input.audience.startsWith("origin:")) {
         deny("audience_origin_required");
       }
@@ -734,7 +756,8 @@ export const verifyPresentationCore = async (
             // Prefer explicit configuration, but support out-of-the-box DI+BBS by fetching
             // the issuer's BBS public key from issuer metadata.
             const pubKeyB64u =
-              (process.env.ISSUER_BBS_PUBLIC_KEY_B64U ?? "").trim() || (await getIssuerBbsPublicKeyB64u());
+              (process.env.ISSUER_BBS_PUBLIC_KEY_B64U ?? "").trim() ||
+              (await getIssuerBbsPublicKeyB64u());
             if (!pubKeyB64u) {
               deny("bbs_key_missing");
               allowObligations = false;
@@ -749,7 +772,10 @@ export const verifyPresentationCore = async (
                 deny("missing_subject");
                 allowObligations = false;
               } else {
-                const vcOk = await verifyDiBbsCredential({ credential, publicKey: bbsPublicKey }).catch(() => ({
+                const vcOk = await verifyDiBbsCredential({
+                  credential,
+                  publicKey: bbsPublicKey
+                }).catch(() => ({
                   ok: false
                 }));
                 if (!vcOk.ok) {
@@ -771,14 +797,16 @@ export const verifyPresentationCore = async (
                   if (!presOk.ok) {
                     deny("di_proof_invalid");
                   } else {
-                    const statusFromCredential = (credential as any)?.status;
+                    const statusFromCredential = (credential as { status?: unknown })?.status;
                     payload = {
                       sub: subjectDid,
                       iss: String(credential.issuer ?? ""),
                       vct: String(credential.vct ?? ""),
                       // DI credentials carry status list data in their object form (issuer extension).
                       status:
-                        statusFromCredential && typeof statusFromCredential === "object" && !Array.isArray(statusFromCredential)
+                        statusFromCredential &&
+                        typeof statusFromCredential === "object" &&
+                        !Array.isArray(statusFromCredential)
                           ? (statusFromCredential as Record<string, unknown>)
                           : {}
                     };
@@ -846,7 +874,8 @@ export const verifyPresentationCore = async (
         payload = { sub: "", iss: "", vct: "", status: {} };
       }
 
-      const activeBinding = policyLogic?.binding ?? requirements?.binding ?? { mode: "kb-jwt", require: true };
+      const activeBinding = policyLogic?.binding ??
+        requirements?.binding ?? { mode: "kb-jwt", require: true };
       if (
         decision === "ALLOW" &&
         config.ENFORCE_DID_KEY_BINDING &&
@@ -880,13 +909,19 @@ export const verifyPresentationCore = async (
         deny("vct_mismatch");
       }
       const requirementExtras = requirement as unknown as { zk_predicates?: unknown };
-      const zkPredicates = Array.isArray(requirementExtras?.zk_predicates) ? requirementExtras.zk_predicates : [];
+      const zkPredicates = Array.isArray(requirementExtras?.zk_predicates)
+        ? requirementExtras.zk_predicates
+        : [];
       const requiresZk = zkPredicates.length > 0;
 
       if (decision === "ALLOW" && requirement) {
         const presentedFormat = isJsonEnvelope ? (envelopeFormat ?? "unknown") : "dc+sd-jwt";
         const allowedFormats = requirement.formats ?? ["dc+sd-jwt"];
-        if (Array.isArray(allowedFormats) && allowedFormats.length > 0 && !allowedFormats.includes(presentedFormat)) {
+        if (
+          Array.isArray(allowedFormats) &&
+          allowedFormats.length > 0 &&
+          !allowedFormats.includes(presentedFormat)
+        ) {
           deny("format_mismatch");
         }
         if (requiresZk && !config.ALLOW_EXPERIMENTAL_ZK) {
@@ -953,7 +988,9 @@ export const verifyPresentationCore = async (
       }
 
       if (decision === "ALLOW" && requirement) {
-        const predicatesOk = requirement.predicates.every((predicate) => evaluatePredicate(predicate, claims));
+        const predicatesOk = requirement.predicates.every((predicate) =>
+          evaluatePredicate(predicate, claims)
+        );
         if (!predicatesOk) {
           deny("predicate_failed");
         }
@@ -973,11 +1010,12 @@ export const verifyPresentationCore = async (
         }
       }
 
-      // Backward-compatible hardening for existing space policies that predate context predicates.
+      // Backward-compatible hardening for space-scoped policies that predate context predicates.
+      // Keep this generic (no domain-specific action-name coupling).
       if (
         decision === "ALLOW" &&
         requirement &&
-        ["social.space.join", "social.space.post.create", "social.space.moderate"].includes(input.actionId) &&
+        typeof (input.context as Record<string, unknown> | undefined)?.space_id === "string" &&
         (requirement.context_predicates ?? []).length === 0
       ) {
         const requestSpaceId = getByPath(
@@ -1065,10 +1103,10 @@ export const verifyPresentationCore = async (
 export const isCoreHttpError = (error: unknown): error is CoreHttpErrorShape =>
   Boolean(
     error &&
-      typeof error === "object" &&
-      typeof (error as { statusCode?: unknown }).statusCode === "number" &&
-      typeof (error as { code?: unknown }).code === "string" &&
-      typeof (error as { message?: unknown }).message === "string"
+    typeof error === "object" &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number" &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    typeof (error as { message?: unknown }).message === "string"
   );
 
 export const __test__ = {
@@ -1082,4 +1120,3 @@ export const __test__ = {
     cachedPolicyVerifyKey = null;
   }
 };
-

@@ -10,7 +10,8 @@ process.env.COMPLIANCE_PROFILE_ORIGIN_MAP_JSON = JSON.stringify({
   "https://rp.eu.example": "eu"
 });
 
-const { selectComplianceProfile, applyComplianceProfileOverlay } = await import("./complianceProfiles.js");
+const { selectComplianceProfile, applyComplianceProfileOverlay } =
+  await import("./complianceProfiles.js");
 
 const baseLogic = {
   binding: { mode: "kb-jwt" as const, require: true },
@@ -49,4 +50,3 @@ const baseLogic = {
 }
 
 console.log("policy-service complianceProfiles: ok");
-

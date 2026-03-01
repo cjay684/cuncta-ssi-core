@@ -18,7 +18,6 @@ import { log } from "./log.js";
 import { QuotaStore } from "./abuse.js";
 import { createServiceJwt } from "./serviceAuth.js";
 import { metrics } from "./metrics.js";
-import { getDb } from "./db.js";
 import { registerSurfaceEnforcement } from "./surfaceEnforcement.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerOnboardRoutes } from "./routes/onboard.js";
@@ -28,8 +27,6 @@ import { registerOid4vciRoutes } from "./routes/oid4vci.js";
 import { registerMetricsRoutes } from "./routes/metrics.js";
 import { registerCapabilitiesRoutes } from "./routes/capabilities.js";
 import { registerDidRoutes } from "./routes/dids.js";
-import { registerSocialRoutes } from "./routes/social.js";
-import { registerCommandRoutes } from "./routes/command.js";
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -48,17 +45,12 @@ export type GatewayContext = {
   createServiceJwt: typeof createServiceJwt;
   hashValue: (value: string) => string;
   submitUserPaysTransaction: SubmitUserPaysTransaction;
-  writeCommandCenterAuditEvent: (input: {
-    id: string;
-    createdAt: string;
-    subjectHash: string;
-    eventType: string;
-    payload: Record<string, unknown>;
-  }) => Promise<void>;
-  maybeCleanupCommandCenterAuditEvents: () => Promise<void>;
   getFeeQuoteForPlan: (input: { actionId: string | null; intent: string }) => FeeQuote | null;
   getFeeQuoteForPurpose: (purpose: string) => FeeQuote | null;
-  getPaymentRequest: (input: { feeQuote: FeeQuote | null; purposeScope: string }) => PaymentRequest | null;
+  getPaymentRequest: (input: {
+    feeQuote: FeeQuote | null;
+    purposeScope: string;
+  }) => PaymentRequest | null;
   feeScheduleFingerprint: string;
   paymentsConfigFingerprint: string;
 };
@@ -74,8 +66,6 @@ export const buildServer = (input?: {
   configOverride?: typeof config;
   fetchImpl?: FetchLike;
   submitUserPaysTransaction?: SubmitUserPaysTransaction;
-  writeCommandCenterAuditEvent?: GatewayContext["writeCommandCenterAuditEvent"];
-  maybeCleanupCommandCenterAuditEvents?: GatewayContext["maybeCleanupCommandCenterAuditEvents"];
 }) => {
   const activeConfig = input?.configOverride ?? config;
   let parsedFeeSchedule: ReturnType<typeof parseFeeSchedule>;
@@ -117,78 +107,6 @@ export const buildServer = (input?: {
         transactionId: response.transactionId?.toString() ?? "",
         status: receipt.status?.toString()
       };
-    });
-  const writeCommandCenterAuditEventImpl =
-    input?.writeCommandCenterAuditEvent ??
-    (async (payload: {
-      id: string;
-      createdAt: string;
-      subjectHash: string;
-      eventType: string;
-      payload: Record<string, unknown>;
-    }) => {
-      const db = await getDb();
-      await db("command_center_audit_events").insert({
-        id: payload.id,
-        created_at: payload.createdAt,
-        subject_hash: payload.subjectHash,
-        event_type: payload.eventType,
-        payload_json: payload.payload
-      });
-    });
-  let commandAuditCleanupLastRunMs = 0;
-  let commandAuditCleanupInFlight: Promise<void> | null = null;
-  const maybeCleanupCommandCenterAuditEventsImpl =
-    input?.maybeCleanupCommandCenterAuditEvents ??
-    (async () => {
-      if (!activeConfig.COMMAND_AUDIT_CLEANUP_ENABLED) {
-        return;
-      }
-      const now = Date.now();
-      if (now - commandAuditCleanupLastRunMs < activeConfig.COMMAND_AUDIT_CLEANUP_THROTTLE_MS) {
-        return;
-      }
-      if (commandAuditCleanupInFlight) {
-        return commandAuditCleanupInFlight;
-      }
-      commandAuditCleanupLastRunMs = now;
-      commandAuditCleanupInFlight = (async () => {
-        const db = await getDb();
-        const cutoffIso = new Date(
-          Date.now() - activeConfig.COMMAND_AUDIT_RETENTION_DAYS * 24 * 60 * 60 * 1000
-        ).toISOString();
-        const maxBatches = 3;
-        let deletedTotal = 0;
-        for (let batch = 0; batch < maxBatches; batch += 1) {
-          const deletedCount = await db.transaction(async (trx) => {
-            const rows = (await trx("command_center_audit_events")
-              .where("created_at", "<", cutoffIso)
-              .orderBy("created_at", "asc")
-              .limit(activeConfig.COMMAND_AUDIT_CLEANUP_BATCH_SIZE)
-              .select("id")) as Array<{ id: string }>;
-            if (rows.length === 0) return 0;
-            const ids = rows.map((row) => row.id);
-            await trx("command_center_audit_events").whereIn("id", ids).del();
-            return ids.length;
-          });
-          deletedTotal += deletedCount;
-          if (deletedCount < activeConfig.COMMAND_AUDIT_CLEANUP_BATCH_SIZE) {
-            break;
-          }
-        }
-        if (deletedTotal > 0) {
-          log.info("command.audit.cleanup", { deletedRows: deletedTotal });
-        }
-      })()
-        .catch((error) => {
-          log.warn("command.audit.cleanup_failed", {
-            error: error instanceof Error ? error.message : "unknown_error"
-          });
-        })
-        .finally(() => {
-          commandAuditCleanupInFlight = null;
-        });
-      return commandAuditCleanupInFlight;
     });
   if (activeConfig.NODE_ENV === "production" && !activeConfig.TRUST_PROXY) {
     log.error("trust.proxy.required", { env: activeConfig.NODE_ENV });
@@ -304,8 +222,6 @@ export const buildServer = (input?: {
     createServiceJwt,
     hashValue,
     submitUserPaysTransaction: submitUserPaysTransactionImpl,
-    writeCommandCenterAuditEvent: writeCommandCenterAuditEventImpl,
-    maybeCleanupCommandCenterAuditEvents: maybeCleanupCommandCenterAuditEventsImpl,
     getFeeQuoteForPlan: (payload: { actionId: string | null; intent: string }) =>
       getFeeQuoteForPlan({
         schedule: parsedFeeSchedule.schedule,
@@ -347,8 +263,6 @@ export const buildServer = (input?: {
   registerVerifyRoutes(app, context);
   registerOid4vpRoutes(app, context);
   registerDidRoutes(app, context);
-  registerSocialRoutes(app, context);
-  registerCommandRoutes(app, context);
 
   return app;
 };

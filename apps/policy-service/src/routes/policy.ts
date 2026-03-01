@@ -115,12 +115,12 @@ export const registerPolicyRoutes = (app: FastifyInstance) => {
       policyVersion: policy.version
     });
     const obligations = (policy.logic.obligations ?? []).map((ob) => {
-      // Capability scoping: for space-scoped actions, scope aura signals to the specific space domain.
-      // This prevents space activity from becoming a global cross-domain score.
+      // Capability scoping: if an obligation signal is space-scoped and a space context is present,
+      // bind its domain to that specific space to avoid cross-space leakage.
       const o = (ob ?? {}) as Record<string, unknown>;
-      if (o.type === "AURA_SIGNAL" && typeof o.domain !== "string") {
+      if (o.type === "CAPABILITY_SIGNAL" && typeof o.domain !== "string") {
         const signal = typeof o.signal === "string" ? o.signal : "";
-        if (signal.startsWith("social.space.") && typeof responseContext?.space_id === "string") {
+        if (signal.includes(".space.") && typeof responseContext?.space_id === "string") {
           return { ...o, domain: `space:${responseContext.space_id}` };
         }
       }

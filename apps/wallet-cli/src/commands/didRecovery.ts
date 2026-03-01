@@ -42,8 +42,11 @@ const registrarGenerateUpdateRequest = async (
   input: { did: string; updates: unknown[] },
   providers: RegistrarProviders
 ): Promise<RegistrarUpdateRequest> => {
-  const fn = (registrar as unknown as { generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return (await fn(input, providers)) as RegistrarUpdateRequest;
 };
@@ -57,8 +60,11 @@ const registrarSubmitUpdateRequest = async (
   },
   providers: RegistrarProviders
 ): Promise<unknown> => {
-  const fn = (registrar as unknown as { submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return await fn(input, providers);
 };
@@ -91,15 +97,19 @@ const normalizeMethodId = (value: string) => {
 };
 
 const fetchDidFirstMethodId = async (didServiceBaseUrl: string, did: string) => {
-  const resolved = await fetch(new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, didServiceBaseUrl), {
-    method: "GET"
-  });
+  const resolved = await fetch(
+    new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, didServiceBaseUrl),
+    {
+      method: "GET"
+    }
+  );
   if (!resolved.ok) throw new Error("did_resolve_failed");
   const payload = (await resolved.json()) as { didDocument?: Record<string, unknown> };
   const methods = Array.isArray(payload.didDocument?.verificationMethod)
     ? (payload.didDocument?.verificationMethod as Array<Record<string, unknown>>)
     : [];
-  const firstMethodId = methods.length && typeof methods[0]?.id === "string" ? (methods[0].id as string) : "";
+  const firstMethodId =
+    methods.length && typeof methods[0]?.id === "string" ? (methods[0].id as string) : "";
   return firstMethodId ? normalizeMethodId(firstMethodId) : "";
 };
 
@@ -119,7 +129,8 @@ export const didRecoverySetup = async () => {
   const state = (await loadWalletState()) as unknown as WalletState;
   const did = state.did?.did;
   if (!did) throw new Error("holder_did_missing");
-  if (!env.DID_SERVICE_BASE_URL) throw new Error("DID_SERVICE_BASE_URL required for recovery setup");
+  if (!env.DID_SERVICE_BASE_URL)
+    throw new Error("DID_SERVICE_BASE_URL required for recovery setup");
 
   const keystore = selectWalletKeyStore({ walletDir: walletPaths.walletDir() });
   if (state.recovery?.publicKeyMultibase) {
@@ -135,7 +146,11 @@ export const didRecoverySetup = async () => {
 
   const { payerAccountId, payerPrivateKey } = resolvePayer(env);
   const providers = {
-    clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+    clientOptions: {
+      network: env.HEDERA_NETWORK,
+      accountId: payerAccountId,
+      privateKey: payerPrivateKey
+    }
   } as RegistrarProviders;
 
   const updates: Array<Record<string, unknown>> = [
@@ -146,23 +161,44 @@ export const didRecoverySetup = async () => {
       publicKeyMultibase: recoveryPublicKeyMultibase
     },
     // Recovery key must be authorized to sign a DID update when primary is lost.
-    { operation: "add-verification-method", id: recoveryId, property: "authentication", publicKeyMultibase: recoveryPublicKeyMultibase },
-    { operation: "add-verification-method", id: recoveryId, property: "assertionMethod", publicKeyMultibase: recoveryPublicKeyMultibase }
+    {
+      operation: "add-verification-method",
+      id: recoveryId,
+      property: "authentication",
+      publicKeyMultibase: recoveryPublicKeyMultibase
+    },
+    {
+      operation: "add-verification-method",
+      id: recoveryId,
+      property: "assertionMethod",
+      publicKeyMultibase: recoveryPublicKeyMultibase
+    }
   ];
 
   const updateReq = await registrarGenerateUpdateRequest({ did, updates }, providers);
-  const signingRequests = (updateReq?.signingRequests ?? {}) as Record<string, { serializedPayload?: Uint8Array }>;
+  const signingRequests = (updateReq?.signingRequests ?? {}) as Record<
+    string,
+    { serializedPayload?: Uint8Array }
+  >;
   const signatures: Record<string, Uint8Array> = {};
   for (const [key, req] of Object.entries(signingRequests)) {
     const payloadToSign = (req.serializedPayload ?? new Uint8Array()) as Uint8Array;
     signatures[key] = await keystore.sign("primary", payloadToSign);
   }
   await registrarSubmitUpdateRequest(
-    { states: updateReq.states, signatures, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
+    {
+      states: updateReq.states,
+      signatures,
+      waitForDIDVisibility: false,
+      visibilityTimeoutMs: 120_000
+    },
     providers
   );
 
-  state.recovery = { installedAt: new Date().toISOString(), publicKeyMultibase: recoveryPublicKeyMultibase };
+  state.recovery = {
+    installedAt: new Date().toISOString(),
+    publicKeyMultibase: recoveryPublicKeyMultibase
+  };
   await saveWalletState(state as unknown as never);
 
   console.log(
@@ -196,7 +232,8 @@ export const didRecoveryRotate = async () => {
   const state = (await loadWalletState()) as unknown as WalletState;
   const did = state.did?.did;
   if (!did) throw new Error("holder_did_missing");
-  if (!env.DID_SERVICE_BASE_URL) throw new Error("DID_SERVICE_BASE_URL required for recovery rotate");
+  if (!env.DID_SERVICE_BASE_URL)
+    throw new Error("DID_SERVICE_BASE_URL required for recovery rotate");
   const cooldownSeconds = parseRecoveryCooldownSeconds();
   if ((process.env.NODE_ENV ?? "development") === "production" && cooldownSeconds > 0) {
     const installedAt = state.recovery?.installedAt ?? "";
@@ -226,8 +263,18 @@ export const didRecoveryRotate = async () => {
       property: "verificationMethod",
       publicKeyMultibase: nextPublicKeyMultibase
     },
-    { operation: "add-verification-method", id: nextId, property: "authentication", publicKeyMultibase: nextPublicKeyMultibase },
-    { operation: "add-verification-method", id: nextId, property: "assertionMethod", publicKeyMultibase: nextPublicKeyMultibase }
+    {
+      operation: "add-verification-method",
+      id: nextId,
+      property: "authentication",
+      publicKeyMultibase: nextPublicKeyMultibase
+    },
+    {
+      operation: "add-verification-method",
+      id: nextId,
+      property: "assertionMethod",
+      publicKeyMultibase: nextPublicKeyMultibase
+    }
   ];
   if (removeId) {
     updates.push({ operation: "remove-verification-method", id: removeId });
@@ -235,18 +282,30 @@ export const didRecoveryRotate = async () => {
 
   const { payerAccountId, payerPrivateKey } = resolvePayer(env);
   const providers = {
-    clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+    clientOptions: {
+      network: env.HEDERA_NETWORK,
+      accountId: payerAccountId,
+      privateKey: payerPrivateKey
+    }
   } as RegistrarProviders;
 
   const updateReq = await registrarGenerateUpdateRequest({ did, updates }, providers);
-  const signingRequests = (updateReq?.signingRequests ?? {}) as Record<string, { serializedPayload?: Uint8Array }>;
+  const signingRequests = (updateReq?.signingRequests ?? {}) as Record<
+    string,
+    { serializedPayload?: Uint8Array }
+  >;
   const signatures: Record<string, Uint8Array> = {};
   for (const [key, req] of Object.entries(signingRequests)) {
     const payloadToSign = (req.serializedPayload ?? new Uint8Array()) as Uint8Array;
     signatures[key] = await keystore.sign("recovery", payloadToSign);
   }
   await registrarSubmitUpdateRequest(
-    { states: updateReq.states, signatures, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
+    {
+      states: updateReq.states,
+      signatures,
+      waitForDIDVisibility: false,
+      visibilityTimeoutMs: 120_000
+    },
     providers
   );
 
@@ -277,10 +336,16 @@ export const didRecoveryRotate = async () => {
 
   console.log(
     JSON.stringify(
-      { ok: true, did, rotated: true, removed: removeId || null, newMethodId: nextId, recoveryUsed: true },
+      {
+        ok: true,
+        did,
+        rotated: true,
+        removed: removeId || null,
+        newMethodId: nextId,
+        recoveryUsed: true
+      },
       null,
       2
     )
   );
 };
-

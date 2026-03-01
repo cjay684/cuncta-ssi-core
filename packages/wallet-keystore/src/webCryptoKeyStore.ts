@@ -5,4 +5,3 @@ import type { WalletKeyStore } from "./types.js";
 export const createWebCryptoKeyStore = (): WalletKeyStore => {
   throw new Error("webcrypto_keystore_unavailable_in_node_runtime");
 };
-

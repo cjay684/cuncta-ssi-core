@@ -9,4 +9,3 @@ export const getWalletWitnessBuilder = (id: string): WalletZkWitnessBuilder | nu
   };
   return map[id] ?? null;
 };
-

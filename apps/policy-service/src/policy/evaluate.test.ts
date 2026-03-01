@@ -23,36 +23,30 @@ const run = async () => {
   config.ANCHOR_AUTH_SECRET = process.env.ANCHOR_AUTH_SECRET;
   const { resetPolicyIntegrityCache } = await import("./integrity.js");
   const { getPolicyForAction } = await import("./evaluate.js");
-  const { ensureMarketplaceListPolicy } = await import("../testUtils/seedPolicy.js");
-  await ensureMarketplaceListPolicy();
+  const { ensureIdentityVerifyPolicy } = await import("../testUtils/seedPolicy.js");
+  await ensureIdentityVerifyPolicy();
   const { getDb } = await import("../db.js");
   const db = await getDb();
-  await db("policies").where({ policy_id: "dev.aura.signal.v1" }).del();
-  await db("actions").where({ action_id: "dev.aura.signal" }).del();
+  await db("policies").where({ policy_id: "dev.capability.signal.v1" }).del();
+  await db("actions").where({ action_id: "dev.capability.signal" }).del();
   const logic = {
     binding: { mode: "kb-jwt", require: true },
     requirements: [
       {
-        vct: "cuncta.marketplace.seller_good_standing",
+        vct: "cuncta.age_over_18",
         issuer: { mode: "env", env: "ISSUER_DID" },
-        disclosures: ["seller_good_standing", "tier"],
-        predicates: [
-          { path: "seller_good_standing", op: "eq", value: true },
-          { path: "domain", op: "eq", value: "marketplace" }
-        ],
+        disclosures: ["age_over_18"],
+        predicates: [{ path: "age_over_18", op: "eq", value: true }],
         revocation: { required: true }
       }
     ]
   };
+  await db("policies").where({ action_id: "identity.verify" }).andWhere("version", ">", 1).del();
   await db("policies")
-    .where({ action_id: "marketplace.list_item" })
-    .andWhere("version", ">", 1)
+    .where({ action_id: "identity.verify" })
+    .andWhereNot({ policy_id: "identity.verify.v1" })
     .del();
-  await db("policies")
-    .where({ action_id: "marketplace.list_item" })
-    .andWhereNot({ policy_id: "marketplace.list_item.v1" })
-    .del();
-  await db("policies").where({ policy_id: "marketplace.list_item.v1" }).update({
+  await db("policies").where({ policy_id: "identity.verify.v1" }).update({
     logic
   });
   await db("policies").update({
@@ -63,14 +57,14 @@ const run = async () => {
   config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
   config.POLICY_SIGNING_BOOTSTRAP = true;
   config.ANCHOR_AUTH_SECRET = process.env.ANCHOR_AUTH_SECRET;
-  const policy = await getPolicyForAction("marketplace.list_item");
+  const policy = await getPolicyForAction("identity.verify");
   assert.ok(policy);
-  assert.equal(policy?.actionId, "marketplace.list_item");
+  assert.equal(policy?.actionId, "identity.verify");
   assert.ok(policy?.logic.requirements.length);
 
   const noPolicy = await getPolicyForAction("unknown.action");
   assert.equal(noPolicy, null);
-  const devPolicy = await getPolicyForAction("dev.aura.signal");
+  const devPolicy = await getPolicyForAction("dev.capability.signal");
   assert.equal(devPolicy, null);
 };
 

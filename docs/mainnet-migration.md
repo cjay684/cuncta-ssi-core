@@ -83,4 +83,3 @@ If you need to roll back from mainnet:
 - revert deployment env to `HEDERA_NETWORK=testnet` and `ALLOW_MAINNET=false`
 - restore the previous keys/secrets (do not reuse compromised keys)
 - keep `BREAK_GLASS_DISABLE_STRICT` off; treat break-glass as an incident-only tool and forbidden on mainnet production
-

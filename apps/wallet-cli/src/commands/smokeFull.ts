@@ -74,7 +74,7 @@ export const smokeFull = async () => {
     `${env.POLICY_SERVICE_BASE_URL}/v1/policy/evaluate`,
     {
       subjectDid,
-      action: "dating_age_gate",
+      action: "identity.verify",
       context: {}
     }
   );

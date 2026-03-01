@@ -46,4 +46,3 @@ This includes the current fee/size caps and fee budgets (no secrets, no PII).
 - Byte cap exceeded → HTTP `413` (request too large)
 - Fee cap exceeded → HTTP `400` (invalid request)
 - Unsupported tx type → HTTP `400`
-

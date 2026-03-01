@@ -83,4 +83,3 @@ test("DID key binding: authorizes multicodec-wrapped Ed25519 publicKeyMultibase"
   const cnfJwk = { kty: "OKP", crv: "Ed25519", x: toB64u(pub) };
   assert.deepEqual(isCnfKeyAuthorizedByDidDocument(didDoc, cnfJwk), { ok: true });
 });
-

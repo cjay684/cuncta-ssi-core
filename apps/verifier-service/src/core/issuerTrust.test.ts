@@ -43,4 +43,3 @@ import { checkIssuerRule } from "./issuerTrust.js";
 }
 
 console.log("verifier-service issuerTrust: ok");
-

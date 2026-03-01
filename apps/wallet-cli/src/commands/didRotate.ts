@@ -38,8 +38,11 @@ const registrarGenerateUpdateRequest = async (
   input: { did: string; updates: unknown[] },
   providers: RegistrarProviders
 ): Promise<RegistrarUpdateRequest> => {
-  const fn = (registrar as unknown as { generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .generateUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      generateUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).generateUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return (await fn(input, providers)) as RegistrarUpdateRequest;
 };
@@ -53,8 +56,11 @@ const registrarSubmitUpdateRequest = async (
   },
   providers: RegistrarProviders
 ): Promise<unknown> => {
-  const fn = (registrar as unknown as { submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown> })
-    .submitUpdateDIDRequest;
+  const fn = (
+    registrar as unknown as {
+      submitUpdateDIDRequest?: (a: unknown, b: unknown) => Promise<unknown>;
+    }
+  ).submitUpdateDIDRequest;
   if (!fn) throw new Error("did_update_not_supported");
   return await fn(input, providers);
 };
@@ -94,41 +100,41 @@ export const didRotate = async () => {
     const keystore = selectWalletKeyStore({ walletDir: walletPaths.walletDir() });
 
     const toFragmentId = (value: string) => {
-    const hashIndex = value.indexOf("#");
-    if (hashIndex !== -1) {
-      return `#${value.slice(hashIndex + 1)}`;
-    }
-    return value.startsWith("#") ? value : `#${value}`;
-  };
+      const hashIndex = value.indexOf("#");
+      if (hashIndex !== -1) {
+        return `#${value.slice(hashIndex + 1)}`;
+      }
+      return value.startsWith("#") ? value : `#${value}`;
+    };
 
     const decodeMethodKeyBytes = (method: Record<string, unknown>): Uint8Array | null => {
-    const mb = method.publicKeyMultibase;
-    if (typeof mb === "string" && mb.length > 3) {
-      try {
-        let bytes = base58btc.decode(mb);
-        // Some DID docs encode Ed25519 keys as multibase(multicodec(pubkey)): 0xed01 + 32 bytes.
-        if (bytes.length === 34 && bytes[0] === 0xed && bytes[1] === 0x01) {
-          bytes = bytes.slice(2);
-        }
-        if (bytes.length === 32) return bytes;
-      } catch {
-        // ignore invalid multibase
-      }
-    }
-    const jwk = method.publicKeyJwk;
-    if (jwk && typeof jwk === "object") {
-      const x = (jwk as Record<string, unknown>).x;
-      if (typeof x === "string" && x.length > 10) {
+      const mb = method.publicKeyMultibase;
+      if (typeof mb === "string" && mb.length > 3) {
         try {
-          const bytes = new Uint8Array(Buffer.from(x, "base64url"));
+          let bytes = base58btc.decode(mb);
+          // Some DID docs encode Ed25519 keys as multibase(multicodec(pubkey)): 0xed01 + 32 bytes.
+          if (bytes.length === 34 && bytes[0] === 0xed && bytes[1] === 0x01) {
+            bytes = bytes.slice(2);
+          }
           if (bytes.length === 32) return bytes;
         } catch {
-          // ignore invalid base64url
+          // ignore invalid multibase
         }
       }
-    }
-    return null;
-  };
+      const jwk = method.publicKeyJwk;
+      if (jwk && typeof jwk === "object") {
+        const x = (jwk as Record<string, unknown>).x;
+        if (typeof x === "string" && x.length > 10) {
+          try {
+            const bytes = new Uint8Array(Buffer.from(x, "base64url"));
+            if (bytes.length === 32) return bytes;
+          } catch {
+            // ignore invalid base64url
+          }
+        }
+      }
+      return null;
+    };
 
     const resolved = await fetch(
       new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, env.DID_SERVICE_BASE_URL),
@@ -141,16 +147,23 @@ export const didRotate = async () => {
     const methods = Array.isArray(payload.didDocument?.verificationMethod)
       ? (payload.didDocument?.verificationMethod as Array<Record<string, unknown>>)
       : [];
-    const holderPubB64 = String((state as any)?.keys?.holder?.publicKeyBase64 ?? "");
+    const stateWithKeys = state as unknown as {
+      keys?: { holder?: { publicKeyBase64?: unknown } };
+    };
+    const holderPubB64 = String(stateWithKeys.keys?.holder?.publicKeyBase64 ?? "");
     const holderBytes = holderPubB64 ? Buffer.from(holderPubB64, "base64") : Buffer.alloc(0);
     const matching = holderBytes.length
       ? methods.find((m) => {
           const bytes = decodeMethodKeyBytes(m);
-          return Boolean(bytes && bytes.length === holderBytes.length && Buffer.from(bytes).equals(holderBytes));
+          return Boolean(
+            bytes && bytes.length === holderBytes.length && Buffer.from(bytes).equals(holderBytes)
+          );
         })
       : undefined;
-    const firstMethodId = methods.length && typeof methods[0]?.id === "string" ? (methods[0].id as string) : "";
-    const removeIdRaw = typeof (matching as any)?.id === "string" ? String((matching as any).id) : firstMethodId;
+    const firstMethodId =
+      methods.length && typeof methods[0]?.id === "string" ? (methods[0].id as string) : "";
+    const matchingId = matching?.id;
+    const removeIdRaw = typeof matchingId === "string" ? matchingId : firstMethodId;
     const removeId = removeIdRaw ? toFragmentId(removeIdRaw) : "";
 
     const nextKeypair = await generateKeypair();
@@ -158,27 +171,44 @@ export const didRotate = async () => {
     const nextId = `#key-${Date.now()}`;
 
     const updates: Array<Record<string, unknown>> = [
-    {
-      operation: "add-verification-method",
-      id: nextId,
-      property: "verificationMethod",
-      publicKeyMultibase: nextPublicKeyMultibase
-    },
-    // The registrar expects `publicKeyMultibase` when the fragment doesn't exist yet (even for auth/assertion refs).
-    { operation: "add-verification-method", id: nextId, property: "authentication", publicKeyMultibase: nextPublicKeyMultibase },
-    { operation: "add-verification-method", id: nextId, property: "assertionMethod", publicKeyMultibase: nextPublicKeyMultibase }
-  ];
+      {
+        operation: "add-verification-method",
+        id: nextId,
+        property: "verificationMethod",
+        publicKeyMultibase: nextPublicKeyMultibase
+      },
+      // The registrar expects `publicKeyMultibase` when the fragment doesn't exist yet (even for auth/assertion refs).
+      {
+        operation: "add-verification-method",
+        id: nextId,
+        property: "authentication",
+        publicKeyMultibase: nextPublicKeyMultibase
+      },
+      {
+        operation: "add-verification-method",
+        id: nextId,
+        property: "assertionMethod",
+        publicKeyMultibase: nextPublicKeyMultibase
+      }
+    ];
     if (removeId) {
       updates.push({ operation: "remove-verification-method", id: removeId });
     }
 
     const { payerAccountId, payerPrivateKey } = resolvePayer(env);
     const providers = {
-      clientOptions: { network: env.HEDERA_NETWORK, accountId: payerAccountId, privateKey: payerPrivateKey }
+      clientOptions: {
+        network: env.HEDERA_NETWORK,
+        accountId: payerAccountId,
+        privateKey: payerPrivateKey
+      }
     } as RegistrarProviders;
 
     const updateReq = await registrarGenerateUpdateRequest({ did, updates }, providers);
-    const signingRequests = (updateReq?.signingRequests ?? {}) as Record<string, { serializedPayload?: Uint8Array }>;
+    const signingRequests = (updateReq?.signingRequests ?? {}) as Record<
+      string,
+      { serializedPayload?: Uint8Array }
+    >;
     const signatures: Record<string, Uint8Array> = {};
     for (const [key, req] of Object.entries(signingRequests)) {
       const payloadToSign = (req.serializedPayload ?? new Uint8Array()) as Uint8Array;
@@ -186,7 +216,12 @@ export const didRotate = async () => {
       signatures[key] = await keystore.sign("primary", payloadToSign);
     }
     await registrarSubmitUpdateRequest(
-      { states: updateReq.states, signatures, waitForDIDVisibility: false, visibilityTimeoutMs: 120_000 },
+      {
+        states: updateReq.states,
+        signatures,
+        waitForDIDVisibility: false,
+        visibilityTimeoutMs: 120_000
+      },
       providers
     );
     if (typeof keystore.saveKeyMaterial !== "function") {
@@ -207,16 +242,17 @@ export const didRotate = async () => {
       keys: {
         ...(refreshed.keys ?? {}),
         holder: {
-          alg: "Ed25519",
+          alg: "Ed25519" as const,
           publicKeyBase64: Buffer.from(nextKeypair.publicKey).toString("base64"),
           publicKeyMultibase: nextPublicKeyMultibase
         }
       }
-    } as any;
+    };
     await saveWalletState(nextState);
-    console.log(JSON.stringify({ ok: true, did, rotated: true, removed: removeId || null }, null, 2));
+    console.log(
+      JSON.stringify({ ok: true, did, rotated: true, removed: removeId || null }, null, 2)
+    );
   } finally {
     clearInterval(heartbeat);
   }
 };
-

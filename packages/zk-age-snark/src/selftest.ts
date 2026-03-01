@@ -72,4 +72,3 @@ main().catch((err) => {
   console.error("[zk-age-snark selftest] failed:", err);
   process.exit(1);
 });
-

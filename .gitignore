@@ -12,4 +12,5 @@ pnpm-debug.log
 **/wallet-state.json
 apps/**/data/*.json
 coverage/
+.tmp-wallet/
 %TMPFILE%

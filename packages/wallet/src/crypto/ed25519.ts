@@ -28,4 +28,3 @@ export const generateEd25519 = async (): Promise<GeneratedEd25519> => {
     privateKeyBytes: toBytes(new Uint8Array(privateRaw), "private")
   };
 };
-

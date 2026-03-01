@@ -70,7 +70,10 @@ const canonicalizeScalar = (value: unknown): string => {
   return JSON.stringify(String(value));
 };
 
-const flattenClaims = (claims: Record<string, unknown>, prefix = ""): Array<{ path: string; value: unknown }> => {
+const flattenClaims = (
+  claims: Record<string, unknown>,
+  prefix = ""
+): Array<{ path: string; value: unknown }> => {
   const out: Array<{ path: string; value: unknown }> = [];
   const keys = Object.keys(claims).sort();
   for (const key of keys) {
@@ -279,4 +282,3 @@ export const verifyDiBbsPresentation = async (input: {
   });
   return { ok };
 };
-

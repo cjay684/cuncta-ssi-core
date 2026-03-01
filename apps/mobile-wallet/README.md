@@ -30,10 +30,10 @@ WALLET_SD_JWT=... pnpm -C apps/mobile-wallet credential:import
 pnpm -C apps/mobile-wallet credential:list
 
 # Verify against gateway (uses first requirement; requires prior DID create)
-WALLET_CREDENTIAL_ID=... WALLET_VERIFY_ACTION=marketplace.list_item pnpm -C apps/mobile-wallet verify
+WALLET_CREDENTIAL_ID=... WALLET_VERIFY_ACTION=identity.verify pnpm -C apps/mobile-wallet verify
 
 # Optional end-to-end smoke (requires pre-issued credential + DID)
-WALLET_SD_JWT=... WALLET_VERIFY_ACTION=marketplace.list_item pnpm -C apps/mobile-wallet verify:smoke
+WALLET_SD_JWT=... WALLET_VERIFY_ACTION=identity.verify pnpm -C apps/mobile-wallet verify:smoke
 
 # Selective disclosure (manual selection via env)
 WALLET_CREDENTIAL_ID=... WALLET_DISCLOSE=age,email WALLET_CONFIRM=true pnpm -C apps/mobile-wallet verify:selective
@@ -54,7 +54,7 @@ Optional:
 - `WALLET_DEVICE_ID` (default `mobile-wallet-device`)
 - `WALLET_BUILD_MODE` (`development` or `production`)
 - `ALLOW_MAINNET=true` (required when `HEDERA_NETWORK=mainnet`)
-- `WALLET_VERIFY_ACTION` (default `marketplace.list_item`)
+- `WALLET_VERIFY_ACTION` (default `identity.verify`)
 - `WALLET_CREDENTIAL_ID` (required for `verify`)
 - `WALLET_SD_JWT` (required for `credential:import`)
 - `WALLET_DISCLOSE` (comma-separated claim names or ids for `verify:selective`)

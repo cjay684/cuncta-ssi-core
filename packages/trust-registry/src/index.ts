@@ -7,4 +7,3 @@ export type {
   TrustedVerifier
 } from "./types.js";
 export { isTrustedIssuer, loadTrustRegistry } from "./loader.js";
-

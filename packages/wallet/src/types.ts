@@ -51,4 +51,3 @@ export type WalletState = {
   };
   [key: string]: unknown;
 };
-

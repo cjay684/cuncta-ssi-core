@@ -75,20 +75,6 @@ paths:
       responses:
         "200":
           description: Issued credential
-  /v1/aura/claim:
-    post:
-      summary: Claim aura credential (service JWT required)
-      security:
-        - serviceJwt: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "200":
-          description: Aura claim response
   /v1/privacy/request:
     post:
       summary: Start DSR request

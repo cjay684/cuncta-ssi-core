@@ -90,7 +90,9 @@ const envSchema = z.object({
   ),
   ENFORCE_ORIGIN_AUDIENCE: z.preprocess((value) => value === "true", z.boolean()).optional(),
   BREAK_GLASS_DISABLE_STRICT: z.preprocess((value) => value === "true", z.boolean()).default(false),
-  VERIFIER_SIGN_OID4VP_REQUEST: z.preprocess((value) => value !== "false", z.boolean()).default(true),
+  VERIFIER_SIGN_OID4VP_REQUEST: z
+    .preprocess((value) => value !== "false", z.boolean())
+    .default(true),
   VERIFIER_SIGNING_JWK: z.preprocess(emptyToUndefined, z.string().min(10).optional()),
   VERIFIER_SIGNING_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
   VERIFIER_ENABLE_OID4VP: z.preprocess((value) => value === "true", z.boolean()).optional(),
@@ -126,8 +128,7 @@ const envSchema = z.object({
   }, z.boolean().optional()),
   ANCHOR_AUTH_SECRET: z.string().min(16).optional(),
   DATABASE_URL: z.string().default("postgres://cuncta:cuncta@localhost:5432/cuncta_ssi"),
-  STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional()
-  ,
+  STRICT_DB_ROLE: z.preprocess((value) => value === "true", z.boolean()).optional(),
   // ZK tracks are optional and require explicit opt-in in production.
   ALLOW_EXPERIMENTAL_ZK: z.preprocess((value) => {
     if (value === undefined || value === null || value === "") return undefined;
@@ -140,7 +141,11 @@ const parsed = envSchema.parse(process.env);
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
 }
-if (parsed.NODE_ENV === "production" && parsed.HEDERA_NETWORK === "mainnet" && parsed.VERIFIER_SIGNING_BOOTSTRAP) {
+if (
+  parsed.NODE_ENV === "production" &&
+  parsed.HEDERA_NETWORK === "mainnet" &&
+  parsed.VERIFIER_SIGNING_BOOTSTRAP
+) {
   throw new Error("verifier_signing_bootstrap_forbidden_on_mainnet_production");
 }
 if (
@@ -150,10 +155,7 @@ if (
 ) {
   throw new Error("verifier_signing_jwk_required_in_production");
 }
-if (
-  parsed.BREAK_GLASS_DISABLE_STRICT &&
-  parsed.NODE_ENV === "production"
-) {
+if (parsed.BREAK_GLASS_DISABLE_STRICT && parsed.NODE_ENV === "production") {
   throw new Error("break_glass_forbidden_in_production");
 }
 if (parsed.BREAK_GLASS_DISABLE_STRICT) {
@@ -236,10 +238,9 @@ export const config = {
     ? false
     : (parsed.ENFORCE_DID_KEY_BINDING ?? parsed.NODE_ENV === "production"),
   BREAK_GLASS_DISABLE_STRICT: parsed.BREAK_GLASS_DISABLE_STRICT ?? false,
-  ENFORCE_ORIGIN_AUDIENCE:
-    parsed.BREAK_GLASS_DISABLE_STRICT
-      ? false
-      : (parsed.ENFORCE_ORIGIN_AUDIENCE ?? true),
+  ENFORCE_ORIGIN_AUDIENCE: parsed.BREAK_GLASS_DISABLE_STRICT
+    ? false
+    : (parsed.ENFORCE_ORIGIN_AUDIENCE ?? true),
   VERIFIER_SIGN_OID4VP_REQUEST: parsed.VERIFIER_SIGN_OID4VP_REQUEST ?? true,
   VERIFIER_ENABLE_OID4VP: parsed.VERIFIER_ENABLE_OID4VP ?? true
 };

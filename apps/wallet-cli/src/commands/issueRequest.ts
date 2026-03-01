@@ -19,12 +19,10 @@ export const issueRequest = async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       subjectDid,
-      vct: "cuncta.marketplace.seller_good_standing",
+      vct: "cuncta.age_over_18",
       claims: {
-        seller_good_standing: true,
-        domain: "marketplace",
-        as_of: new Date().toISOString(),
-        tier: "bronze"
+        age_over_18: true,
+        as_of: new Date().toISOString()
       }
     })
   });
@@ -39,9 +37,10 @@ export const issueRequest = async () => {
   };
 
   const next =
-    state.credentials?.filter((cred) => cred.vct !== "cuncta.marketplace.seller_good_standing") ?? [];
+    state.credentials?.filter((cred) => cred.vct !== "cuncta.age_over_18") ??
+    [];
   next.push({
-    vct: "cuncta.marketplace.seller_good_standing",
+    vct: "cuncta.age_over_18",
     credential: payload.credential,
     eventId: payload.eventId,
     credentialFingerprint: payload.credentialFingerprint

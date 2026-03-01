@@ -42,10 +42,16 @@ export const resolveDidDocument = async (did: string): Promise<unknown> => {
 
   const promise = (async () => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort("did_resolve_timeout"), config.DID_RESOLVE_TIMEOUT_MS);
+    const timeout = setTimeout(
+      () => controller.abort("did_resolve_timeout"),
+      config.DID_RESOLVE_TIMEOUT_MS
+    );
     timeout.unref?.();
     try {
-      const url = new URL(`/v1/dids/resolve/${encodeURIComponent(did)}`, config.DID_SERVICE_BASE_URL);
+      const url = new URL(
+        `/v1/dids/resolve/${encodeURIComponent(did)}`,
+        config.DID_SERVICE_BASE_URL
+      );
       const response = await fetch(url, { method: "GET", signal: controller.signal });
       if (!response.ok) {
         throw new Error("did_resolve_failed");
@@ -81,4 +87,3 @@ export const __test__ = {
   },
   getCacheKeys: () => Array.from(cache.keys())
 };
-

@@ -14,14 +14,14 @@ const run = () => {
           id: "svc",
           publiclyDeployable: true,
           routes: [
-            { method: "GET", path: "/v1/social/*", surface: "internal" },
-            { method: "GET", path: "/v1/social/post", surface: "public" }
+            { method: "GET", path: "/v1/feed/*", surface: "internal" },
+            { method: "GET", path: "/v1/feed/post", surface: "public" }
           ]
         }
       ]
     };
     const compiled = compileSurfaceRoutesForService(registry, "svc");
-    const matched = matchSurfaceRoute(compiled, { method: "GET", path: "/v1/social/post" });
+    const matched = matchSurfaceRoute(compiled, { method: "GET", path: "/v1/feed/post" });
     assert.ok(matched, "expected a match");
     assert.equal(matched.surface, "public", "exact match should override broader glob");
   }
@@ -35,15 +35,19 @@ const run = () => {
           publiclyDeployable: true,
           routes: [
             { method: "GET", path: "/v1/*", surface: "internal" },
-            { method: "GET", path: "/v1/social/*", surface: "public" }
+            { method: "GET", path: "/v1/feed/*", surface: "public" }
           ]
         }
       ]
     };
     const compiled = compileSurfaceRoutesForService(registry, "svc");
-    const matched = matchSurfaceRoute(compiled, { method: "GET", path: "/v1/social/xyz" });
+    const matched = matchSurfaceRoute(compiled, { method: "GET", path: "/v1/feed/xyz" });
     assert.ok(matched, "expected a match");
-    assert.equal(matched.surface, "public", "more-specific glob should override less-specific glob");
+    assert.equal(
+      matched.surface,
+      "public",
+      "more-specific glob should override less-specific glob"
+    );
   }
 
   {
@@ -82,4 +86,3 @@ try {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-

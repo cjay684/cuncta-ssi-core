@@ -42,7 +42,8 @@ const SNARK_FIELD = BigInt(
 
 // Domain separation tag for DOB commitments:
 // sha256("cuncta:age:v1") mod p
-export const AGE_COMMITMENT_DOMAIN_TAG = 3805445632897706479387916969139462601971875644687406422943513851068976456195n;
+export const AGE_COMMITMENT_DOMAIN_TAG =
+  3805445632897706479387916969139462601971875644687406422943513851068976456195n;
 
 const toField = (v: bigint) => {
   const x = v % SNARK_FIELD;
@@ -75,7 +76,11 @@ export const commitDobDaysPoseidon = async (input: { birthdateDays: number; rand
   return toField(asBig);
 };
 
-export const computeBindings = (input: { nonce: string; audience: string; requestHash: string }) => {
+export const computeBindings = (input: {
+  nonce: string;
+  audience: string;
+  requestHash: string;
+}) => {
   return {
     nonce_hash: sha256ToField(input.nonce),
     audience_hash: sha256ToField(input.audience),
@@ -127,7 +132,11 @@ export const proveAgeGteV1 = async (input: {
   };
 
   const start = Date.now();
-  const { proof, publicSignals } = await snark().groth16.fullProve(witness, input.wasmFile, input.zkeyFile);
+  const { proof, publicSignals } = await snark().groth16.fullProve(
+    witness,
+    input.wasmFile,
+    input.zkeyFile
+  );
   return {
     proof: proof as Groth16Proof,
     publicSignals: publicSignals as AgeGtePublicSignals,
@@ -136,8 +145,11 @@ export const proveAgeGteV1 = async (input: {
   };
 };
 
-export const verifyGroth16 = async (input: { verificationKey: unknown; proof: unknown; publicSignals: string[] }) => {
+export const verifyGroth16 = async (input: {
+  verificationKey: unknown;
+  proof: unknown;
+  publicSignals: string[];
+}) => {
   const ok = await snark().groth16.verify(input.verificationKey, input.publicSignals, input.proof);
   return { ok: Boolean(ok) };
 };
-

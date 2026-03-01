@@ -7,6 +7,9 @@ const run = async () => {
   // Keep tests deterministic regardless of developer `.env`.
   process.env.HEDERA_NETWORK = "testnet";
   process.env.ALLOW_MAINNET = "false";
+  process.env.POLICY_SERVICE_BASE_URL = "http://policy.test";
+  process.env.SERVICE_JWT_SECRET = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+  process.env.SERVICE_JWT_SECRET_VERIFIER = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
   const { privateKey, publicKey } = await generateKeyPair("EdDSA", { extractable: true });
   const publicJwk = await exportJWK(publicKey);

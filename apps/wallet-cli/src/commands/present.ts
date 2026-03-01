@@ -25,7 +25,10 @@ const envSchema = z
       !env.BREAK_GLASS_DISABLE_STRICT ||
       env.NODE_ENV !== "production" ||
       env.HEDERA_NETWORK !== "mainnet",
-    { message: "BREAK_GLASS_DISABLE_STRICT forbidden on mainnet production", path: ["BREAK_GLASS_DISABLE_STRICT"] }
+    {
+      message: "BREAK_GLASS_DISABLE_STRICT forbidden on mainnet production",
+      path: ["BREAK_GLASS_DISABLE_STRICT"]
+    }
   );
 
 const resolveRequestJwtJwksUrl = (requestJwt: string, options: { strict: boolean }) => {
@@ -48,7 +51,7 @@ const resolveRequestJwtJwksUrl = (requestJwt: string, options: { strict: boolean
   return `${issRaw.replace(/\/$/, "")}/.well-known/jwks.json`;
 };
 
-export const present = async (action = "marketplace.list_item") => {
+export const present = async (action = "identity.verify") => {
   const env = envSchema.parse(process.env);
   const state = await loadWalletState();
   // Ensure we can emit cnf.jwk even if signing happens via hardware keystore.
@@ -72,7 +75,9 @@ export const present = async (action = "marketplace.list_item") => {
   const strictRequestSignature =
     !env.BREAK_GLASS_DISABLE_STRICT && env.WALLET_VERIFY_REQUEST_SIGNATURE;
   if (payload.request_jwt) {
-    const jwksUrl = resolveRequestJwtJwksUrl(payload.request_jwt, { strict: strictRequestSignature });
+    const jwksUrl = resolveRequestJwtJwksUrl(payload.request_jwt, {
+      strict: strictRequestSignature
+    });
     if (jwksUrl) {
       try {
         const JWKS = createRemoteJWKSet(new URL(jwksUrl));

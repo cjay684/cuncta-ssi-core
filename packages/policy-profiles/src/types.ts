@@ -24,4 +24,3 @@ export type ComplianceProfile = {
   flags: ComplianceProfileFlags;
   overlay?: ComplianceProfileOverlay;
 };
-

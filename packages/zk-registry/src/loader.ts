@@ -71,8 +71,7 @@ export const loadZkStatementRegistry = async (): Promise<Map<string, LoadedState
       definition: def,
       provingKeyPath,
       verifyingKeyPath,
-      wasmPath
-      ,
+      wasmPath,
       available: !isStub
     });
   }
@@ -91,4 +90,3 @@ export const getZkStatement = async (statementId: string) => {
   }
   return entry;
 };
-

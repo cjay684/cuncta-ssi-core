@@ -86,7 +86,9 @@ const verifyResponseJwt = async (jwt: string) => {
   return verified.payload as Record<string, unknown>;
 };
 
-const parsePresentationSubmission = (raw: unknown): { descriptor_map: Array<{ id: string; path: string }> } => {
+const parsePresentationSubmission = (
+  raw: unknown
+): { descriptor_map: Array<{ id: string; path: string }> } => {
   const value = typeof raw === "string" ? JSON.parse(raw) : raw;
   if (!value || typeof value !== "object") {
     throw new Error("presentation_submission_invalid");
@@ -95,7 +97,9 @@ const parsePresentationSubmission = (raw: unknown): { descriptor_map: Array<{ id
   const map = record.descriptor_map;
   if (!Array.isArray(map)) throw new Error("presentation_submission_invalid");
   const parsed = map
-    .map((entry) => (entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null))
+    .map((entry) =>
+      entry && typeof entry === "object" ? (entry as Record<string, unknown>) : null
+    )
     .filter(Boolean)
     .map((entry) => ({ id: String(entry!.id ?? ""), path: String(entry!.path ?? "") }))
     .filter((e) => e.id.length > 0 && e.path.length > 0);
@@ -134,12 +138,16 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
     const verifierOrigin = incomingQuery.get("verifier_origin") ?? "";
     if (!action) {
       return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Missing action", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("invalid_request", "Missing action", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
     if (context.config.NODE_ENV === "production" && !verifierOrigin) {
       return reply.code(400).send(
-        makeErrorResponse("invalid_request", "Missing verifier_origin", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("invalid_request", "Missing verifier_origin", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
     const policyUrl = new URL("/v1/requirements", context.config.POLICY_SERVICE_BASE_URL);
@@ -161,62 +169,90 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
       challenge?: { nonce?: string; audience?: string; expires_at?: string };
       requirements?: unknown[];
     };
-    if (!policyPayload.challenge?.nonce || !policyPayload.challenge?.audience || !policyPayload.challenge?.expires_at) {
+    if (
+      !policyPayload.challenge?.nonce ||
+      !policyPayload.challenge?.audience ||
+      !policyPayload.challenge?.expires_at
+    ) {
       return reply.code(503).send(
-        makeErrorResponse("internal_error", "Invalid policy response", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("internal_error", "Invalid policy response", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
-    if (!context.config.GATEWAY_SIGN_OID4VP_REQUEST || !context.config.APP_GATEWAY_PUBLIC_BASE_URL) {
+    if (
+      !context.config.GATEWAY_SIGN_OID4VP_REQUEST ||
+      !context.config.APP_GATEWAY_PUBLIC_BASE_URL
+    ) {
       return reply.code(503).send(
-        makeErrorResponse("internal_error", "Request signing disabled", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("internal_error", "Request signing disabled", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
     const state = randomUUID();
     const responseMode =
       (incomingQuery.get("response_mode") ?? "direct_post.jwt").trim() || "direct_post.jwt";
-    const responseUri = new URL("/oid4vp/response", context.config.APP_GATEWAY_PUBLIC_BASE_URL).toString();
+    const responseUri = new URL(
+      "/oid4vp/response",
+      context.config.APP_GATEWAY_PUBLIC_BASE_URL
+    ).toString();
     const clientId = policyPayload.challenge.audience.startsWith("origin:")
       ? policyPayload.challenge.audience.slice("origin:".length)
       : undefined;
     const presentationDefinition = {
       id: `cuncta:${String(policyPayload.action ?? action)}`,
-      input_descriptors: (Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []).map(
-        (r: unknown) => {
-          const rr = (r ?? {}) as Record<string, unknown>;
-          const formats = Array.isArray(rr.formats) ? rr.formats.map(String) : [];
-          const disclosures = Array.isArray(rr.disclosures) ? rr.disclosures.map(String) : [];
-          const allowSd = formats.includes("dc+sd-jwt");
-          const allowDi = formats.includes("di+bbs");
-          return {
-            id: String(rr.vct ?? ""),
-            // Allow both formats when policy allows negotiation; wallet chooses a satisfiable one.
-            format: allowSd && allowDi ? { "sd-jwt-vc": {}, "di+bbs": {} } : allowDi ? { "di+bbs": {} } : { "sd-jwt-vc": {} },
-            disclosures
-          };
-        }
-      )
-    };
-    const hasZkPredicates = (Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []).some(
-      (r: unknown) => {
+      input_descriptors: (Array.isArray(policyPayload.requirements)
+        ? policyPayload.requirements
+        : []
+      ).map((r: unknown) => {
         const rr = (r ?? {}) as Record<string, unknown>;
-        return Array.isArray(rr.zk_predicates) && rr.zk_predicates.length > 0;
-      }
-    );
+        const formats = Array.isArray(rr.formats) ? rr.formats.map(String) : [];
+        const disclosures = Array.isArray(rr.disclosures) ? rr.disclosures.map(String) : [];
+        const allowSd = formats.includes("dc+sd-jwt");
+        const allowDi = formats.includes("di+bbs");
+        return {
+          id: String(rr.vct ?? ""),
+          // Allow both formats when policy allows negotiation; wallet chooses a satisfiable one.
+          format:
+            allowSd && allowDi
+              ? { "sd-jwt-vc": {}, "di+bbs": {} }
+              : allowDi
+                ? { "di+bbs": {} }
+                : { "sd-jwt-vc": {} },
+          disclosures
+        };
+      })
+    };
+    const hasZkPredicates = (
+      Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []
+    ).some((r: unknown) => {
+      const rr = (r ?? {}) as Record<string, unknown>;
+      return Array.isArray(rr.zk_predicates) && rr.zk_predicates.length > 0;
+    });
     if (hasZkPredicates && !context.config.ALLOW_EXPERIMENTAL_ZK) {
       return reply.code(503).send(
-        makeErrorResponse("forbidden", "ZK predicates disabled", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("forbidden", "ZK predicates disabled", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
     // Registry-driven: only include `zk_context` keys required by the referenced statements.
     const zkContext = hasZkPredicates
-      ? await computeZkContextFromRequirements(Array.isArray(policyPayload.requirements) ? policyPayload.requirements : [])
+      ? await computeZkContextFromRequirements(
+          Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []
+        )
       : undefined;
     const verifierSecret =
       context.config.SERVICE_JWT_SECRET_VERIFIER ??
-      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+      (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+        ? context.config.SERVICE_JWT_SECRET
+        : undefined);
     if (!verifierSecret) {
       return reply.code(503).send(
-        makeErrorResponse("internal_error", "Service auth unavailable", { devMode: context.config.DEV_MODE })
+        makeErrorResponse("internal_error", "Service auth unavailable", {
+          devMode: context.config.DEV_MODE
+        })
       );
     }
     const authHeader = await createServiceAuthHeader(context, {
@@ -285,9 +321,11 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
     const db = await getDb();
     const row = await db("oid4vp_request_hashes").where({ request_hash: requestHash }).first();
     if (!row) {
-      return reply.code(404).send(
-        makeErrorResponse("not_found", "Request not found", { devMode: context.config.DEV_MODE })
-      );
+      return reply
+        .code(404)
+        .send(
+          makeErrorResponse("not_found", "Request not found", { devMode: context.config.DEV_MODE })
+        );
     }
     reply.header("cache-control", "no-store");
     // Per spec, request_uri returns the request object (JWT) as a string body.
@@ -336,7 +374,10 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
         context.config.APP_GATEWAY_PUBLIC_BASE_URL &&
         !url.searchParams.has("verifier_origin")
       ) {
-        url.searchParams.set("verifier_origin", new URL(context.config.APP_GATEWAY_PUBLIC_BASE_URL).origin);
+        url.searchParams.set(
+          "verifier_origin",
+          new URL(context.config.APP_GATEWAY_PUBLIC_BASE_URL).origin
+        );
       }
 
       const requirementsRes = await context.fetchImpl(url.toString(), { method: "GET" });
@@ -359,41 +400,45 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
       const state = randomUUID();
       const responseMode =
         (incomingQuery.get("response_mode") ?? "direct_post.jwt").trim() || "direct_post.jwt";
-      const responseUri =
-        context.config.APP_GATEWAY_PUBLIC_BASE_URL
-          ? new URL("/oid4vp/response", context.config.APP_GATEWAY_PUBLIC_BASE_URL).toString()
-          : "http://localhost/oid4vp/response";
+      const responseUri = context.config.APP_GATEWAY_PUBLIC_BASE_URL
+        ? new URL("/oid4vp/response", context.config.APP_GATEWAY_PUBLIC_BASE_URL).toString()
+        : "http://localhost/oid4vp/response";
       const clientId = policyPayload.challenge?.audience?.startsWith("origin:")
         ? policyPayload.challenge.audience.slice("origin:".length)
         : undefined;
       const presentationDefinition = {
         id: `cuncta:${String(policyPayload.action ?? "")}`,
-        input_descriptors: (Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []).map(
-          (r: unknown) => {
-            const rr = (r ?? {}) as Record<string, unknown>;
-            const formats = Array.isArray(rr.formats) ? rr.formats.map(String) : [];
-            const disclosures = Array.isArray(rr.disclosures) ? rr.disclosures.map(String) : [];
-            return {
-              id: String(rr.vct ?? ""),
-              format: formats.includes("di+bbs") ? { "di+bbs": {} } : { "sd-jwt-vc": {} },
-              disclosures
-            };
-          }
-        )
-      };
-      const hasZkPredicates = (Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []).some(
-        (r: unknown) => {
+        input_descriptors: (Array.isArray(policyPayload.requirements)
+          ? policyPayload.requirements
+          : []
+        ).map((r: unknown) => {
           const rr = (r ?? {}) as Record<string, unknown>;
-          return Array.isArray(rr.zk_predicates) && rr.zk_predicates.length > 0;
-        }
-      );
+          const formats = Array.isArray(rr.formats) ? rr.formats.map(String) : [];
+          const disclosures = Array.isArray(rr.disclosures) ? rr.disclosures.map(String) : [];
+          return {
+            id: String(rr.vct ?? ""),
+            format: formats.includes("di+bbs") ? { "di+bbs": {} } : { "sd-jwt-vc": {} },
+            disclosures
+          };
+        })
+      };
+      const hasZkPredicates = (
+        Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []
+      ).some((r: unknown) => {
+        const rr = (r ?? {}) as Record<string, unknown>;
+        return Array.isArray(rr.zk_predicates) && rr.zk_predicates.length > 0;
+      });
       if (hasZkPredicates && !context.config.ALLOW_EXPERIMENTAL_ZK) {
         return reply.code(503).send(
-          makeErrorResponse("forbidden", "ZK predicates disabled", { devMode: context.config.DEV_MODE })
+          makeErrorResponse("forbidden", "ZK predicates disabled", {
+            devMode: context.config.DEV_MODE
+          })
         );
       }
       const zkContext = hasZkPredicates
-        ? await computeZkContextFromRequirements(Array.isArray(policyPayload.requirements) ? policyPayload.requirements : [])
+        ? await computeZkContextFromRequirements(
+            Array.isArray(policyPayload.requirements) ? policyPayload.requirements : []
+          )
         : undefined;
 
       if (
@@ -408,11 +453,14 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
       ) {
         const verifierSecret =
           context.config.SERVICE_JWT_SECRET_VERIFIER ??
-          (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET ? context.config.SERVICE_JWT_SECRET : undefined);
+          (context.config.ALLOW_LEGACY_SERVICE_JWT_SECRET
+            ? context.config.SERVICE_JWT_SECRET
+            : undefined);
         if (verifierSecret) {
           try {
             const authHeader = await createServiceAuthHeader(context, {
-              audience: context.config.SERVICE_JWT_AUDIENCE_VERIFIER ?? context.config.SERVICE_JWT_AUDIENCE,
+              audience:
+                context.config.SERVICE_JWT_AUDIENCE_VERIFIER ?? context.config.SERVICE_JWT_AUDIENCE,
               secret: verifierSecret,
               scope: ["verifier:request_sign"]
             });
@@ -536,12 +584,16 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
           }
           if (!effectiveRequestJwt || effectiveRequestJwt.length < 10) {
             return reply.code(400).send(
-              makeErrorResponse("invalid_request", "Missing request object", { devMode: context.config.DEV_MODE })
+              makeErrorResponse("invalid_request", "Missing request object", {
+                devMode: context.config.DEV_MODE
+              })
             );
           }
           if (!effectiveVpToken || effectiveVpToken.length < 10) {
             return reply.code(400).send(
-              makeErrorResponse("invalid_request", "Missing vp_token", { devMode: context.config.DEV_MODE })
+              makeErrorResponse("invalid_request", "Missing vp_token", {
+                devMode: context.config.DEV_MODE
+              })
             );
           }
           // One-time semantics for the request object.
@@ -556,7 +608,10 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
           const nonce = String(reqPayload.nonce ?? "");
           const audience = String(reqPayload.audience ?? "");
           const action = String(reqPayload.action_id ?? "");
-          const presentationDefinition = (reqPayload.presentation_definition ?? {}) as Record<string, unknown>;
+          const presentationDefinition = (reqPayload.presentation_definition ?? {}) as Record<
+            string,
+            unknown
+          >;
           try {
             validatePresentationSubmissionMinimal({
               presentationDefinition,
@@ -600,7 +655,11 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
         } catch (error) {
           return reply.code(400).send(
             makeErrorResponse("invalid_request", "Invalid OID4VP response", {
-              details: context.config.DEV_MODE ? (error instanceof Error ? error.message : "error") : undefined,
+              details: context.config.DEV_MODE
+                ? error instanceof Error
+                  ? error.message
+                  : "error"
+                : undefined,
               devMode: context.config.DEV_MODE
             })
           );
@@ -609,7 +668,10 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
 
       const url = new URL("/oid4vp/response", context.config.VERIFIER_SERVICE_BASE_URL);
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort("verifier_proxy_timeout"), context.config.VERIFIER_PROXY_TIMEOUT_MS);
+      const timeout = setTimeout(
+        () => controller.abort("verifier_proxy_timeout"),
+        context.config.VERIFIER_PROXY_TIMEOUT_MS
+      );
       timeout.unref?.();
       let response: Response;
       try {
@@ -629,4 +691,3 @@ export const registerOid4vpRoutes = (app: FastifyInstance, context: GatewayConte
     }
   );
 };
-

@@ -1,3 +1,4 @@
+/* global process, URL, console */
 import path from "node:path";
 import { runServiceTests } from "../../../scripts/test-runner.mjs";
 
@@ -7,11 +8,8 @@ const srcRoot = path.join(repoRoot, "src");
 const requiresDb = (file) => {
   const normalized = file.replaceAll("\\", "/");
   return (
-    normalized.includes("/aura/") ||
     normalized.includes("/issuer/") ||
     normalized.includes("/privacy/") ||
-    normalized.includes("/reputation/") ||
-    normalized.includes("/routes/aura.") ||
     normalized.includes("/routes/issuer.") ||
     normalized.includes("/routes/privacy.") ||
     normalized.includes("/routes/dev.") ||
@@ -27,12 +25,10 @@ const requiresDb = (file) => {
 const requiresIntegration = (file) => {
   const normalized = file.replaceAll("\\", "/");
   return (
-    normalized.endsWith("/aura/auraClaim.test.ts") ||
     normalized.endsWith("/issuer/catalog-driven.test.ts") ||
     normalized.endsWith("/issuer/issuance.subject.test.ts") ||
     normalized.endsWith("/issuer/issuance.concurrent.test.ts") ||
-    normalized.endsWith("/issuer/keyRing.rotation.test.ts") ||
-    normalized.endsWith("/reputation/engine.test.ts")
+    normalized.endsWith("/issuer/keyRing.rotation.test.ts")
   );
 };
 

@@ -39,7 +39,9 @@ export const verifyServiceJwt = async (
 
   if (options.requireAdminScope && options.requireAdminScope.length > 0) {
     const hasAdminWildcard = tokenScopes.includes("admin:*");
-    const hasRequiredScopes = options.requireAdminScope.every((scope) => tokenScopes.includes(scope));
+    const hasRequiredScopes = options.requireAdminScope.every((scope) =>
+      tokenScopes.includes(scope)
+    );
     if (!hasAdminWildcard && !hasRequiredScopes) {
       throw new Error("jwt_missing_required_scope");
     }

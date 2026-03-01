@@ -1,4 +1,11 @@
-import { SignJWT, exportJWK, generateKeyPair, importJWK, createRemoteJWKSet, jwtVerify } from "jose";
+import {
+  SignJWT,
+  exportJWK,
+  generateKeyPair,
+  importJWK,
+  createRemoteJWKSet,
+  jwtVerify
+} from "jose";
 import type { JWK } from "jose";
 import { config } from "../config.js";
 
@@ -74,7 +81,9 @@ export const signOid4vpRequest = async (input: SignRequestInput): Promise<string
     ...(input.response_type ? { response_type: input.response_type } : {}),
     ...(input.client_id ? { client_id: input.client_id } : {}),
     ...(input.client_id_scheme ? { client_id_scheme: input.client_id_scheme } : {}),
-    ...(input.presentation_definition ? { presentation_definition: input.presentation_definition } : {}),
+    ...(input.presentation_definition
+      ? { presentation_definition: input.presentation_definition }
+      : {}),
     ...(input.zk_context ? { zk_context: input.zk_context } : {})
   })
     .setProtectedHeader({ alg: "EdDSA", typ: "oid4vp-request+jwt", kid })
@@ -102,7 +111,13 @@ export const getVerifierJwks = async (): Promise<{ keys: JWK[] }> => {
 export const verifyOid4vpRequestJwt = async (
   jwt: string,
   jwksUrl: string
-): Promise<{ nonce: string; audience: string; action_id: string; policy_hash: string; exp: number }> => {
+): Promise<{
+  nonce: string;
+  audience: string;
+  action_id: string;
+  policy_hash: string;
+  exp: number;
+}> => {
   const JWKS = createRemoteJWKSet(new URL(jwksUrl));
   const { payload } = await jwtVerify(jwt, JWKS, {
     algorithms: ["EdDSA"],

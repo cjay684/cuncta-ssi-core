@@ -12,4 +12,3 @@ export type WalletZkWitnessBuilder = (input: {
   // Wallet-local secret material (never leaves the device)
   secrets: Record<string, unknown>;
 }) => Promise<Record<string, string>>;
-

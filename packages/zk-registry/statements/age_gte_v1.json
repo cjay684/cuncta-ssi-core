@@ -9,7 +9,7 @@
   },
   "verifying_key_ref": {
     "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.verification_key.json",
-    "sha256_hex": "49509fe929e42fb14fdc17473d6db1c9c7f3f916c82967f86e20858892d76cdc"
+    "sha256_hex": "f889eb968a4c697c40d889b29d22a688a62f6429e49c3330f1cfdee9f62c7b02"
   },
   "wasm_ref": {
     "path": "packages/zk-age-snark/artifacts/age_gte_v1/age_gte_v1.wasm",
@@ -25,9 +25,23 @@
       "audience_hash": { "type": "string" },
       "request_hash": { "type": "string" }
     },
-    "required": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"]
+    "required": [
+      "dob_commitment",
+      "min_age",
+      "current_day",
+      "nonce_hash",
+      "audience_hash",
+      "request_hash"
+    ]
   },
-  "public_inputs_order": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"],
+  "public_inputs_order": [
+    "dob_commitment",
+    "min_age",
+    "current_day",
+    "nonce_hash",
+    "audience_hash",
+    "request_hash"
+  ],
   "required_bindings": ["nonce", "audience", "request_hash"],
   "credential": {
     "credential_config_id": "age_credential_v1",
@@ -45,10 +59,23 @@
     "required_claims": ["dob_commitment", "commitment_scheme_version"]
   },
   "verifier_contract": {
-    "required_public_inputs": ["dob_commitment", "min_age", "current_day", "nonce_hash", "audience_hash", "request_hash"],
-    "binding_public_inputs": { "nonce": "nonce_hash", "audience": "audience_hash", "request_hash": "request_hash" },
+    "required_public_inputs": [
+      "dob_commitment",
+      "min_age",
+      "current_day",
+      "nonce_hash",
+      "audience_hash",
+      "request_hash"
+    ],
+    "binding_public_inputs": {
+      "nonce": "nonce_hash",
+      "audience": "audience_hash",
+      "request_hash": "request_hash"
+    },
     "param_constraints": [{ "param": "min_age", "public_input": "min_age", "op": "eq" }],
-    "context_constraints": [{ "context_key": "current_day", "public_input": "current_day", "op": "eq" }]
+    "context_constraints": [
+      { "context_key": "current_day", "public_input": "current_day", "op": "eq" }
+    ]
   },
   "wallet_contract": {
     "witness_builder_id": "witness:age_v1_bn254",
@@ -64,4 +91,3 @@
   "setup_provenance": "dev_beacon",
   "deprecated": false
 }
-

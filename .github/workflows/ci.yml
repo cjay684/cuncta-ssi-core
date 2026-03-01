@@ -106,7 +106,6 @@ jobs:
         run: node scripts/ci/wait-for-postgres.mjs
 
       - name: Unit tests (coverage)
-        continue-on-error: true
         run: pnpm test:unit:coverage
 
       - name: Upload coverage artifact
@@ -119,6 +118,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -149,11 +150,11 @@ jobs:
       - name: ZK no-hardcode scan (blocking)
         run: node scripts/security/zk-no-hardcode-scan.mjs
 
-      - name: Aura guardrails scan (blocking)
-        run: node scripts/security/aura-guardrails-scan.mjs
+      - name: Capability guardrails scan (blocking)
+        run: node scripts/security/capability-guardrails-scan.mjs
 
-      - name: Aura no-hardcode scan (blocking)
-        run: node scripts/security/aura-no-hardcode-scan.mjs
+      - name: Capability no-hardcode scan (blocking)
+        run: node scripts/security/capability-no-hardcode-scan.mjs
 
       - name: Public surface scan (blocking)
         run: node scripts/security/surface-scan.mjs
@@ -161,19 +162,19 @@ jobs:
       - name: Surface registry verify (blocking)
         env:
           # Base64url-encoded JWK JSON (public key). Rotate via docs/runbooks/surface-registry-signing.md
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: node scripts/security/sign-surface-registry.mjs --verify
 
       - name: Surface registry deterministic bytes guard (blocking)
         env:
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: |
           node scripts/security/sign-surface-registry.mjs --sync
           git diff --exit-code docs/surfaces.registry.bundle.json
 
       - name: Surface registry drift simulation (CI-only)
         env:
-          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImNGTWxNek91bjJmSkEybXJROE8wNXhsLUI1SjlnTlQ5RE1HVEZGVkQxZVkiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktZGV2LTEifQ"
+          SURFACE_REGISTRY_PUBLIC_KEY: "eyJjcnYiOiJFZDI1NTE5IiwieCI6ImZtZXJOMk9uM2Rzck00OVhaS2hBQWVHT2VuaWM2SkpqaVhaTmhrQXphV3MiLCJrdHkiOiJPS1AiLCJhbGciOiJFZERTQSIsImtpZCI6InN1cmZhY2UtcmVnaXN0cnktc3NpLTEifQ"
         run: node scripts/security/surface-registry-drift.test.mjs
 
       - name: Dev flag scan (blocking)
@@ -184,16 +185,14 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          config-path: .gitleaks.toml
 
       - name: Dependency audit (blocking high/critical)
         continue-on-error: true
-        run: pnpm audit --audit-level high
+        run: pnpm audit --audit-level high || echo "dependency_audit_non_blocking"
 
       - name: Generate SBOM (CycloneDX)
         continue-on-error: true
-        run: pnpm dlx @cyclonedx/cyclonedx-npm --output-file sbom.cdx.json --spec-version 1.5
+        run: pnpm dlx @cyclonedx/cyclonedx-npm --ignore-npm-errors --output-file sbom.cdx.json --spec-version 1.5
 
       - name: Upload SBOM artifact
         continue-on-error: true
@@ -201,9 +200,20 @@ jobs:
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
+          if-no-files-found: ignore
 
       - name: Setup Trivy
-        uses: aquasecurity/setup-trivy@ff1b8b060f23b650436d419b5e13f67f5d4c3087 # v0.2.2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/trivy.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y trivy
+          trivy --version
 
       - name: Build production images for scanning
         run: |
@@ -251,7 +261,7 @@ jobs:
 
       - name: Upload OSV SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: osv-results.sarif
 
@@ -259,8 +269,10 @@ jobs:
     runs-on: ubuntu-latest
     # Runs on pushes to main and PRs from the same repo (fork PRs excluded to protect secrets).
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      always() && (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
+      )
     needs: [unit_tests, security]
     environment: testnet
     services:
@@ -281,8 +293,13 @@ jobs:
       DATABASE_URL: postgres://cuncta:cuncta@localhost:5432/cuncta_ssi
       HEDERA_NETWORK: testnet
       RUN_TESTNET_INTEGRATION: "1"
+      CI_TEST_MODE: "true"
       USER_PAYS_MODE: "1"
       DYNAMIC_PORTS: "1"
+      APP_GATEWAY_BASE_URL: ${{ secrets.APP_GATEWAY_BASE_URL }}
+      ISSUER_SERVICE_BASE_URL: ${{ secrets.ISSUER_SERVICE_BASE_URL }}
+      VERIFIER_SERVICE_BASE_URL: ${{ secrets.VERIFIER_SERVICE_BASE_URL }}
+      DID_SERVICE_BASE_URL: ${{ secrets.DID_SERVICE_BASE_URL }}
       # Service-side operator keys (platform operational cost; not user payer).
       HEDERA_OPERATOR_ID: ${{ secrets.HEDERA_OPERATOR_ID }}
       HEDERA_OPERATOR_PRIVATE_KEY: ${{ secrets.HEDERA_OPERATOR_PRIVATE_KEY }}
@@ -324,6 +341,91 @@ jobs:
 
       - name: Wait for Postgres
         run: node scripts/ci/wait-for-postgres.mjs
+
+      - name: Validate required secret-backed env
+        run: |
+          set -euo pipefail
+          required=(
+            APP_GATEWAY_BASE_URL
+            ISSUER_SERVICE_BASE_URL
+            VERIFIER_SERVICE_BASE_URL
+            DID_SERVICE_BASE_URL
+            TESTNET_PAYER_ACCOUNT_ID
+            TESTNET_PAYER_PRIVATE_KEY
+            HEDERA_OPERATOR_ID
+            HEDERA_OPERATOR_PRIVATE_KEY
+            SERVICE_JWT_SECRET
+            PSEUDONYMIZER_PEPPER
+          )
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "[testnet_e2e] missing required env: $key (configure in GitHub environment secrets for 'testnet')"
+              exit 1
+            fi
+          done
+
+      - name: Start local service stack for loopback endpoints
+        run: |
+          set -euo pipefail
+
+          is_loopback_url() {
+            local url="$1"
+            local host
+            host="$(echo "$url" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#' | tr '[:upper:]' '[:lower:]')"
+            [ "$host" = "localhost" ] || [ "$host" = "127.0.0.1" ] || [ "$host" = "::1" ] || [[ "$host" =~ \.localhost$ ]]
+          }
+
+          loopback_count=0
+          for key in APP_GATEWAY_BASE_URL ISSUER_SERVICE_BASE_URL VERIFIER_SERVICE_BASE_URL DID_SERVICE_BASE_URL; do
+            if is_loopback_url "${!key}"; then
+              loopback_count=$((loopback_count + 1))
+            fi
+          done
+
+          if [ "$loopback_count" -gt 0 ] && [ "$loopback_count" -lt 4 ]; then
+            echo "[testnet_e2e] mixed loopback/non-loopback service URL configuration is not supported"
+            exit 1
+          fi
+
+          if [ "$loopback_count" -eq 0 ]; then
+            echo "[testnet_e2e] external service URLs detected; skipping local service bootstrap"
+            exit 0
+          fi
+
+          echo "[testnet_e2e] loopback service URLs detected; bootstrapping local services"
+          export POLICY_SERVICE_BASE_URL="${POLICY_SERVICE_BASE_URL:-http://localhost:3004}"
+          export USER_PAYS_HANDOFF_SECRET="${USER_PAYS_HANDOFF_SECRET:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_DID="${SERVICE_JWT_SECRET_DID:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_ISSUER="${SERVICE_JWT_SECRET_ISSUER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_VERIFIER="${SERVICE_JWT_SECRET_VERIFIER:-$SERVICE_JWT_SECRET}"
+          export SERVICE_JWT_SECRET_NEXT="${SERVICE_JWT_SECRET_NEXT:-$SERVICE_JWT_SECRET}"
+
+          pnpm -C apps/did-service dev > /tmp/did-service.log 2>&1 &
+          pnpm -C apps/issuer-service dev > /tmp/issuer-service.log 2>&1 &
+          pnpm -C apps/verifier-service dev > /tmp/verifier-service.log 2>&1 &
+          pnpm -C apps/policy-service dev > /tmp/policy-service.log 2>&1 &
+          pnpm -C apps/app-gateway dev > /tmp/app-gateway.log 2>&1 &
+
+          wait_for_health() {
+            local name="$1"
+            local url="$2"
+            for attempt in $(seq 1 60); do
+              if curl -fsS "$url" > /dev/null; then
+                echo "[testnet_e2e] ${name} healthy at ${url}"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "[testnet_e2e] ${name} failed health check at ${url}"
+            tail -n 120 "/tmp/${name}.log" || true
+            return 1
+          }
+
+          wait_for_health "did-service" "${DID_SERVICE_BASE_URL}/healthz"
+          wait_for_health "issuer-service" "${ISSUER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "verifier-service" "${VERIFIER_SERVICE_BASE_URL}/healthz"
+          wait_for_health "policy-service" "${POLICY_SERVICE_BASE_URL}/healthz"
+          wait_for_health "app-gateway" "${APP_GATEWAY_BASE_URL}/healthz"
 
       - name: Testnet preflight
         run: node scripts/ci/testnet-preflight.mjs

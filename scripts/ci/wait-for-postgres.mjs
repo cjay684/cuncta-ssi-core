@@ -54,4 +54,3 @@ while (Date.now() - started < timeoutMs) {
 
 console.error(`[ci] postgres_wait timeout after ${timeoutMs}ms`);
 process.exit(1);
-

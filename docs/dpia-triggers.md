@@ -51,4 +51,3 @@ Copy this section into your deployment repository and fill it in.
 - Residual risks:
 - Decision:
 - Approvals and date:
-

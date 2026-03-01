@@ -55,7 +55,7 @@ const run = async () => {
       title: "Test Flag",
       claims: [{ path: "flag", label: "Flag" }]
     }),
-    purpose_limits: JSON.stringify({ actions: ["marketplace.list_item"] }),
+    purpose_limits: JSON.stringify({ actions: ["identity.verify"] }),
     presentation_templates: JSON.stringify({ required_disclosures: ["flag"] }),
     revocation_config: JSON.stringify({
       statusPurpose: "revocation",

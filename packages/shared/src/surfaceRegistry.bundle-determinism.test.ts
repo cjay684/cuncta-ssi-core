@@ -5,7 +5,11 @@ import { SURFACE_REGISTRY_CANON_VERSION, type SurfaceRegistry } from "./surfaceR
 
 const b64url = (input: string | Buffer) => Buffer.from(input).toString("base64url");
 
-const signCanonicalRegistry = (input: { registry: SurfaceRegistry; privateKey: KeyObject; kid: string }) => {
+const signCanonicalRegistry = (input: {
+  registry: SurfaceRegistry;
+  privateKey: KeyObject;
+  kid: string;
+}) => {
   const protectedHeader = {
     alg: "EdDSA",
     typ: "surface-registry+json",
@@ -35,23 +39,25 @@ const run = () => {
       {
         id: "app-gateway",
         publiclyDeployable: true,
-        routes: [{ method: "GET", path: "/healthz", surface: "public", probe: { path: "/healthz" } }]
+        routes: [
+          { method: "GET", path: "/healthz", surface: "public", probe: { path: "/healthz" } }
+        ]
       }
     ]
   };
 
-  const routeB: any = {};
+  const routeB = {} as SurfaceRegistry["services"][number]["routes"][number];
   routeB.surface = "public";
   routeB.path = "/healthz";
   routeB.method = "GET";
   routeB.probe = { path: "/healthz" };
 
-  const svcB: any = {};
+  const svcB = {} as SurfaceRegistry["services"][number];
   svcB.routes = [routeB];
   svcB.publiclyDeployable = true;
   svcB.id = "app-gateway";
 
-  const registryB: any = {};
+  const registryB = {} as Pick<SurfaceRegistry, "services" | "schemaVersion">;
   registryB.services = [svcB];
   registryB.schemaVersion = 1;
 
@@ -63,7 +69,11 @@ const run = () => {
   const sigB = signCanonicalRegistry({ registry: registryB as SurfaceRegistry, privateKey, kid });
 
   assert.equal(sigA.payloadB64, sigB.payloadB64, "payload bytes must be identical");
-  assert.equal(sigA.signatureB64, sigB.signatureB64, "Ed25519 signature must be deterministic for same signing input");
+  assert.equal(
+    sigA.signatureB64,
+    sigB.signatureB64,
+    "Ed25519 signature must be deterministic for same signing input"
+  );
 
   // Real registry change => canonical payload changes => signature changes.
   const registryChanged: SurfaceRegistry = {
@@ -76,15 +86,21 @@ const run = () => {
     ]
   };
   const sigChanged = signCanonicalRegistry({ registry: registryChanged, privateKey, kid });
-  assert.notEqual(sigA.payloadB64, sigChanged.payloadB64, "changed registry must change canonical payload");
-  assert.notEqual(sigA.signatureB64, sigChanged.signatureB64, "changed registry must change signature");
+  assert.notEqual(
+    sigA.payloadB64,
+    sigChanged.payloadB64,
+    "changed registry must change canonical payload"
+  );
+  assert.notEqual(
+    sigA.signatureB64,
+    sigChanged.signatureB64,
+    "changed registry must change signature"
+  );
 };
 
 try {
   run();
 } catch (error) {
-  // eslint-disable-next-line no-console
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);
 }
-

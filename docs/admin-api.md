@@ -13,19 +13,19 @@ Requests without proper scope return `403` with `service_auth_scope_missing`.
 
 ### Issuer Service
 
-| Method | Path | Required Scope | Description |
-|--------|------|----------------|-------------|
-| POST | `/v1/admin/issue` | `issuer:internal_issue` | Issue credential (gateway onboarding flow) |
-| POST | `/v1/admin/keys/rotate` | `issuer:key_rotate` | Rotate issuer signing key |
-| POST | `/v1/admin/keys/revoke` | `issuer:key_revoke` | Revoke issuer key by `kid` |
-| POST | `/v1/admin/anchors/reconcile` | `issuer:anchor_reconcile` | Reconcile anchor outbox with Hedera mirror |
-| GET | `/v1/admin/privacy/status` | `issuer:privacy_status` | Get privacy status for subject DID hash |
+| Method | Path                          | Required Scope            | Description                                |
+| ------ | ----------------------------- | ------------------------- | ------------------------------------------ |
+| POST   | `/v1/admin/issue`             | `issuer:internal_issue`   | Issue credential (gateway onboarding flow) |
+| POST   | `/v1/admin/keys/rotate`       | `issuer:key_rotate`       | Rotate issuer signing key                  |
+| POST   | `/v1/admin/keys/revoke`       | `issuer:key_revoke`       | Revoke issuer key by `kid`                 |
+| POST   | `/v1/admin/anchors/reconcile` | `issuer:anchor_reconcile` | Reconcile anchor outbox with Hedera mirror |
+| GET    | `/v1/admin/privacy/status`    | `issuer:privacy_status`   | Get privacy status for subject DID hash    |
 
 ### Policy Service
 
-| Method | Path | Required Scope | Description |
-|--------|------|----------------|-------------|
-| POST | `/v1/admin/policy/floor` | `policy:floor_set` | Set minimum policy version for an action |
+| Method | Path                     | Required Scope     | Description                              |
+| ------ | ------------------------ | ------------------ | ---------------------------------------- |
+| POST   | `/v1/admin/policy/floor` | `policy:floor_set` | Set minimum policy version for an action |
 
 ## Usage
 
@@ -38,7 +38,7 @@ Requests without proper scope return `403` with `service_auth_scope_missing`.
 These endpoints are for:
 
 - Gateway → issuer (onboarding, issue)
-- Social service → issuer (privacy status)
+- Internal services → issuer (privacy status)
 - Operators (key rotation, anchor reconciliation, policy floor)
 - Integration tests
 

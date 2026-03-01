@@ -48,12 +48,9 @@ const run = async () => {
     results.push(
       await issueCredential({
         subjectDid: `did:example:holder:${index}`,
-        vct: "cuncta.marketplace.seller_good_standing",
+        vct: "cuncta.age_over_18",
         claims: {
-          seller_good_standing: true,
-          domain: "marketplace",
-          as_of: new Date().toISOString(),
-          tier: "bronze"
+          age_over_18: true
         }
       })
     );

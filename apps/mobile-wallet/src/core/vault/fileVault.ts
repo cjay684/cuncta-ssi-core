@@ -2,6 +2,8 @@ import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { randomBytes, createHash, createCipheriv, createDecipheriv } from "node:crypto";
 import { Vault, VaultState } from "./types.js";
+import type { WalletConfig } from "../config.js";
+import { validateVaultKeyMaterial } from "../config.js";
 
 type StoredEnvelope = {
   version: number;
@@ -93,4 +95,20 @@ export const createFileVault = (input: { baseDir: string; keyMaterial: string })
       await rm(filePath, { force: true });
     }
   };
+};
+
+const normalizeKeyMaterial = (raw: string) => {
+  const trimmed = raw.trim();
+  validateVaultKeyMaterial(trimmed);
+  return trimmed;
+};
+
+export const resolveVaultKey = async (config: WalletConfig): Promise<string> => {
+  const fromEnv = config.WALLET_VAULT_KEY?.trim();
+  if (fromEnv) {
+    return normalizeKeyMaterial(fromEnv);
+  }
+  // Placeholder for OS keystore-backed key retrieval in RN runtime.
+  // In current Node/CLI runtime we require explicit env material.
+  throw new Error("vault_key_unavailable: set WALLET_VAULT_KEY or configure OS keystore provider");
 };

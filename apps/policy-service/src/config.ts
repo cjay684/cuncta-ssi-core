@@ -40,10 +40,7 @@ const envSchema = z.object({
   // Data-driven compliance profile selection (UK vs EU vs default).
   COMPLIANCE_PROFILE_DEFAULT: z.string().default("default"),
   // JSON map from verifier origin to profile_id, e.g. {"https://rp.example":"uk"}.
-  COMPLIANCE_PROFILE_ORIGIN_MAP_JSON: z.preprocess(
-    emptyToUndefined,
-    z.string().min(2).optional()
-  ),
+  COMPLIANCE_PROFILE_ORIGIN_MAP_JSON: z.preprocess(emptyToUndefined, z.string().min(2).optional()),
   POLICY_SIGNING_JWK: z.string().min(10).optional(),
   POLICY_SIGNING_BOOTSTRAP: z.preprocess((value) => value === "true", z.boolean()).default(false),
   ANCHOR_AUTH_SECRET: z.string().min(16).optional(),
@@ -74,7 +71,11 @@ const parsed = envSchema.parse(process.env);
 if (parsed.HEDERA_NETWORK === "mainnet" && !parsed.ALLOW_MAINNET) {
   throw new Error("mainnet_not_allowed");
 }
-if (parsed.NODE_ENV === "production" && parsed.HEDERA_NETWORK === "mainnet" && parsed.POLICY_SIGNING_BOOTSTRAP) {
+if (
+  parsed.NODE_ENV === "production" &&
+  parsed.HEDERA_NETWORK === "mainnet" &&
+  parsed.POLICY_SIGNING_BOOTSTRAP
+) {
   throw new Error("policy_signing_bootstrap_forbidden_on_mainnet_production");
 }
 const autoMigrate = parsed.AUTO_MIGRATE ?? parsed.NODE_ENV !== "production";
@@ -121,5 +122,6 @@ export const config = {
   SERVICE_BIND_ADDRESS: serviceBindAddress,
   SERVICE_JWT_SECRET_FORMAT_STRICT: strictSecrets,
   ALLOW_EXPERIMENTAL_ZK: allowExperimentalZk,
-  POLICY_VERSION_FLOOR_ENFORCED: parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production"
+  POLICY_VERSION_FLOOR_ENFORCED:
+    parsed.POLICY_VERSION_FLOOR_ENFORCED ?? parsed.NODE_ENV === "production"
 };

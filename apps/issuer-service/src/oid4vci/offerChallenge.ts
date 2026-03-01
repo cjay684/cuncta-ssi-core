@@ -8,7 +8,9 @@ export const createOfferChallenge = async () => {
   const db = await getDb();
   const nonce = randomBytes(32).toString("base64url");
   const nonceHash = sha256Hex(nonce);
-  const expiresAt = new Date(Date.now() + config.OID4VCI_OFFER_CHALLENGE_TTL_SECONDS * 1000).toISOString();
+  const expiresAt = new Date(
+    Date.now() + config.OID4VCI_OFFER_CHALLENGE_TTL_SECONDS * 1000
+  ).toISOString();
   await db("oid4vci_offer_challenges").insert({
     nonce_hash: nonceHash,
     expires_at: expiresAt,
@@ -31,4 +33,3 @@ export const consumeOfferChallenge = async (input: { nonce: string }) => {
     throw new Error("offer_challenge_invalid_or_consumed");
   }
 };
-

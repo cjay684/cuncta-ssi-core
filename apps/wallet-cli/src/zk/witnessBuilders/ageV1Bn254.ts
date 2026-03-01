@@ -50,10 +50,14 @@ export const buildWitnessAgeV1Bn254: WalletZkWitnessBuilder = async (input) => {
     }
     const recomputed = await commitDobDaysPoseidonV1Bn254Ds1({ birthdateDays, rand: r });
     if (recomputed.toString() !== BigInt(dobCommitment).toString()) {
-      throw new Error(`witness_commitment_mismatch expected=${dobCommitment} recomputed=${recomputed.toString()}`);
+      throw new Error(
+        `witness_commitment_mismatch expected=${dobCommitment} recomputed=${recomputed.toString()}`
+      );
     }
   } catch (err) {
-    throw new Error(`witness_commitment_check_failed:${err instanceof Error ? err.message : "unknown"}`);
+    throw new Error(
+      `witness_commitment_check_failed:${err instanceof Error ? err.message : "unknown"}`
+    );
   }
 
   return {
@@ -70,4 +74,3 @@ export const buildWitnessAgeV1Bn254: WalletZkWitnessBuilder = async (input) => {
     rand
   };
 };
-

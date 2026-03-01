@@ -17,9 +17,15 @@ const b64url = (input: string | Buffer) => Buffer.from(input).toString("base64ur
 const writeSignedSurfaceBundle = (registry: SurfaceRegistry) => {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const publicJwk = publicKey.export({ format: "jwk" }) as Record<string, unknown>;
-  const publicKeyEnv = b64url(JSON.stringify({ ...publicJwk, alg: "EdDSA", kid: "surface-registry-test-1" }));
+  const publicKeyEnv = b64url(
+    JSON.stringify({ ...publicJwk, alg: "EdDSA", kid: "surface-registry-test-1" })
+  );
 
-  const protectedHeader = { alg: "EdDSA", typ: "surface-registry+json", kid: "surface-registry-test-1" };
+  const protectedHeader = {
+    alg: "EdDSA",
+    typ: "surface-registry+json",
+    kid: "surface-registry-test-1"
+  };
   const protectedB64 = b64url(JSON.stringify(protectedHeader));
 
   const payloadText = canonicalizeJson(registry);
@@ -73,11 +79,12 @@ const readSurfaceRegistry = async () => {
   const registryPath = path.join(repoRoot, "docs", "surfaces.registry.json");
   const raw = await readFile(registryPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
+  const registryLike = parsed as { schemaVersion?: unknown; services?: unknown };
   if (
     !parsed ||
     typeof parsed !== "object" ||
-    (parsed as any).schemaVersion !== 1 ||
-    !Array.isArray((parsed as any).services)
+    registryLike.schemaVersion !== 1 ||
+    !Array.isArray(registryLike.services)
   ) {
     throw new Error("invalid_surface_registry");
   }
@@ -92,11 +99,22 @@ const registryRoutesForService = (
   const routes = Array.isArray(svc?.routes) ? svc!.routes : [];
   return routes
     .map((r) => ({
+      ...(() => {
+        const routeRecord = r as Record<string, unknown>;
+        const disabledStatusValue = routeRecord["disabledStatus"];
+        const probeValue = routeRecord["probe"];
+        const probe =
+          probeValue && typeof probeValue === "object"
+            ? (probeValue as { path?: string; headers?: Record<string, string>; body?: unknown })
+            : undefined;
+        return {
+          disabledStatus: typeof disabledStatusValue === "number" ? disabledStatusValue : undefined,
+          probe
+        };
+      })(),
       method: String(r.method ?? "").toUpperCase(),
       path: String(r.path ?? "").trim(),
-      surface: String(r.surface ?? "").trim(),
-      disabledStatus: typeof (r as any).disabledStatus === "number" ? (r as any).disabledStatus : undefined,
-      probe: (r as any).probe as undefined | { path?: string; headers?: Record<string, string>; body?: unknown }
+      surface: String(r.surface ?? "").trim()
     }))
     .filter((r) => Boolean(r.method && r.path.startsWith("/")));
 };
@@ -141,21 +159,22 @@ const extractPublicProtocolRoutesFromCode = async (input: { routesDir: string })
 const run = async (name: string, fn: () => Promise<void>) => {
   try {
     await fn();
-    // eslint-disable-next-line no-console
     console.log(`ok - ${name}`);
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error(`not ok - ${name}`);
-    // eslint-disable-next-line no-console
     console.error(error instanceof Error ? (error.stack ?? error.message) : error);
     process.exitCode = 1;
   }
 };
 
-const isFastifyDefault404 = (response: { statusCode: number; body: string; json: () => any }) => {
+const isFastifyDefault404 = (response: {
+  statusCode: number;
+  body: string;
+  json: () => unknown;
+}) => {
   if (response.statusCode !== 404) return false;
   try {
-    const body = response.json() as any;
+    const body = response.json() as { message?: unknown; error?: unknown; statusCode?: unknown };
     return (
       body &&
       typeof body.message === "string" &&
@@ -168,7 +187,11 @@ const isFastifyDefault404 = (response: { statusCode: number; body: string; json:
   }
 };
 
-const assertNoSurfaceLeak = (input: { body: string; disallowRouteStrings: string[]; context: string }) => {
+const assertNoSurfaceLeak = (input: {
+  body: string;
+  disallowRouteStrings: string[];
+  context: string;
+}) => {
   const body = String(input.body ?? "");
   const lower = body.toLowerCase();
   const bannedNeedles = ["bearer", "scope", "admin"];
@@ -191,7 +214,9 @@ const assertNoSurfaceLeak = (input: { body: string; disallowRouteStrings: string
 
 await run("production surface docs cover gateway protocol routes", async () => {
   const markdown = await readDocsSurfaces();
-  const docRoutes = extractGatewaySurfaceRoutesFromDocs(markdown).map((r) => `${r.method} ${r.path}`);
+  const docRoutes = extractGatewaySurfaceRoutesFromDocs(markdown).map(
+    (r) => `${r.method} ${r.path}`
+  );
   assert.ok(docRoutes.length > 0, "expected docs/surfaces.md to list app-gateway routes");
   const docSet = new Set(docRoutes);
 
@@ -217,7 +242,10 @@ await run("production surface docs cover gateway protocol routes", async () => {
       "/.well-known/jwks.json"
     ];
     if (!allowPrefixes.some((prefix) => pathPart.startsWith(prefix))) continue;
-    assert.ok(codeRoutes.has(route), `docs/surfaces.md lists non-existent app-gateway route: ${route}`);
+    assert.ok(
+      codeRoutes.has(route),
+      `docs/surfaces.md lists non-existent app-gateway route: ${route}`
+    );
   }
 });
 
@@ -238,14 +266,15 @@ const setupProdPublicEnv = () => {
 
   process.env.PSEUDONYMIZER_PEPPER = process.env.PSEUDONYMIZER_PEPPER ?? "pepper-test-123456";
   process.env.USER_PAYS_HANDOFF_SECRET =
-    process.env.USER_PAYS_HANDOFF_SECRET ?? "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    process.env.USER_PAYS_HANDOFF_SECRET ??
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
   // Base URLs are required by config parsing; they do not need to be reachable for these tests.
   process.env.DID_SERVICE_BASE_URL = process.env.DID_SERVICE_BASE_URL ?? "http://127.0.0.1:3001";
-  process.env.ISSUER_SERVICE_BASE_URL = process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:3002";
-  process.env.VERIFIER_SERVICE_BASE_URL = process.env.VERIFIER_SERVICE_BASE_URL ?? "http://127.0.0.1:3003";
-  process.env.SOCIAL_SERVICE_BASE_URL = process.env.SOCIAL_SERVICE_BASE_URL ?? "http://127.0.0.1:3005";
-
+  process.env.ISSUER_SERVICE_BASE_URL =
+    process.env.ISSUER_SERVICE_BASE_URL ?? "http://127.0.0.1:3002";
+  process.env.VERIFIER_SERVICE_BASE_URL =
+    process.env.VERIFIER_SERVICE_BASE_URL ?? "http://127.0.0.1:3003";
   // Ensure the JWKS proxy route is registered (it will return 503 if upstream isn't reachable).
   process.env.APP_GATEWAY_PUBLIC_BASE_URL =
     process.env.APP_GATEWAY_PUBLIC_BASE_URL ?? "https://gateway.example";
@@ -270,44 +299,56 @@ await run("runtime public posture fails closed (gateway)", async () => {
   const { config } = await import("./config.js");
 
   const app = buildServer({ configOverride: { ...config } });
+  const injectableApp = app as unknown as {
+    inject: (request: {
+      method: string;
+      url: string;
+      headers?: Record<string, string>;
+      payload?: unknown;
+    }) => Promise<{ statusCode: number; body: string; json: () => unknown }>;
+    close: () => Promise<void>;
+  };
   try {
     for (const entry of routes) {
       const probePath = entry.probe?.path ?? "";
-      assert.ok(probePath.startsWith("/"), `missing probe.path for registry entry: ${entry.method} ${entry.path}`);
+      assert.ok(
+        probePath.startsWith("/"),
+        `missing probe.path for registry entry: ${entry.method} ${entry.path}`
+      );
 
-      const response = await (app as any).inject({
-        method: entry.method as any,
+      const response = await injectableApp.inject({
+        method: entry.method,
         url: probePath,
         headers: entry.probe?.headers,
-        payload: entry.probe?.body as any
+        payload: entry.probe?.body
       });
 
       if (entry.surface === "public") {
         // Public routes may legitimately return 404 for "resource not found"; what we must avoid is a missing handler.
         assert.equal(
-          isFastifyDefault404(response as any),
+          isFastifyDefault404(response),
           false,
           `public route should be registered (not Fastify default 404): ${entry.method} ${probePath}`
         );
       } else if (entry.surface === "internal" || entry.surface === "admin") {
         assert.ok(
-          (response as any).statusCode === 401 || (response as any).statusCode === 403,
+          response.statusCode === 401 || response.statusCode === 403,
           `expected 401/403 for ${entry.surface} route without token: ${entry.method} ${probePath} (got ${response.statusCode})`
         );
         assertNoSurfaceLeak({
-          body: (response as any).body,
+          body: response.body,
           disallowRouteStrings: [entry.path, probePath],
           context: `${entry.method} ${probePath} (${entry.surface})`
         });
       } else if (entry.surface === "dev_test_only") {
         const expected = entry.disabledStatus === 410 ? 410 : 404;
         assert.equal(
-          (response as any).statusCode,
+          response.statusCode,
           expected,
           `expected ${expected} for dev/test-only route in public production: ${entry.method} ${probePath} (got ${response.statusCode})`
         );
         assertNoSurfaceLeak({
-          body: (response as any).body,
+          body: response.body,
           disallowRouteStrings: [entry.path, probePath],
           context: `${entry.method} ${probePath} (dev_test_only)`
         });
@@ -316,10 +357,9 @@ await run("runtime public posture fails closed (gateway)", async () => {
       }
     }
 
-    const unknown = await (app as any).inject({ method: "GET", url: "/__unknown__/route" });
-    assert.equal((unknown as any).statusCode, 404, "unknown route should return 404");
+    const unknown = await injectableApp.inject({ method: "GET", url: "/__unknown__/route" });
+    assert.equal(unknown.statusCode, 404, "unknown route should return 404");
   } finally {
     await app.close();
   }
 });
-

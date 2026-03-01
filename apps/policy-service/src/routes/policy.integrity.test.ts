@@ -16,7 +16,7 @@ process.env.POLICY_SIGNING_BOOTSTRAP = "false";
 
 const run = async () => {
   const { config } = await import("../config.js");
-  const { ensureMarketplaceListPolicy } = await import("../testUtils/seedPolicy.js");
+  const { ensureIdentityVerifyPolicy } = await import("../testUtils/seedPolicy.js");
   config.POLICY_SIGNING_JWK = process.env.POLICY_SIGNING_JWK;
   config.POLICY_SIGNING_BOOTSTRAP = false;
 
@@ -27,54 +27,63 @@ const run = async () => {
   await app.ready();
 
   const db = await getDb();
-  await ensureMarketplaceListPolicy();
-  await db("policies")
-    .where({ action_id: "marketplace.list_item" })
-    .andWhereNot({ policy_id: "marketplace.list_item.v1" })
-    .del();
-  const policyRow = await db("policies").where({ policy_id: "marketplace.list_item.v1" }).first();
-  assert.ok(policyRow, "expected seed policy marketplace.list_item.v1");
+  await ensureIdentityVerifyPolicy();
+  const policyRows = await db("policies").where({ action_id: "identity.verify" });
+  assert.ok(policyRows.length > 0, "expected at least one identity.verify policy");
 
-  const logicRaw = policyRow.logic as unknown;
-  const logic =
-    typeof logicRaw === "string"
-      ? (JSON.parse(logicRaw) as Record<string, unknown>)
-      : (logicRaw as Record<string, unknown>);
-  const policyHash = hashCanonicalJson({
-    policy_id: policyRow.policy_id,
-    action_id: policyRow.action_id,
-    version: policyRow.version,
-    enabled: policyRow.enabled,
-    logic
-  });
+  const originals = policyRows.map((row) => ({
+    policy_id: row.policy_id as string,
+    policy_hash: (row.policy_hash as string | null | undefined) ?? null,
+    policy_signature: (row.policy_signature as string | null | undefined) ?? null
+  }));
 
-  const originalHash = policyRow.policy_hash ?? null;
-  const originalSignature = policyRow.policy_signature ?? null;
+  try {
+    // Tamper all candidate rows so whichever version evaluator picks fails integrity.
+    for (const row of policyRows) {
+      const logicRaw = row.logic as unknown;
+      const logic =
+        typeof logicRaw === "string"
+          ? (JSON.parse(logicRaw) as Record<string, unknown>)
+          : (logicRaw as Record<string, unknown>);
+      const policyHash = hashCanonicalJson({
+        policy_id: row.policy_id,
+        action_id: row.action_id,
+        version: row.version,
+        enabled: row.enabled,
+        logic
+      });
+      await db("policies").where({ policy_id: row.policy_id }).update({
+        policy_hash: policyHash,
+        policy_signature: "invalid.signature",
+        updated_at: new Date().toISOString()
+      });
+    }
 
-  await db("policies").where({ policy_id: policyRow.policy_id }).update({
-    policy_hash: policyHash,
-    policy_signature: "invalid.signature",
-    updated_at: new Date().toISOString()
-  });
-
-  const response = await app.inject({
-    method: "GET",
-    url: "/v1/requirements?action=marketplace.list_item"
-  });
-  assert.equal(response.statusCode, 503);
-  const payload = response.json() as { error?: string };
-  assert.equal(payload.error, "policy_integrity_failed");
-
-  await db("policies").where({ policy_id: policyRow.policy_id }).update({
-    policy_hash: originalHash,
-    policy_signature: originalSignature,
-    updated_at: new Date().toISOString()
-  });
-
-  await app.close();
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/requirements?action=identity.verify"
+    });
+    assert.equal(response.statusCode, 503);
+    const payload = response.json() as { error?: string };
+    assert.equal(payload.error, "policy_integrity_failed");
+  } finally {
+    for (const original of originals) {
+      await db("policies").where({ policy_id: original.policy_id }).update({
+        policy_hash: original.policy_hash,
+        policy_signature: original.policy_signature,
+        updated_at: new Date().toISOString()
+      });
+    }
+    await app.close();
+  }
 };
 
 run().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  if (error instanceof Error) {
+    console.error(error.message);
+    if (error.stack) console.error(error.stack);
+  } else {
+    console.error(String(error));
+  }
   process.exit(1);
 });

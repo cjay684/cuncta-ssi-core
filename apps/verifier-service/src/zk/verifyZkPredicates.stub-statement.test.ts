@@ -9,6 +9,7 @@ const setDeterministicTestEnv = () => {
   process.env.NODE_ENV = "test";
   process.env.HEDERA_NETWORK = "testnet";
   process.env.ALLOW_MAINNET = "false";
+  process.env.ISSUER_SERVICE_BASE_URL = "http://localhost:3002";
   delete process.env.ISSUER_JWKS;
 };
 
@@ -52,4 +53,3 @@ test("zk predicates: stub statement is rejected gracefully (data-driven)", async
   assert.equal(out.ok, false);
   assert.ok(out.reasons.includes("zk_statement_unavailable"));
 });
-

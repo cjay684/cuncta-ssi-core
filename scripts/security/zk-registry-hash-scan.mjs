@@ -35,7 +35,13 @@ const main = async () => {
       const expected = String(ref.sha256_hex ?? "");
       const actual = await sha256Hex(abs).catch(() => "");
       if (!actual || actual !== expected) {
-        failures.push({ statement_id: def.statement_id, ref: key, path: ref.path, expected, actual });
+        failures.push({
+          statement_id: def.statement_id,
+          ref: key,
+          path: ref.path,
+          expected,
+          actual
+        });
       }
     }
   }
@@ -56,4 +62,3 @@ main().catch((err) => {
   console.error(`zk_registry_hash_scan_error: ${err instanceof Error ? err.message : "unknown"}`);
   process.exit(2);
 });
-

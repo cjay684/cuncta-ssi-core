@@ -8,3 +8,5 @@ coverage/
 pnpm-lock.yaml
 **/data/*.json
 .vscode/settings.json
+docs/surfaces.registry.bundle.json
+packages/db/migrations/

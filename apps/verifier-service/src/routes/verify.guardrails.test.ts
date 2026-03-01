@@ -13,7 +13,7 @@ const dbUrl = process.env.DATABASE_URL ?? "postgres://cuncta:cuncta@localhost:54
 
 const nowIso = () => new Date().toISOString();
 const makeNonce = () => `nonce-${randomUUID()}-1234567890`;
-const makeAction = () => `marketplace.list_item.${randomUUID()}`;
+const makeAction = () => `identity.verify.${randomUUID()}`;
 
 const seedPolicy = async (input: {
   db: ReturnType<typeof createDb>;
@@ -134,7 +134,7 @@ test("policy floor denies pinned downgraded policy versions deterministically", 
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
 
     await db("verification_challenges").del();
@@ -251,11 +251,11 @@ test("jwks refresh-on-kid-miss succeeds and records miss/refresh metrics", async
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.marketplace.${randomUUID()}`;
+    const vct = `cuncta.age_over_18.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();
@@ -350,6 +350,25 @@ test("jwks refresh-on-kid-miss succeeds and records miss/refresh metrics", async
     });
     assert.equal(verifyResponse.statusCode, 200);
     const verifyBody = verifyResponse.json() as { decision?: string; reasons?: string[] };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H1",
+        location: "verify.guardrails.test.ts:353",
+        message: "jwks refresh test verify response",
+        data: {
+          statusCode: verifyResponse.statusCode,
+          decision: verifyBody.decision,
+          reasons: verifyBody.reasons ?? []
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(verifyBody.decision, "ALLOW");
     assert.equal(jwksCalls >= 2, true);
 
@@ -401,11 +420,11 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
   try {
     await runMigrations(db);
     const actionId = makeAction();
-    const audience = `cuncta.action:${actionId}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.marketplace.${randomUUID()}`;
+    const vct = `cuncta.age_over_18.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();
@@ -497,6 +516,25 @@ test("jwks kid miss denies when refresh still lacks key", async () => {
     });
     assert.equal(verifyResponse.statusCode, 200);
     const verifyBody = verifyResponse.json() as { decision?: string; reasons?: string[] };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H2",
+        location: "verify.guardrails.test.ts:435",
+        message: "jwks miss deny-path response",
+        data: {
+          statusCode: verifyResponse.statusCode,
+          decision: verifyBody.decision,
+          reasons: verifyBody.reasons ?? []
+        },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(verifyBody.decision, "DENY");
     assert.ok(verifyBody.reasons?.includes("jwks_kid_not_found"));
     await app.close();
@@ -532,14 +570,14 @@ test("verifier denies space-scoped credential reuse across spaces", async () => 
   const db = createDb(dbUrl);
   try {
     await runMigrations(db);
-    const actionId = `social.space.post.create.${randomUUID()}`;
-    const audience = `cuncta.action:${actionId}`;
+    const actionId = `space.post.create.${randomUUID()}`;
+    const audience = `origin:https://verifier.cuncta.test/${actionId}`;
     const nonce = makeNonce();
     const spaceA = randomUUID();
     const spaceB = randomUUID();
     const issuerDid = `did:hedera:testnet:${randomUUID()}`;
     const subjectDid = `did:hedera:testnet:${randomUUID()}`;
-    const vct = `cuncta.social.space.poster.${randomUUID()}`;
+    const vct = `cuncta.space.poster.${randomUUID()}`;
 
     await db("verification_challenges").del();
     await db("policy_version_floor").where({ action_id: actionId }).del();
@@ -643,6 +681,21 @@ test("verifier denies space-scoped credential reuse across spaces", async () => 
     });
     assert.equal(allowResponse.statusCode, 200);
     const allowBody = allowResponse.json() as { decision?: string };
+    // #region agent log
+    fetch("http://127.0.0.1:7699/ingest/ffc49d57-354d-40f6-8f22-e1def74475d1", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "6783de" },
+      body: JSON.stringify({
+        sessionId: "6783de",
+        runId: "guardrails-pre-fix",
+        hypothesisId: "H3",
+        location: "verify.guardrails.test.ts:646",
+        message: "space binding allow-path response",
+        data: { statusCode: allowResponse.statusCode, decision: allowBody.decision },
+        timestamp: Date.now()
+      })
+    }).catch(() => {});
+    // #endregion
     assert.equal(allowBody.decision, "ALLOW");
 
     const nonceMismatch = makeNonce();
